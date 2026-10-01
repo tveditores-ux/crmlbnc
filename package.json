@@ -1,0 +1,22 @@
+{
+  "name": "lbnc-comunica",
+  "version": "1.0.0",
+  "description": "Sistema de comunicación de la iglesia — fase 1: recordatorios y confirmaciones por WhatsApp y correo",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --env-file=.env --watch src/server.js",
+    "seed": "node src/seed.js",
+    "test": "node --test test/*.test.js"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "express": "^4.22.3",
+    "nodemailer": "^10.0.13",
+    "pg": "^8.23.1"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  }
+}
