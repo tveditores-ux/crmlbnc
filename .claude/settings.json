@@ -1,0 +1,22 @@
+{
+  "enabledPlugins": {
+    "commit-commands@claude-plugins-official": true
+  },
+  "permissions": {
+    "allow": ["Bash(npm test:*)", "Bash(npm run seed:*)"]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [{ "type": "command", "command": "node .claude/hooks/guard-files.js" }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [{ "type": "command", "command": "node .claude/hooks/run-tests.js" }]
+      }
+    ]
+  }
+}
