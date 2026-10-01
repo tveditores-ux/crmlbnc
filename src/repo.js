@@ -31,7 +31,7 @@ function splitMinistries(v) {
 }
 
 /** Valida y normaliza los datos de una persona. Devuelve { value, errors }. */
-function validatePerson(input, countryCode) {
+function validatePerson(input, countryCode, { allowNoContact = false } = {}) {
   const errors = [];
   const full_name = String(input.full_name || '').trim().replace(/\s+/g, ' ');
   if (!full_name) errors.push('Falta el nombre.');
@@ -45,7 +45,7 @@ function validatePerson(input, countryCode) {
     email = normalizeEmail(input.email);
     if (!email) errors.push(`Correo no válido: "${input.email}".`);
   }
-  if (!phone && !email && !errors.length) errors.push('Necesita al menos teléfono o correo.');
+  if (!phone && !email && !errors.length && !allowNoContact) errors.push('Necesita al menos teléfono o correo.');
   const preferred_channel = input.preferred_channel || (phone ? 'whatsapp' : 'email');
   if (!['whatsapp', 'email', 'ambos'].includes(preferred_channel)) errors.push('Canal no válido.');
   return {
@@ -56,7 +56,8 @@ function validatePerson(input, countryCode) {
       email,
       role: String(input.role || '').trim(),
       preferred_channel,
-      opt_in: Boolean(input.opt_in),
+      // Sin teléfono ni correo no hay a quién escribir: nunca queda con consentimiento.
+      opt_in: Boolean(input.opt_in) && Boolean(phone || email),
       active: input.active === undefined ? true : Boolean(input.active),
       notes: String(input.notes || '').trim(),
     },
@@ -95,6 +96,12 @@ async function findExisting(db, { phone, email }, excludeId = null) {
   return rows[0] ? rows[0].id : null;
 }
 
+/** Busca por nombre (sin distinguir mayúsculas); para filas sin contacto. */
+async function findByName(db, fullName) {
+  const { rows } = await db.query('SELECT id FROM people WHERE lower(full_name) = lower($1) ORDER BY id LIMIT 1', [fullName]);
+  return rows[0] ? rows[0].id : null;
+}
+
 async function savePerson(db, id, v) {
   if (id) {
     await db.query(
@@ -116,6 +123,8 @@ async function savePerson(db, id, v) {
  * Importa personas desde registros del CSV. Si ya existe alguien con el mismo teléfono o
  * correo, lo actualiza (y le suma los ministerios). Todo o nada: si hay errores, no guarda.
  */
+const hasContact = (v) => Boolean(v.phone || v.email);
+
 async function importPeople(pool, records, countryCode, { dryRun = false } = {}) {
   const report = { created: 0, updated: 0, errors: [], ministriesCreated: [] };
   const prepared = [];
@@ -132,10 +141,11 @@ async function importPeople(pool, records, countryCode, { dryRun = false } = {})
         preferred_channel: parseChannel(rec.canal) || undefined,
         opt_in: optIn === true,
       },
-      countryCode
+      countryCode,
+      { allowNoContact: true }
     );
     if (rec.canal && !parseChannel(rec.canal)) errors.push(`Canal no reconocido: "${rec.canal}".`);
-    const key = value.phone || value.email;
+    const key = value.phone || value.email || `nombre:${value.full_name.toLowerCase()}`;
     if (key && seen.has(key)) errors.push(`Repetido con la línea ${seen.get(key)}.`);
     if (key) seen.set(key, rec._line);
     if (errors.length) report.errors.push({ line: rec._line, name: value.full_name, errors });
@@ -144,7 +154,7 @@ async function importPeople(pool, records, countryCode, { dryRun = false } = {})
   if (report.errors.length || dryRun) {
     if (dryRun && !report.errors.length) {
       for (const p of prepared) {
-        const existing = await findExisting(pool, p.value);
+        const existing = hasContact(p.value) ? await findExisting(pool, p.value) : await findByName(pool, p.value.full_name);
         if (existing) report.updated++;
         else report.created++;
       }
@@ -155,8 +165,10 @@ async function importPeople(pool, records, countryCode, { dryRun = false } = {})
   await tx(pool, async (db) => {
     const before = new Set((await db.query('SELECT lower(name) AS n FROM ministries')).rows.map((r) => r.n));
     for (const p of prepared) {
-      const existing = await findExisting(db, p.value);
-      const id = await savePerson(db, existing, p.value);
+      const contact = hasContact(p.value);
+      const existing = contact ? await findExisting(db, p.value) : await findByName(db, p.value.full_name);
+      // Una fila sin contacto nunca pisa los datos de alguien que ya los tiene: solo suma ministerios.
+      const id = !contact && existing ? existing : await savePerson(db, existing, p.value);
       if (existing) report.updated++;
       else report.created++;
       for (const name of p.ministries) {

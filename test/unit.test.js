@@ -208,3 +208,10 @@ test('validación de personas', () => {
   assert.equal(repo.parseChannel('WhatsApp'), 'whatsapp');
   assert.deepEqual(repo.splitMinistries('Diáconos; Alabanza | Medios'), ['Diáconos', 'Alabanza', 'Medios']);
 });
+
+test('importar: personas sin contacto se permiten, sin consentimiento, solo con allowNoContact', () => {
+  const sin = repo.validatePerson({ full_name: 'Sin Datos', opt_in: true }, '58', { allowNoContact: true });
+  assert.deepEqual(sin.errors, []);
+  assert.equal(sin.value.opt_in, false);
+  assert.match(repo.validatePerson({ full_name: 'Sin Datos' }, '58').errors[0], /teléfono o correo/);
+});
