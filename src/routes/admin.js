@@ -140,7 +140,10 @@ function adminRouter(ctx) {
         <td>${esc(displayPhone(p.phone))}<div class="muted">${esc(p.email || '')}</div></td>
         <td>${p.mins.map((n) => `<span class="chip">${esc(n)}</span>`).join('')}</td>
         <td>${CHANNEL_LABEL[p.preferred_channel]}</td>
-        <td>${p.opt_in ? '<span class="badge b-ok">Sí</span>' : '<span class="badge b-bad">No</span>'}</td></tr>`
+        <td>${p.opt_in ? '<span class="badge b-ok">Sí</span>' : '<span class="badge b-bad">No</span>'}</td>
+        <td style="white-space:nowrap"><a class="btn sec small" href="/personas/${p.id}">Editar</a>
+          <form class="inline" method="post" action="/personas/${p.id}/eliminar" onsubmit="return confirm('¿Eliminar a ' + this.dataset.n + ' y su historial? Si solo dejó de servir, mejor edítala y desmarca Activo.')" data-n="${esc(p.full_name)}">
+            <button class="danger small" title="Eliminar" aria-label="Eliminar ${esc(p.full_name)}">✕</button></form></td></tr>`
         )
         .join('');
       page(
@@ -158,8 +161,8 @@ function adminRouter(ctx) {
             .map((x) => `<option value="${x.id}" ${x.id === m ? 'selected' : ''}>${esc(x.name)}</option>`)
             .join('')}</select></div>
           <button class="sec">Filtrar</button></form>
-        <div class="table-scroll"><table><tr><th>Nombre</th><th>Contacto</th><th>Ministerios</th><th>Canal</th><th>Acepta</th></tr>${
-          list || '<tr><td colspan="5" class="muted">Sin resultados.</td></tr>'
+        <div class="table-scroll"><table><tr><th>Nombre</th><th>Contacto</th><th>Ministerios</th><th>Canal</th><th>Acepta</th><th></th></tr>${
+          list || '<tr><td colspan="6" class="muted">Sin resultados.</td></tr>'
         }</table></div>`
       );
     })
