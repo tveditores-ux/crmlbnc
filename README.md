@@ -156,3 +156,26 @@ test/              pruebas unitarias y de integración
 
 ## Lo que viene en la fase 2
 Panel para coordinadores con sus propias alertas, resumen semanal de confirmaciones y seguimiento de nuevos (Nueva Vida).
+
+---
+
+## Asistente de WhatsApp (opcional)
+
+Responde mensajes de texto de personas **registradas y activas**, y solo sobre la vida de la congregación y los grupos de cuidado: eventos, confirmaciones, cómo unirse a un grupo, a quién contactar. Todo lo que exige un pastor o un líder (consejería, conflictos, necesidades personales, dudas que no puede resolver con los datos que tiene) se **escala**: aparece en el panel, pestaña **Conversaciones**, para que alguien lo atienda.
+
+Está **apagado por defecto**. Para encenderlo, en Railway → Variables:
+
+| Variable | Valor |
+|---|---|
+| `AGENT_ENABLED` | `true` |
+| `ANTHROPIC_API_KEY` | Clave de la API de Anthropic |
+| `AGENT_MODEL` | Opcional. Por defecto `claude-sonnet-5-5` |
+| `AGENT_MAX_REPLIES_PER_DAY` | Opcional. Respuestas máximas por persona al día (12) |
+
+Cómo se limita:
+- Números que no están en la lista: respuesta fija, sin usar el modelo.
+- Mensajes con señales de crisis (autolesión, violencia, abuso): respuesta fija, aviso urgente en **Conversaciones**, sin usar el modelo.
+- El modelo solo ve los datos de esa persona (nombre, ministerios, sus próximos eventos). No ve a nadie más.
+- Mensajes de hasta 6 palabras que empiezan con "sí/no" siguen siendo confirmaciones del recordatorio, no consultas.
+- Con `DRY_RUN=true` las respuestas se registran como simuladas.
+- Fuera de las 24 h desde que la persona escribió, WhatsApp no permite texto libre: el asistente solo responde dentro de esa ventana.

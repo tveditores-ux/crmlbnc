@@ -21,3 +21,8 @@ Recordatorios y confirmaciones por WhatsApp y correo. Node 22, Express, PostgreS
 
 ## Glosario
 - **REDIL**: reunión de empoderamiento, dirección e instrucción para el liderazgo. "REDIL Extendido" es el ministerio/grupo con todos los líderes convocados (pastores, coordinadores, líderes asesores y líderes).
+
+## Asistente de WhatsApp (`src/agent.js`)
+- Apagado por defecto (`AGENT_ENABLED`). Solo temas de congregación y grupos de cuidado; todo lo demás se escala a un líder/pastor.
+- Nunca darle al modelo datos de otras personas. Las crisis se responden con texto fijo, sin modelo.
+- Cualquier cambio al prompt o a los filtros debe pasar por el subagente `safety-reviewer` y mantener `test/agent.test.js` en verde.

@@ -43,6 +43,14 @@ function loadConfig(env = process.env) {
       appSecret: env.WHATSAPP_APP_SECRET || '',
     },
 
+    // Agente de WhatsApp (apagado por defecto)
+    agent: {
+      enabled: bool(env.AGENT_ENABLED, false),
+      apiKey: env.ANTHROPIC_API_KEY || '',
+      model: env.AGENT_MODEL || 'claude-sonnet-5-5',
+      maxRepliesPerDay: int(env.AGENT_MAX_REPLIES_PER_DAY, 12),
+    },
+
     email: {
       provider: (env.EMAIL_PROVIDER || 'none').toLowerCase(), // resend | smtp | none
       from: env.EMAIL_FROM || '',

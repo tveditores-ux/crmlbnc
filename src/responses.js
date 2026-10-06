@@ -1,5 +1,6 @@
 'use strict';
 const msgs = require('./messages');
+const agent = require('./agent');
 
 const STATUS_BY_ANSWER = { si: 'confirmado', no: 'no_puede' };
 
@@ -107,6 +108,9 @@ async function handleWhatsAppWebhook(ctx, body) {
         if (parsed) {
           token = parsed.token;
           answer = parsed.answer;
+        } else if (m.type === 'text' && ctx.config.agent && ctx.config.agent.enabled && body.trim().split(/\s+/).length > 6) {
+          // Mensaje largo: es una consulta, no un "sí/no"; lo atiende el agente.
+          answer = null;
         } else {
           answer = msgs.parseFreeText(body);
           if (answer) token = await nextPendingTokenForPhone(db, from, now);
@@ -123,7 +127,16 @@ async function handleWhatsAppWebhook(ctx, body) {
             });
           }
         } else {
-          result.unknown++;
+          let viaAgent = null;
+          if (m.type !== 'button' && !payload) {
+            try {
+              viaAgent = await agent.handleInbound(ctx, { from, body, type: m.type }, { fetchImpl: ctx.fetchImpl, now });
+            } catch (err) {
+              console.error('[agente] fallo inesperado:', err);
+            }
+          }
+          if (viaAgent) handledAs = viaAgent.handledAs;
+          else result.unknown++;
         }
 
         await db.query(

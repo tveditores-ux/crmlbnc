@@ -2,6 +2,7 @@
 const express = require('express');
 const { adminRouter } = require('./routes/admin');
 const { publicRouter } = require('./routes/public');
+const { conversationsRouter } = require('./routes/conversations');
 const { layout } = require('./views/layout');
 const { esc } = require('./util');
 const auth = require('./auth');
@@ -93,6 +94,7 @@ function createApp(ctx) {
     res.sendStatus(401);
   });
 
+  app.use(conversationsRouter(ctx));
   app.use(adminRouter(ctx));
 
   app.use((req, res) => res.status(404).send(layout({ title: 'No encontrado', config, body: '<h1>Página no encontrada</h1>' })));
