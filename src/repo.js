@@ -96,6 +96,23 @@ async function findExisting(db, { phone, email }, excludeId = null) {
   return rows[0] ? rows[0].id : null;
 }
 
+const ACCESS_LEVELS = ['ninguno', 'admin'];
+
+/** Acceso al panel con Google. Se guarda aparte de savePerson para que una importación nunca lo borre. */
+async function setAccess(db, id, { googleEmail, accessLevel }) {
+  const email = googleEmail ? normalizeEmail(googleEmail) : null;
+  if (googleEmail && String(googleEmail).trim() && !email) return 'Correo de Google no válido.';
+  const level = ACCESS_LEVELS.includes(accessLevel) ? accessLevel : 'ninguno';
+  if (level !== 'ninguno' && !email) return 'Para dar acceso al panel hace falta el correo de Google.';
+  try {
+    await db.query('UPDATE people SET google_email = $2, access_level = $3 WHERE id = $1', [id, email, level]);
+  } catch (err) {
+    if (err.code === '23505') return 'Ese correo de Google ya está en otra persona.';
+    throw err;
+  }
+  return null;
+}
+
 /** Busca por nombre (sin distinguir mayúsculas); para filas sin contacto. */
 async function findByName(db, fullName) {
   const { rows } = await db.query('SELECT id FROM people WHERE lower(full_name) = lower($1) ORDER BY id LIMIT 1', [fullName]);
@@ -248,6 +265,8 @@ module.exports = {
   setPersonMinistries,
   findExisting,
   savePerson,
+  setAccess,
+  ACCESS_LEVELS,
   importPeople,
   addParticipant,
   syncEventMinistryMembers,

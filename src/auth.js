@@ -8,25 +8,30 @@ function sign(value, secret) {
   return crypto.createHmac('sha256', secret).update(value).digest('base64url');
 }
 
-function makeSession(secret, now = Date.now()) {
-  const payload = Buffer.from(JSON.stringify({ exp: now + MAX_AGE_MS })).toString('base64url');
+function makeSession(secret, now = Date.now(), extra = {}) {
+  const payload = Buffer.from(JSON.stringify({ ...extra, exp: now + MAX_AGE_MS })).toString('base64url');
   return `${payload}.${sign(payload, secret)}`;
 }
 
-function verifySession(cookieValue, secret, now = Date.now()) {
-  if (!cookieValue || typeof cookieValue !== 'string') return false;
+/** Devuelve los datos de la sesión (exp, role, pid) o null si la cookie no es válida. */
+function readSession(cookieValue, secret, now = Date.now()) {
+  if (!cookieValue || typeof cookieValue !== 'string') return null;
   const [payload, sig] = cookieValue.split('.');
-  if (!payload || !sig) return false;
+  if (!payload || !sig) return null;
   const expected = sign(payload, secret);
   const a = Buffer.from(sig);
   const b = Buffer.from(expected);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
   try {
-    const { exp } = JSON.parse(Buffer.from(payload, 'base64url').toString());
-    return typeof exp === 'number' && exp > now;
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
+    return typeof data.exp === 'number' && data.exp > now ? data : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+function verifySession(cookieValue, secret, now = Date.now()) {
+  return readSession(cookieValue, secret, now) !== null;
 }
 
 function parseCookies(header) {
@@ -65,4 +70,4 @@ function createLoginLimiter({ max = 8, windowMs = 15 * 60 * 1000 } = {}) {
   };
 }
 
-module.exports = { COOKIE, MAX_AGE_MS, makeSession, verifySession, parseCookies, passwordMatches, createLoginLimiter };
+module.exports = { COOKIE, MAX_AGE_MS, makeSession, readSession, verifySession, parseCookies, passwordMatches, createLoginLimiter };

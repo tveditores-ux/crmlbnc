@@ -179,3 +179,16 @@ Cómo se limita:
 - Mensajes de hasta 6 palabras que empiezan con "sí/no" siguen siendo confirmaciones del recordatorio, no consultas.
 - Con `DRY_RUN=true` las respuestas se registran como simuladas.
 - Fuera de las 24 h desde que la persona escribió, WhatsApp no permite texto libre: el asistente solo responde dentro de esa ventana.
+
+---
+
+## Acceso al panel con Google
+
+Además de la contraseña (`ADMIN_PASSWORD`, que queda como acceso de emergencia), se puede entrar con **Entrar con Google**.
+
+1. En [console.cloud.google.com](https://console.cloud.google.com) crea un proyecto y, en **APIs y servicios → Pantalla de consentimiento OAuth**, configúrala como *Externa* y agrega los correos de prueba.
+2. En **Credenciales → Crear credenciales → ID de cliente de OAuth** (aplicación web), agrega como URI de redirección autorizada `https://TU-DOMINIO/auth/google/callback`.
+3. En Railway → Variables: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` y `ADMIN_GOOGLE_EMAILS` (los correos de los primeros administradores).
+4. Para dar acceso a más personas: en su ficha (Personas → Editar) pon su **correo de Google** y el nivel **Administrador**.
+
+Solo entra quien tenga el correo en `ADMIN_GOOGLE_EMAILS` o en una ficha activa con acceso. Quitar el acceso es borrar el correo o poner "Sin acceso".

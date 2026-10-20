@@ -215,3 +215,87 @@ test('importar: personas sin contacto se permiten, sin consentimiento, solo con 
   assert.equal(sin.value.opt_in, false);
   assert.match(repo.validatePerson({ full_name: 'Sin Datos' }, '58').errors[0], /teléfono o correo/);
 });
+
+test('sesión: conserva rol y persona, y rechaza cookies alteradas o vencidas', () => {
+  const auth = require('../src/auth');
+  const secret = 'x'.repeat(40);
+  const c = auth.makeSession(secret, 1000, { role: 'admin', pid: 7 });
+  assert.deepEqual(
+    { role: auth.readSession(c, secret, 2000).role, pid: auth.readSession(c, secret, 2000).pid },
+    { role: 'admin', pid: 7 }
+  );
+  assert.equal(auth.verifySession(c, secret, 2000), true);
+  assert.equal(auth.readSession(c, 'otra-clave'.repeat(5), 2000), null);
+  assert.equal(auth.readSession(c.replace(/^./, 'A'), secret, 2000), null);
+  assert.equal(auth.readSession(c, secret, 1000 + auth.MAX_AGE_MS + 1), null);
+  assert.equal(auth.verifySession(auth.makeSession(secret, 1000), secret, 2000), true); // sesión por contraseña
+});
+
+test('google: valida audiencia, emisor, vencimiento y correo verificado', () => {
+  const { validateIdToken } = require('../src/routes/google');
+  const now = 1_000_000;
+  const ok = { aud: 'cid', iss: 'https://accounts.google.com', exp: now / 1000 + 60, email: 'a@b.com', email_verified: true };
+  assert.equal(validateIdToken(ok, 'cid', now), null);
+  assert.match(validateIdToken({ ...ok, aud: 'otro' }, 'cid', now), /esta aplicación/);
+  assert.match(validateIdToken({ ...ok, iss: 'https://evil.com' }, 'cid', now), /Emisor/);
+  assert.match(validateIdToken({ ...ok, exp: now / 1000 - 1 }, 'cid', now), /venció/);
+  assert.match(validateIdToken({ ...ok, email_verified: false }, 'cid', now), /verificado/);
+  assert.match(validateIdToken(null, 'cid', now), /no válida/);
+});
+
+test('acceso al panel: exige correo de Google válido y nunca queda sin correo', async () => {
+  const calls = [];
+  const db = { query: async (sql, params) => calls.push(params) };
+  assert.match(await repo.setAccess(db, 1, { googleEmail: 'no-es-correo', accessLevel: 'admin' }), /no válido/);
+  assert.match(await repo.setAccess(db, 1, { googleEmail: '', accessLevel: 'admin' }), /hace falta el correo/);
+  assert.equal(calls.length, 0);
+  assert.equal(await repo.setAccess(db, 1, { googleEmail: 'Pastor@Gmail.com', accessLevel: 'admin' }), null);
+  assert.deepEqual(calls[0], [1, 'pastor@gmail.com', 'admin']);
+  assert.equal(await repo.setAccess(db, 2, { googleEmail: '', accessLevel: 'cualquiera' }), null);
+  assert.deepEqual(calls[1], [2, null, 'ninguno']);
+});
+
+test('google: el callback rechaza state falso y solo abre sesión a administradores activos', async () => {
+  const express = require('express');
+  const { googleRouter } = require('../src/routes/google');
+  const auth = require('../src/auth');
+  const config = {
+    publicUrl: 'https://crm.test',
+    churchName: 'Iglesia',
+    sessionSecret: 's'.repeat(40),
+    google: { clientId: 'cid', clientSecret: 'secret' },
+  };
+  let person = { id: 5, full_name: 'Ana', access_level: 'admin', active: true };
+  const db = { query: async () => ({ rows: person ? [person] : [] }) };
+  const jwt = (claims) => `h.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.s`;
+  const claims = { aud: 'cid', iss: 'https://accounts.google.com', exp: Date.now() / 1000 + 300, email: 'ana@gmail.com', email_verified: true };
+  const fetchImpl = async () => ({ ok: true, json: async () => ({ id_token: jwt(claims) }) });
+  const app = express();
+  app.use(googleRouter({ db, config }, { fetchImpl }));
+  const server = app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    let r = await fetch(`${base}/auth/google/callback?code=abc&state=falso`, { redirect: 'manual' });
+    assert.equal(r.status, 403);
+    const start = await fetch(`${base}/auth/google`, { redirect: 'manual' });
+    const state = /oauth_state=([^;]+)/.exec(start.headers.get('set-cookie'))[1];
+    assert.match(start.headers.get('location'), /accounts\.google\.com/);
+    const go = () => fetch(`${base}/auth/google/callback?code=abc&state=${state}`, { redirect: 'manual', headers: { cookie: `oauth_state=${state}` } });
+    r = await go();
+    assert.equal(r.status, 303);
+    const cookie = /sesion=([^;]+)/.exec(r.headers.getSetCookie().join(';'))[1];
+    assert.deepEqual(
+      { role: auth.readSession(cookie, config.sessionSecret).role, pid: auth.readSession(cookie, config.sessionSecret).pid },
+      { role: 'admin', pid: 5 }
+    );
+    person = { ...person, access_level: 'ninguno' };
+    assert.equal((await go()).status, 403);
+    person = null;
+    assert.equal((await go()).status, 403);
+    config.google.adminEmails = ['ana@gmail.com'];
+    r = await go();
+    assert.equal(r.status, 303); // correo en la lista inicial entra sin ficha
+  } finally {
+    server.close();
+  }
+});

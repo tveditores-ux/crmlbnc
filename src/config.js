@@ -43,6 +43,17 @@ function loadConfig(env = process.env) {
       appSecret: env.WHATSAPP_APP_SECRET || '',
     },
 
+    // Acceso al panel con Google (opcional; sin esto solo funciona la contraseña)
+    google: {
+      clientId: env.GOOGLE_CLIENT_ID || '',
+      clientSecret: env.GOOGLE_CLIENT_SECRET || '',
+      // Correos que entran como administrador aunque no tengan ficha (arranque inicial).
+      adminEmails: String(env.ADMIN_GOOGLE_EMAILS || '')
+        .split(/[,;\s]+/)
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean),
+    },
+
     // Agente de WhatsApp (apagado por defecto)
     agent: {
       enabled: bool(env.AGENT_ENABLED, false),

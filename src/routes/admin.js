@@ -193,6 +193,13 @@ function adminRouter(ctx) {
           )
           .join('') || '<span class="muted">Aún no hay ministerios. Créalos en la pestaña Ministerios.</span>'
       }</div>
+      <label style="margin-top:14px">Acceso al panel (opcional)</label>
+      <div class="row">
+        <div><label>Correo de Google</label><input type="email" name="google_email" value="${esc(p.google_email || '')}" placeholder="persona@gmail.com"></div>
+        <div><label>Nivel</label><select name="access_level"><option value="ninguno">Sin acceso</option><option value="admin" ${
+          p.access_level === 'admin' ? 'selected' : ''
+        }>Administrador (ve y edita todo)</option></select></div>
+      </div>
       <label class="check" style="margin-top:14px"><input type="checkbox" name="opt_in" value="1" ${
         p.opt_in ? 'checked' : ''
       }> Aceptó recibir recordatorios por WhatsApp o correo</label>
@@ -240,6 +247,10 @@ function adminRouter(ctx) {
     }
     const pid = await repo.savePerson(db, id, value);
     await repo.setPersonMinistries(db, pid, minIds);
+    const accessErr = await repo.setAccess(db, pid, {
+      googleEmail: req.body.google_email,
+      accessLevel: req.body.access_level,
+    });
     // Si la persona entra a un ministerio, se suma a los próximos eventos de ese ministerio.
     const { rows } = await db.query(
       `SELECT DISTINCT em.event_id FROM event_ministries em JOIN events e ON e.id = em.event_id
@@ -247,6 +258,7 @@ function adminRouter(ctx) {
       [minIds]
     );
     if (value.active) for (const ev of rows) await repo.addParticipant(db, ev.event_id, pid);
+    if (accessErr) return go(res, `/personas/${pid}`, { err: `Se guardó la persona, pero el acceso no: ${accessErr}` });
     go(res, '/personas', { ok: `Guardado: ${value.full_name}` });
   }
 

@@ -3,6 +3,7 @@ const express = require('express');
 const { adminRouter } = require('./routes/admin');
 const { publicRouter } = require('./routes/public');
 const { conversationsRouter } = require('./routes/conversations');
+const { googleRouter } = require('./routes/google');
 const { layout } = require('./views/layout');
 const { esc } = require('./util');
 const auth = require('./auth');
@@ -57,9 +58,12 @@ function createApp(ctx) {
       body: `<form method="post" action="/entrar" class="card" style="max-width:380px;margin:40px auto">
         <h1>Entrar</h1><p class="sub">Panel de comunicación</p>
         ${error ? `<div class="flash err">${esc(error)}</div>` : ''}
+        ${config.google && config.google.clientId ? '<div class="actions" style="margin:0 0 14px"><a class="btn" href="/auth/google" style="width:100%;text-align:center;box-sizing:border-box">Entrar con Google</a></div><p class="muted" style="text-align:center;margin:0 0 10px">o con la contraseña de emergencia</p>' : ''}
         <label>Contraseña</label><input type="password" name="password" required autofocus autocomplete="current-password">
         <div class="actions"><button>Entrar</button></div></form>`,
     });
+
+  app.use(googleRouter(ctx));
 
   app.get('/entrar', (req, res) => res.send(loginPage()));
 
