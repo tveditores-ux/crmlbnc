@@ -47,6 +47,8 @@ function loadConfig(env = process.env) {
     google: {
       clientId: env.GOOGLE_CLIENT_ID || '',
       clientSecret: env.GOOGLE_CLIENT_SECRET || '',
+      // Debe coincidir exactamente con la URI registrada en Google; si falta, se calcula con la URL pública.
+      callbackUrl: env.GOOGLE_CALLBACK_URL || '',
       // Correos que entran como administrador aunque no tengan ficha (arranque inicial).
       adminEmails: String(env.ADMIN_GOOGLE_EMAILS || '')
         .split(/[,;\s]+/)

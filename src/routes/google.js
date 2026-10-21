@@ -30,7 +30,7 @@ function googleRouter(ctx, { fetchImpl = globalThis.fetch } = {}) {
   const { db, config } = ctx;
   const r = express.Router();
   const g = config.google;
-  const redirectUri = `${config.publicUrl}/auth/google/callback`;
+  const redirectUri = g.callbackUrl || `${config.publicUrl}/auth/google/callback`;
   const secure = config.publicUrl.startsWith('https://');
   const cookieFlags = `Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
 
