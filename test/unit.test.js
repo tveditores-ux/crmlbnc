@@ -313,3 +313,20 @@ test('asistencia: valida fecha, números y deja opcionales las tres asistencias'
   assert.equal(bad.errors.length, 5);
   assert.equal(parseAttendance({ service_date: '2025-02-31', sede: 'Agua Viva' }).errors.length, 1);
 });
+
+test('asistencia: el CSV de importación se convierte y valida fila por fila', () => {
+  const { recordsFromCsv, parseAttendance } = require('../src/routes/attendance');
+  const csv = 'fecha,sede,dia,horario,inicio,intermedio,final,invitados,conversiones,servidores,pastores,ninos,preadolescentes,adolescentes,novedades,otra\n' +
+    '2025-08-03,Las Mercedes,Domingo,10:00,70,91,97,2,2,29,3,5,0,0,"Dos, conversiones",x\n' +
+    '03/08/2025,Agua Viva,Domingo,10:00,1,1,1,0,0,0,0,0,0,0,\n';
+  const { records, errors, unknown } = recordsFromCsv(csv);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(unknown, ['otra']);
+  assert.equal(records.length, 2);
+  const a = parseAttendance(records[0].body);
+  assert.deepEqual(a.errors, []);
+  assert.equal(a.value.att_end, 97);
+  assert.equal(a.value.notes, 'Dos, conversiones');
+  assert.ok(parseAttendance(records[1].body).errors.length > 0); // fecha con formato incorrecto
+  assert.match(recordsFromCsv('nombre,telefono\nA,1').errors[0], /fecha/);
+});

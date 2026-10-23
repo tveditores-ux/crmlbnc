@@ -2,7 +2,8 @@
 const express = require('express');
 const { layout } = require('../views/layout');
 const { esc } = require('../util');
-const { toCsv } = require('../csv');
+const { toCsv, parseCsv, normalizeHeader } = require('../csv');
+const { tx } = require('../db');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -151,6 +152,7 @@ function attendanceRouter(ctx) {
         `<h1>Asistencia a los servicios</h1>
         <p class="sub">Registra cada servicio de celebración. ${rows.length} registros en esta vista.</p>
         <div class="actions"><a class="btn" href="/asistencia/nueva">Registrar servicio</a>
+          <a class="btn sec" href="/asistencia/importar">Importar desde hoja (CSV)</a>
           <a class="btn sec" href="/asistencia/exportar.csv${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}">Descargar lista</a></div>
         <form class="toolbar" method="get">
           <div><label>Sede</label><select name="sede"><option value="">Todas</option>${sedeOpts
@@ -249,7 +251,122 @@ function attendanceRouter(ctx) {
     })
   );
 
+  /* ------------------------- Importar desde hoja (CSV) ------------------------- */
+  function importPage(csvText, reportHtml) {
+    return `<h1>Importar asistencia</h1>
+    <p class="sub">Columnas: <span class="mono">${Object.keys(IMPORT_HEADERS).join(', ')}</span>. La fecha va como 2025-08-03.
+    Si ya existe un registro de esa sede, fecha y horario, se actualiza.</p>
+    <form method="post" class="card" id="imp">
+      <label>Archivo CSV</label>
+      <input type="file" accept=".csv,text/csv" id="file">
+      <label>O pega el contenido aquí</label>
+      <textarea name="csv" id="csv" style="min-height:180px" class="mono">${esc(csvText || '')}</textarea>
+      <div class="actions"><button name="accion" value="revisar" class="sec">Revisar sin guardar</button>
+      <button name="accion" value="importar">Importar</button><a class="btn sec" href="/asistencia">Cancelar</a></div>
+    </form>
+    ${reportHtml || ''}
+    <script>
+      document.getElementById('file').addEventListener('change', function(e){
+        var f = e.target.files[0]; if(!f) return;
+        var rd = new FileReader();
+        rd.onload = function(){ document.getElementById('csv').value = rd.result; };
+        rd.readAsText(f, 'UTF-8');
+      });
+    </script>`;
+  }
+
+  r.get('/asistencia/importar', (req, res) => page(req, res, 'Importar asistencia', importPage('', '')));
+
+  r.post(
+    '/asistencia/importar',
+    ah(async (req, res) => {
+      const text = String(req.body.csv || '');
+      const { records, errors: fileErrors, unknown } = recordsFromCsv(text);
+      const report = { created: 0, updated: 0, errors: fileErrors.map((e) => ({ line: '-', errors: [e] })) };
+      const prepared = [];
+      const seen = new Map();
+      for (const rec of records) {
+        const { value, errors } = parseAttendance(rec.body);
+        const key = `${value.service_date}|${value.sede.toLowerCase()}|${value.horario}`;
+        if (seen.has(key)) errors.push(`Repetido con la línea ${seen.get(key)}.`);
+        seen.set(key, rec.line);
+        if (errors.length) report.errors.push({ line: rec.line, errors });
+        prepared.push({ value, key });
+      }
+      let saved = false;
+      if (!report.errors.length) {
+        const existing = new Set(
+          (await db.query(`SELECT service_date::text || '|' || lower(sede) || '|' || horario AS k FROM service_attendance`)).rows.map((x) => x.k)
+        );
+        for (const p of prepared) (existing.has(p.key) ? report.updated++ : report.created++);
+        if (req.body.accion === 'importar') {
+          await tx(db, async (c) => {
+            for (const { value: v } of prepared) {
+              await c.query(
+                `INSERT INTO service_attendance (service_date, sede, day_name, horario, att_start, att_mid, att_end, guests, conversions, servers, pastors, kids, preteens, teens, notes)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+                 ON CONFLICT (service_date, lower(sede), horario) DO UPDATE SET
+                   day_name=EXCLUDED.day_name, att_start=EXCLUDED.att_start, att_mid=EXCLUDED.att_mid, att_end=EXCLUDED.att_end,
+                   guests=EXCLUDED.guests, conversions=EXCLUDED.conversions, servers=EXCLUDED.servers, pastors=EXCLUDED.pastors,
+                   kids=EXCLUDED.kids, preteens=EXCLUDED.preteens, teens=EXCLUDED.teens, notes=EXCLUDED.notes, updated_at=now()`,
+                [v.service_date, v.sede, v.day_name, v.horario, v.att_start, v.att_mid, v.att_end, v.guests, v.conversions, v.servers, v.pastors, v.kids, v.preteens, v.teens, v.notes]
+              );
+            }
+          });
+          saved = true;
+        }
+      }
+      if (saved) return go(res, '/asistencia', { ok: `Importación lista: ${report.created} nuevos, ${report.updated} actualizados.` });
+      const html = report.errors.length
+        ? `<div class="flash err"><strong>No se guardó nada.</strong> Corrige esto y vuelve a intentar:<br>${report.errors
+            .slice(0, 40)
+            .map((e) => `Línea ${esc(e.line)}: ${e.errors.map(esc).join(' ')}`)
+            .join('<br>')}${report.errors.length > 40 ? `<br>… y ${report.errors.length - 40} más.` : ''}</div>`
+        : `<div class="flash ok">Todo correcto: ${report.created} nuevos y ${report.updated} por actualizar. Pulsa "Importar" para guardar.${
+            unknown.length ? `<br>Columnas ignoradas: ${unknown.map(esc).join(', ')}.` : ''
+          }</div>`;
+      page(req, res, 'Importar asistencia', importPage(text, html));
+    })
+  );
+
   return r;
 }
 
-module.exports = { attendanceRouter, parseAttendance };
+const IMPORT_HEADERS = {
+  fecha: 'service_date',
+  sede: 'sede',
+  dia: 'day_name',
+  horario: 'horario',
+  inicio: 'att_start',
+  intermedio: 'att_mid',
+  final: 'att_end',
+  invitados: 'guests',
+  conversiones: 'conversions',
+  servidores: 'servers',
+  pastores: 'pastors',
+  ninos: 'kids',
+  preadolescentes: 'preteens',
+  adolescentes: 'teens',
+  novedades: 'notes',
+};
+
+/** Convierte el CSV en cuerpos de formulario que parseAttendance sabe validar. */
+function recordsFromCsv(text) {
+  const rows = parseCsv(text);
+  if (!rows.length) return { records: [], errors: ['El archivo está vacío.'], unknown: [] };
+  const headers = rows[0].map(normalizeHeader);
+  const keys = headers.map((h) => IMPORT_HEADERS[h] || null);
+  const unknown = rows[0].filter((_, i) => !keys[i] && headers[i]);
+  const errors = [];
+  if (!keys.includes('service_date') || !keys.includes('sede')) errors.push('Faltan las columnas "fecha" y "sede".');
+  const records = rows.slice(1).map((r, idx) => {
+    const body = {};
+    keys.forEach((k, i) => {
+      if (k) body[k] = (r[i] || '').trim();
+    });
+    return { line: idx + 2, body };
+  });
+  return { records, errors, unknown };
+}
+
+module.exports = { attendanceRouter, parseAttendance, recordsFromCsv };
