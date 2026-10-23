@@ -1,6 +1,7 @@
 'use strict';
 const express = require('express');
 const { layout } = require('../views/layout');
+const charts = require('../views/charts');
 const { esc } = require('../util');
 const { toCsv, parseCsv, normalizeHeader } = require('../csv');
 const { tx } = require('../db');
@@ -121,6 +122,39 @@ function attendanceRouter(ctx) {
           f.params
         )
       ).rows;
+      const monthly = (
+        await db.query(
+          `SELECT to_char(date_trunc('month', service_date), 'YYYY-MM') AS ym, sede,
+                  round(avg(att_end))::int AS prom, sum(guests)::int AS guests, sum(conversions)::int AS conv
+             FROM service_attendance${f.sql} GROUP BY 1, 2 ORDER BY 1`,
+          f.params
+        )
+      ).rows;
+      const byDay = (
+        await db.query(
+          `SELECT day_name AS label, round(avg(att_end))::int AS value FROM service_attendance${f.sql}${f.sql ? ' AND' : ' WHERE'} att_end IS NOT NULL AND day_name <> '' GROUP BY 1 ORDER BY 2 DESC`,
+          f.params
+        )
+      ).rows;
+      const months = [...new Set(monthly.map((m) => m.ym))];
+      const topSedes = [...monthly.reduce((acc, m) => acc.set(m.sede, (acc.get(m.sede) || 0) + 1), new Map())]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map((x) => x[0]);
+      const lineSeries = topSedes.map((sede) => ({
+        name: sede,
+        values: months.map((ym) => {
+          const m = monthly.find((x) => x.ym === ym && x.sede === sede);
+          return m ? m.prom : null;
+        }),
+      }));
+      const sumBy = (key) => months.map((ym) => ({ label: charts.monthLabel(ym), value: monthly.filter((x) => x.ym === ym).reduce((a, x) => a + x[key], 0) }));
+      const attCharts = `<div class="charts">
+          <div class="card"><h3>Asistencia promedio al final, por mes y sede</h3>${charts.lineChart(months.map(charts.monthLabel), lineSeries, { title: 'Asistencia promedio al final por mes y sede' })}</div>
+          <div class="card"><h3>Conversiones por mes</h3>${charts.barChart(sumBy('conv'), { title: 'Conversiones por mes', color: '#2f6b4f' })}</div>
+          <div class="card"><h3>Invitados por mes</h3>${charts.barChart(sumBy('guests'), { title: 'Invitados por mes', color: '#b4642a' })}</div>
+          <div class="card"><h3>Asistencia promedio según el día</h3>${charts.hBarChart(byDay, { title: 'Asistencia promedio al final según el día de reunión' })}</div>
+        </div>`;
       const sedesAll = (await db.query('SELECT DISTINCT sede FROM service_attendance ORDER BY sede')).rows.map((x) => x.sede);
       const sedeOpts = [...new Set([...SEDES, ...sedesAll])];
       const cell = (v) => (v === null || v === undefined ? '<span class="muted">—</span>' : v);
@@ -161,6 +195,7 @@ function attendanceRouter(ctx) {
           <div><label>Desde</label><input type="date" name="desde" value="${esc(req.query.desde || '')}"></div>
           <div><label>Hasta</label><input type="date" name="hasta" value="${esc(req.query.hasta || '')}"></div>
           <button class="sec">Filtrar</button></form>
+        ${attCharts}
         <h2>Resumen por sede</h2>
         <div class="table-scroll"><table><tr><th>Sede</th><th>Servicios</th><th>Promedio al final</th><th>Invitados</th><th>Conversiones</th></tr>${
           sumRows || '<tr><td colspan="5" class="muted">Sin datos.</td></tr>'

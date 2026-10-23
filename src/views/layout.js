@@ -1,6 +1,8 @@
 'use strict';
 const { esc } = require('../util');
 
+const { CSS: CHARTS_CSS } = require('./charts');
+
 const CSS = `
 :root{
   --bg:#f5f2eb;--surface:#fffdf8;--ink:#1f2a2e;--muted:#6b665c;--line:#e3ddcf;
@@ -57,6 +59,7 @@ pre{white-space:pre-wrap;background:#f0ebdf;padding:12px;border-radius:8px;font-
 .toolbar > *{flex:1 1 180px}
 .toolbar > button,.toolbar > .btn{flex:0 0 auto}
 @media (max-width:640px){nav a{margin-right:8px;font-size:13px}h1{font-size:21px}}
+${CHARTS_CSS}
 `;
 
 const NAV = [

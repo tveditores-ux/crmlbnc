@@ -1,6 +1,7 @@
 'use strict';
 const express = require('express');
 const { layout, STATUS_BADGE, NOTIF_BADGE } = require('../views/layout');
+const charts = require('../views/charts');
 const { esc } = require('../util');
 const { displayPhone } = require('../phone');
 const { formatEventDate, formatShort, localInputToDate, dateToLocalInput } = require('../time');
@@ -82,6 +83,43 @@ function adminRouter(ctx) {
           )}</div></td><td>${esc(f.channel)}</td><td class="mono">${esc(f.error || '')}</td></tr>`
         )
         .join('');
+      const [minChart, notifChart, attChart] = await Promise.all([
+        db.query(
+          `SELECT m.name AS label, count(pm.person_id)::int AS value FROM ministries m
+             LEFT JOIN person_ministries pm ON pm.ministry_id = m.id GROUP BY m.id ORDER BY value DESC, m.name LIMIT 12`
+        ),
+        db.query(
+          `SELECT status, count(*)::int AS n FROM notifications WHERE created_at > now() - interval '30 days' GROUP BY status`
+        ),
+        db.query(
+          `SELECT to_char(date_trunc('month', service_date), 'YYYY-MM') AS ym, round(avg(att_end))::int AS prom
+             FROM service_attendance WHERE att_end IS NOT NULL AND service_date >= (current_date - interval '6 months')
+            GROUP BY 1 ORDER BY 1`
+        ),
+      ]);
+      const notifBy = Object.fromEntries(notifChart.rows.map((x) => [x.status, x.n]));
+      const homeCharts = `<div class="charts">
+          <div class="card"><h3>Quién aceptó recibir mensajes</h3>${charts.donut(
+            [
+              { label: 'Aceptaron', value: c.optin, color: '#2f6b4f' },
+              { label: 'Sin aceptar', value: Number(c.people) - Number(c.optin), color: '#b4642a' },
+            ],
+            { title: 'Personas activas que aceptaron recibir mensajes' }
+          )}</div>
+          <div class="card"><h3>Mensajes de los últimos 30 días</h3>${charts.hBarChart(
+            [
+              { label: 'Enviados', value: notifBy.enviado || 0 },
+              { label: 'Simulados (modo prueba)', value: notifBy.simulado || 0 },
+              { label: 'Fallidos', value: notifBy.fallido || 0 },
+            ],
+            { title: 'Mensajes por estado en 30 días' }
+          )}</div>
+          <div class="card"><h3>Miembros por ministerio</h3>${charts.hBarChart(minChart.rows, { title: 'Miembros por ministerio' })}</div>
+          <div class="card"><h3>Asistencia promedio al final (6 meses)</h3>${charts.barChart(
+            attChart.rows.map((x) => ({ label: charts.monthLabel(x.ym), value: x.prom })),
+            { title: 'Asistencia promedio al final por mes', height: 200 }
+          )}</div>
+        </div>`;
       page(
         req,
         res,
@@ -94,6 +132,7 @@ function adminRouter(ctx) {
           <div class="card"><div class="stat">${c.ministries}</div><div class="stat-label">ministerios</div></div>
           <div class="card"><div class="stat">${c.sent7}</div><div class="stat-label">mensajes en 7 días</div></div>
         </div>
+        ${homeCharts}
         <h2>Próximos eventos</h2>
         ${
           evRows
@@ -133,6 +172,13 @@ function adminRouter(ctx) {
           GROUP BY p.id ORDER BY p.active DESC, p.full_name`,
         [q, m]
       );
+      const quality = (
+        await db.query(
+          `SELECT count(*)::int AS total, count(phone)::int AS phone, count(email)::int AS email,
+                  count(*) FILTER (WHERE opt_in)::int AS optin, count(*) FILTER (WHERE access_level <> 'ninguno')::int AS access
+             FROM people WHERE active`
+        )
+      ).rows[0];
       const list = rows
         .map(
           (p) => `<tr style="${p.active ? '' : 'opacity:.55'}">
@@ -155,6 +201,15 @@ function adminRouter(ctx) {
         <div class="actions"><a class="btn" href="/personas/nueva">Agregar persona</a>
           <a class="btn sec" href="/personas/importar">Importar desde hoja (CSV)</a>
           <a class="btn sec" href="/personas/exportar.csv">Descargar lista</a></div>
+        <div class="card"><h3 style="margin-top:0">Qué tan completa está la lista (personas activas: ${quality.total})</h3>${charts.hBarChart(
+          [
+            { label: 'Con WhatsApp', value: quality.phone },
+            { label: 'Con correo', value: quality.email },
+            { label: 'Aceptaron mensajes', value: quality.optin },
+            { label: 'Con acceso al panel', value: quality.access },
+          ],
+          { title: 'Datos completos entre las personas activas' }
+        )}</div>
         <form class="toolbar" method="get">
           <div><label>Buscar</label><input type="search" name="q" value="${esc(q)}" placeholder="Nombre, teléfono o correo"></div>
           <div><label>Ministerio</label><select name="m"><option value="">Todos</option>${ministries
@@ -430,6 +485,10 @@ function adminRouter(ctx) {
         <form method="post" action="/ministerios" class="card toolbar">
           <div><label>Nuevo ministerio</label><input type="text" name="name" required placeholder="Ej.: Diáconos"></div>
           <button>Crear</button></form>
+        <div class="card"><h3 style="margin-top:0">Miembros por ministerio</h3>${charts.hBarChart(
+          [...rows].sort((a, b) => b.members - a.members).map((m) => ({ label: m.name, value: m.members })),
+          { title: 'Miembros por ministerio' }
+        )}</div>
         <div class="table-scroll"><table><tr><th>Ministerio</th><th>Coordinador</th><th>Miembros</th></tr>${
           rows
             .map(
@@ -709,6 +768,14 @@ function adminRouter(ctx) {
           <div class="card"><div class="stat" style="color:var(--warn)">${tally.pendiente}</div><div class="stat-label">pendientes</div></div>
           <div class="card"><div class="stat" style="color:var(--bad)">${tally.no_puede}</div><div class="stat-label">no pueden</div></div>
         </div>
+        <div class="card">${charts.stackedBar(
+          [
+            { label: 'Confirmados', value: tally.confirmado, color: '#2f6b4f' },
+            { label: 'Pendientes', value: tally.pendiente, color: '#c9a24a' },
+            { label: 'No pueden', value: tally.no_puede, color: '#8a3b2e' },
+          ],
+          { title: 'Respuestas de los participantes' }
+        )}</div>
         <div class="actions">
           <a class="btn sec" href="/eventos/${id}/editar">Editar</a>
           <form class="inline" method="post" action="/eventos/${id}/sincronizar"><button class="sec">Actualizar miembros de ministerios</button></form>
@@ -826,12 +893,18 @@ function adminRouter(ctx) {
         ),
       ]);
       const delivery = { sent: 'enviado a Meta', delivered: 'entregado', read: 'leído', failed: 'falló' };
+      const deliv = (await db.query(`SELECT coalesce(delivery_status, status) AS s, count(*)::int AS n FROM notifications GROUP BY 1`)).rows;
+      const delivLabel = { ...delivery, enviado: 'Enviado', simulado: 'Simulado', fallido: 'Fallido', enviando: 'En proceso' };
       page(
         req,
         res,
         'Mensajes',
         '/mensajes',
         `<h1>Mensajes</h1><p class="sub">Historial de envíos y respuestas recibidas por WhatsApp.</p>
+        <div class="card"><h3 style="margin-top:0">Estado de todos los envíos</h3>${charts.hBarChart(
+          deliv.map((d) => ({ label: delivLabel[d.s] || d.s, value: d.n })),
+          { title: 'Cantidad de envíos por estado' }
+        )}</div>
         <h2>Enviados</h2>
         <div class="table-scroll"><table><tr><th>Cuándo</th><th>Persona</th><th>Evento</th><th>Tipo</th><th>Estado</th></tr>${
           out.rows
