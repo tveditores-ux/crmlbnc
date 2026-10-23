@@ -13,7 +13,7 @@ function reportRouter(ctx) {
   const r = express.Router();
 
   const delta = (now, before) => {
-    if (!before) return '';
+    if (!before || now === null || now === undefined) return '';
     const p = Math.round(((now - before) / before) * 100);
     const cls = p > 0 ? 'b-ok' : p < 0 ? 'b-bad' : 'b-muted';
     return `<span class="badge ${cls}" title="Frente al periodo anterior de igual duración">${p > 0 ? '+' : ''}${p}%</span>`;
@@ -23,7 +23,8 @@ function reportRouter(ctx) {
     '/reporte',
     ah(async (req, res) => {
       const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: config.timezone });
-      const desde = iso.test(req.query.desde || '') ? req.query.desde : `${todayIso.slice(0, 4)}-01-01`;
+      const first = (await db.query("SELECT to_char(min(service_date), 'YYYY-MM-DD') AS d FROM service_attendance")).rows[0];
+      const desde = iso.test(req.query.desde || '') ? req.query.desde : (first && first.d) || `${todayIso.slice(0, 4)}-01-01`;
       const hasta = iso.test(req.query.hasta || '') ? req.query.hasta : todayIso;
       const sede = String(req.query.sede || '').trim();
       const params = [desde, hasta];
@@ -79,6 +80,9 @@ function reportRouter(ctx) {
           <div><label>Desde</label><input type="date" name="desde" value="${esc(desde)}"></div>
           <div><label>Hasta</label><input type="date" name="hasta" value="${esc(hasta)}"></div>
           <button class="sec">Actualizar</button>
+          <a class="btn sec" href="/reporte">Todo el historial</a>
+          <a class="btn sec" href="/reporte?desde=${esc(todayIso.slice(0, 4))}-01-01">Este año</a>
+          <a class="btn sec" href="/reporte?desde=${esc(new Date(Date.now() - 90 * 86400000).toLocaleDateString('en-CA', { timeZone: config.timezone }))}">Últimos 90 días</a>
           <button type="button" onclick="window.print()">Imprimir o guardar PDF</button></form>
         <div class="grid">
           ${card(k.servicios, 'servicios registrados')}
