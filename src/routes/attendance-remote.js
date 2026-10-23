@@ -13,8 +13,10 @@ const REMOTE_CSS = `<style>
 .remote label{font-weight:600;margin-top:14px;display:block}
 .remote input,.remote select,.remote textarea{font-size:20px;padding:12px;width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:10px;background:#fff}
 .remote textarea{font-size:16px;min-height:90px}
-.remote .pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.remote .triple{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.remote .pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.remote .triple{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.remote .pair>div,.remote .triple>div{min-width:0}
+.remote input[type=date],.remote input[type=time]{min-width:0;max-width:100%;font-size:18px;-webkit-appearance:none;appearance:none;min-height:54px}
 .remote .triple label,.remote .pair label{font-size:13px}
 .remote .quick{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .remote .quick button{flex:1 1 70px;font-size:16px;padding:10px 6px}
