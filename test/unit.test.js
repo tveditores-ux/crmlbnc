@@ -299,3 +299,17 @@ test('google: el callback rechaza state falso y solo abre sesión a administrado
     server.close();
   }
 });
+
+test('asistencia: valida fecha, números y deja opcionales las tres asistencias', () => {
+  const { parseAttendance } = require('../src/routes/attendance');
+  const ok = parseAttendance({ service_date: '2025-08-03', sede: ' Las  Mercedes ', day_name: 'Domingo', horario: '10:00', att_end: '97', guests: '2', conversions: '', kids: '5' });
+  assert.deepEqual(ok.errors, []);
+  assert.equal(ok.value.sede, 'Las Mercedes');
+  assert.equal(ok.value.att_start, null);
+  assert.equal(ok.value.att_end, 97);
+  assert.equal(ok.value.conversions, 0);
+  assert.equal(ok.value.kids, 5);
+  const bad = parseAttendance({ service_date: '03/08/2025', sede: '', horario: '10h', att_end: '-3', guests: 'X' });
+  assert.equal(bad.errors.length, 5);
+  assert.equal(parseAttendance({ service_date: '2025-02-31', sede: 'Agua Viva' }).errors.length, 1);
+});
