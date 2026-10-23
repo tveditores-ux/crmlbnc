@@ -78,3 +78,39 @@ test('la página de asistencia se dibuja completa con gráficas', async () => {
     server.close();
   }
 });
+
+test('el reporte se dibuja con indicadores y todas sus gráficas', async () => {
+  const express = require('express');
+  const { reportRouter } = require('../src/routes/report');
+  const db = {
+    async query(sql) {
+      if (/count\(\*\)::int AS servicios/.test(sql)) return { rows: [{ servicios: 203, prom: 54, maximo: 218, conv: 40, invitados: 90, servidores: 20 }] };
+      if (/AS prom, coalesce\(sum\(conversions\),0\)::int AS conv, coalesce\(sum\(guests\)/.test(sql)) return { rows: [{ prom: 50, conv: 30, invitados: 100 }] };
+      if (/date_trunc\('week'/.test(sql)) return { rows: [{ label: '01/01', wk: new Date(), value: 30 }, { label: '08/01', wk: new Date(), value: 45 }] };
+      if (/GROUP BY 1 ORDER BY 2 DESC/.test(sql)) return { rows: [{ label: 'Las Mercedes', value: 76 }, { label: 'Agua Viva', value: 33 }] };
+      if (/AS label, round\(avg\(att_end\)\)::int AS value FROM service_attendance WHERE .* horario/.test(sql)) return { rows: [{ label: '10:00', value: 70 }] };
+      if (/date_trunc\('month'/.test(sql)) return { rows: [{ ym: '2025-08', conv: 3, guests: 5 }] };
+      if (/AS inicio/.test(sql)) return { rows: [{ inicio: 30, medio: 45, final: 54 }] };
+      if (/AS servidores, round\(avg\(pastors\)/.test(sql)) return { rows: [{ servidores: 20.5, pastores: 3, ninos: 9, preadolescentes: 1, adolescentes: 6 }] };
+      if (/ORDER BY att_end DESC/.test(sql)) return { rows: [{ label: '05/10/25 · Las Mercedes 10:00', value: 162 }] };
+      if (/SELECT DISTINCT sede/.test(sql)) return { rows: [{ sede: 'Las Mercedes' }] };
+      if (/FROM people WHERE active/.test(sql)) return { rows: [{ total: 181, phone: 90, email: 5, optin: 0 }] };
+      if (/att_end = \$/.test(sql)) return { rows: [{ d: '05/10/2025', sede: 'Las Mercedes', horario: '10:00' }] };
+      return { rows: [{}] };
+    },
+  };
+  const app = express();
+  app.use(reportRouter({ db, config: { churchName: 'Iglesia', timezone: 'America/Caracas', dryRun: false } }));
+  const server = app.listen(0);
+  try {
+    const r = await fetch(`http://127.0.0.1:${server.address().port}/reporte?desde=2025-01-01&hasta=2025-10-31`);
+    const html = await r.text();
+    assert.equal(r.status, 200);
+    assert.match(html, />203</);
+    assert.match(html, /\+8%/); // 54 frente a 50
+    assert.ok((html.match(/<svg/g) || []).length >= 9);
+    assert.match(html, /Imprimir o guardar PDF/);
+  } finally {
+    server.close();
+  }
+});

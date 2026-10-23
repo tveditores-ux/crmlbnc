@@ -69,6 +69,7 @@ const NAV = [
   ['/ministerios', 'Ministerios'],
   ['/mensajes', 'Mensajes'],
   ['/asistencia', 'Asistencia'],
+  ['/reporte', 'Reporte'],
   ['/conversaciones', 'Conversaciones'],
   ['/pruebas', 'Pruebas'],
 ];

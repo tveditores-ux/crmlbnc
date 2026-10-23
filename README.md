@@ -192,3 +192,11 @@ Además de la contraseña (`ADMIN_PASSWORD`, que queda como acceso de emergencia
 4. Para dar acceso a más personas: en su ficha (Personas → Editar) pon su **correo de Google** y el nivel **Administrador**.
 
 Solo entra quien tenga el correo en `ADMIN_GOOGLE_EMAILS` o en una ficha activa con acceso. Quitar el acceso es borrar el correo o poner "Sin acceso".
+
+---
+
+## Asistencia, reporte y registro desde el teléfono
+
+- **Asistencia** (menú): registro de cada servicio por sede y horario, con resumen, gráficas, importación desde CSV y descarga.
+- **Reporte** (menú): indicadores y gráficas del periodo que elijas, con comparación contra el periodo anterior. Se puede imprimir o guardar como PDF.
+- **Registrar desde el teléfono**: en Asistencia → *Registrar desde el teléfono* se crean enlaces secretos, uno por sede. Quien tenga el enlace abre un formulario sencillo en el celular, sin contraseña, y al enviar el servicio queda guardado en el CRM. Reglas: la sede la fija el enlace, no se aceptan fechas futuras ni de hace más de 60 días, hay un máximo de 40 envíos por hora por conexión, y un enlace se puede desactivar en cualquier momento. Si se vuelve a enviar el mismo horario de la misma fecha y sede, el registro se corrige.

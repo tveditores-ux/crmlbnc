@@ -1,6 +1,8 @@
 'use strict';
 const express = require('express');
+const crypto = require('crypto');
 const { layout } = require('../views/layout');
+const { formatShort } = require('../time');
 const charts = require('../views/charts');
 const { esc } = require('../util');
 const { toCsv, parseCsv, normalizeHeader } = require('../csv');
@@ -186,6 +188,7 @@ function attendanceRouter(ctx) {
         `<h1>Asistencia a los servicios</h1>
         <p class="sub">Registra cada servicio de celebración. ${rows.length} registros en esta vista.</p>
         <div class="actions"><a class="btn" href="/asistencia/nueva">Registrar servicio</a>
+          <a class="btn sec" href="/asistencia/enlaces">Registrar desde el teléfono</a>
           <a class="btn sec" href="/asistencia/importar">Importar desde hoja (CSV)</a>
           <a class="btn sec" href="/asistencia/exportar.csv${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}">Descargar lista</a></div>
         <form class="toolbar" method="get">
@@ -283,6 +286,69 @@ function attendanceRouter(ctx) {
           ...rows.map((a) => [a.iso, a.sede, a.day_name, a.horario, a.att_start, a.att_mid, a.att_end, a.guests, a.conversions, a.servers, a.pastors, a.kids, a.preteens, a.teens, a.notes]),
         ])
       );
+    })
+  );
+
+  /* ------------------- Enlaces para registrar desde el teléfono ------------------- */
+  r.get(
+    '/asistencia/enlaces',
+    ah(async (req, res) => {
+      const links = (await db.query('SELECT * FROM attendance_links ORDER BY active DESC, id DESC')).rows;
+      const sedes = [...new Set([...SEDES, ...(await db.query('SELECT DISTINCT sede FROM service_attendance')).rows.map((x) => x.sede)])];
+      const rows = links
+        .map((l) => {
+          const url = `${config.publicUrl}/a/${l.token}`;
+          return `<tr style="${l.active ? '' : 'opacity:.55'}">
+            <td>${esc(l.sede || 'Cualquier sede')}<div class="muted">${esc(l.label)}</div></td>
+            <td><input type="text" readonly value="${esc(url)}" onclick="this.select()" style="font-size:12px"></td>
+            <td>${l.uses}<div class="muted">${l.last_used_at ? esc(formatShort(l.last_used_at, config.timezone)) : 'sin uso'}</div></td>
+            <td style="white-space:nowrap"><button type="button" class="small sec" data-copy="${esc(url)}">Copiar</button>
+              <form class="inline" method="post" action="/asistencia/enlaces/${l.id}/${l.active ? 'desactivar' : 'activar'}">
+                <button class="small ${l.active ? 'danger' : 'sec'}">${l.active ? 'Desactivar' : 'Activar'}</button></form></td></tr>`;
+        })
+        .join('');
+      page(
+        req,
+        res,
+        'Enlaces de asistencia',
+        `<h1>Registrar asistencia desde el teléfono</h1>
+        <p class="sub">Cada enlace abre un formulario sencillo para el celular, sin contraseña. Quien lo reciba puede enviar la asistencia de su sede y llega directo a esta lista.
+          Quien tenga el enlace puede enviar datos: compártelo solo con quien registra y desactívalo si se pierde.</p>
+        <form method="post" action="/asistencia/enlaces" class="card toolbar">
+          <div><label>Sede</label><select name="sede"><option value="">Cualquier sede (la persona elige)</option>${sedes
+            .map((s) => `<option>${esc(s)}</option>`)
+            .join('')}</select></div>
+          <div><label>Nota (opcional)</label><input type="text" name="label" placeholder="Ej.: Encargado de conteo"></div>
+          <button>Crear enlace</button></form>
+        <div class="table-scroll"><table><tr><th>Sede</th><th>Enlace</th><th>Envíos</th><th></th></tr>${
+          rows || '<tr><td colspan="4" class="muted">Aún no hay enlaces.</td></tr>'
+        }</table></div>
+        <p class="muted" style="font-size:13px">En el teléfono: abre el enlace, y en el menú del navegador elige "Agregar a pantalla de inicio" para tenerlo como un icono.</p>
+        <script>
+          document.querySelectorAll('[data-copy]').forEach(function(b){
+            b.addEventListener('click', function(){
+              var t = b.getAttribute('data-copy');
+              (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function(){ b.textContent = '¡Copiado!'; }, function(){ b.closest('tr').querySelector('input').select(); b.textContent = 'Selecciona y copia'; });
+            });
+          });
+        </script>`
+      );
+    })
+  );
+  r.post(
+    '/asistencia/enlaces',
+    ah(async (req, res) => {
+      const sede = String(req.body.sede || '').trim() || null;
+      const label = String(req.body.label || '').trim().slice(0, 120);
+      await db.query('INSERT INTO attendance_links (token, sede, label) VALUES ($1,$2,$3)', [crypto.randomBytes(16).toString('base64url'), sede, label]);
+      go(res, '/asistencia/enlaces', { ok: 'Enlace creado. Cópialo y compártelo con quien registra.' });
+    })
+  );
+  r.post(
+    '/asistencia/enlaces/:id(\\d+)/:accion(activar|desactivar)',
+    ah(async (req, res) => {
+      await db.query('UPDATE attendance_links SET active = $2 WHERE id = $1', [+req.params.id, req.params.accion === 'activar']);
+      go(res, '/asistencia/enlaces', { ok: req.params.accion === 'activar' ? 'Enlace activado.' : 'Enlace desactivado.' });
     })
   );
 

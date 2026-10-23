@@ -5,6 +5,8 @@ const { publicRouter } = require('./routes/public');
 const { conversationsRouter } = require('./routes/conversations');
 const { googleRouter } = require('./routes/google');
 const { attendanceRouter } = require('./routes/attendance');
+const { reportRouter } = require('./routes/report');
+const { remoteRouter } = require('./routes/attendance-remote');
 const { layout } = require('./views/layout');
 const { esc } = require('./util');
 const auth = require('./auth');
@@ -65,6 +67,7 @@ function createApp(ctx) {
     });
 
   app.use(googleRouter(ctx));
+  app.use(remoteRouter(ctx)); // formulario del teléfono: protegido por enlace secreto, sin sesión
 
   app.get('/entrar', (req, res) => res.send(loginPage()));
 
@@ -101,6 +104,7 @@ function createApp(ctx) {
 
   app.use(conversationsRouter(ctx));
   app.use(attendanceRouter(ctx));
+  app.use(reportRouter(ctx));
   app.use(adminRouter(ctx));
 
   app.use((req, res) => res.status(404).send(layout({ title: 'No encontrado', config, body: '<h1>Página no encontrada</h1>' })));
