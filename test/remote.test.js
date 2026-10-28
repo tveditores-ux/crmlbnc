@@ -119,3 +119,41 @@ test('después de 40 envíos desde la misma conexión responde 429', async () =>
     server.close();
   }
 });
+
+test('importador: reemplazar borra dentro de la transacción, solo si se pide, y revisar no escribe', async () => {
+  const { attendanceRouter } = require('../src/routes/attendance');
+  const log = [];
+  const client = { query: async (sql, p) => (log.push(sql.trim().split(/\s+/).slice(0, 3).join(' ')), { rows: [] }), release() {} };
+  const db = {
+    async query(sql) {
+      if (/count\(\*\)::int AS n/.test(sql)) return { rows: [{ n: 203 }] };
+      if (/AS k FROM service_attendance/.test(sql)) return { rows: [{ k: '2025-08-03|las mercedes|10:00' }] };
+      return { rows: [] };
+    },
+    connect: async () => client,
+  };
+  const csv = 'fecha,sede,dia,horario,inicio,intermedio,final\n2025-08-03,Las Mercedes,Domingo,10:00,1,2,3\n2026-10-24,Agua Viva,Sábado,10:00,4,5,6\n';
+  const app = express();
+  app.use(express.urlencoded({ extended: false }));
+  app.use(attendanceRouter({ db, config }));
+  const server = app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const post = (fields) => fetch(`${base}/asistencia/importar`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(fields), redirect: 'manual' });
+  try {
+    let r = await post({ csv, accion: 'revisar', reemplazar: '1' });
+    assert.match(await r.text(), /se borrarán 203 registros actuales y se cargarán 2/);
+    assert.equal(log.length, 0); // revisar no toca nada
+    r = await post({ csv, accion: 'importar' });
+    assert.equal(r.status, 303);
+    assert.ok(!log.some((l) => /^DELETE/.test(l)));
+    assert.equal(log.filter((l) => /^INSERT/.test(l)).length, 2);
+    log.length = 0;
+    r = await post({ csv, accion: 'importar', reemplazar: '1' });
+    assert.equal(r.status, 303);
+    assert.deepEqual(log.slice(0, 2), ['BEGIN', 'DELETE FROM service_attendance']);
+    assert.equal(log[log.length - 1], 'COMMIT');
+    assert.match(decodeURIComponent(r.headers.get('location').replace(/+/g, ' ')), /se quitaron 203 registros y se cargaron 2/);
+  } finally {
+    server.close();
+  }
+});

@@ -7,11 +7,12 @@ const charts = require('../views/charts');
 const { esc } = require('../util');
 const { toCsv, parseCsv, normalizeHeader } = require('../csv');
 const { tx } = require('../db');
+const { dayNameFor } = require('../attendance-store');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 const SEDES = ['Agua Viva', 'Las Mercedes', 'Nuarito'];
-const DAYS = ['Domingo', 'Martes', 'Miércoles', 'Otro'];
+const DAYS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Otro'];
 const COUNT_FIELDS = [
   ['att_start', 'Asistencia al inicio'],
   ['att_mid', 'Asistencia en el intermedio'],
@@ -353,7 +354,7 @@ function attendanceRouter(ctx) {
   );
 
   /* ------------------------- Importar desde hoja (CSV) ------------------------- */
-  function importPage(csvText, reportHtml) {
+  function importPage(csvText, reportHtml, replace = false) {
     return `<h1>Importar asistencia</h1>
     <p class="sub">Columnas: <span class="mono">${Object.keys(IMPORT_HEADERS).join(', ')}</span>. La fecha va como 2025-08-03.
     Si ya existe un registro de esa sede, fecha y horario, se actualiza.</p>
@@ -362,8 +363,10 @@ function attendanceRouter(ctx) {
       <input type="file" accept=".csv,text/csv" id="file">
       <label>O pega el contenido aquí</label>
       <textarea name="csv" id="csv" style="min-height:180px" class="mono">${esc(csvText || '')}</textarea>
+      <label class="check" style="margin-top:12px"><input type="checkbox" id="rep" name="reemplazar" value="1" ${replace ? 'checked' : ''}>
+        Reemplazar el historial: borrar los registros actuales antes de cargar este archivo (no toca lo enviado desde el teléfono)</label>
       <div class="actions"><button name="accion" value="revisar" class="sec">Revisar sin guardar</button>
-      <button name="accion" value="importar">Importar</button><a class="btn sec" href="/asistencia">Cancelar</a></div>
+      <button name="accion" value="importar" onclick="if(document.getElementById('rep').checked && !confirm('Se borrarán los registros de asistencia actuales y se cargarán los de este archivo. No se puede deshacer. ¿Continuar?')) return false;">Importar</button><a class="btn sec" href="/asistencia">Cancelar</a></div>
     </form>
     ${reportHtml || ''}
     <script>
@@ -382,12 +385,14 @@ function attendanceRouter(ctx) {
     '/asistencia/importar',
     ah(async (req, res) => {
       const text = String(req.body.csv || '');
+      const replace = req.body.reemplazar === '1';
       const { records, errors: fileErrors, unknown } = recordsFromCsv(text);
       const report = { created: 0, updated: 0, errors: fileErrors.map((e) => ({ line: '-', errors: [e] })) };
       const prepared = [];
       const seen = new Map();
       for (const rec of records) {
         const { value, errors } = parseAttendance(rec.body);
+        if (!value.day_name && !errors.length) value.day_name = dayNameFor(value.service_date);
         const key = `${value.service_date}|${value.sede.toLowerCase()}|${value.horario}`;
         if (seen.has(key)) errors.push(`Repetido con la línea ${seen.get(key)}.`);
         seen.set(key, rec.line);
@@ -399,9 +404,15 @@ function attendanceRouter(ctx) {
         const existing = new Set(
           (await db.query(`SELECT service_date::text || '|' || lower(sede) || '|' || horario AS k FROM service_attendance`)).rows.map((x) => x.k)
         );
-        for (const p of prepared) (existing.has(p.key) ? report.updated++ : report.created++);
+        if (replace) {
+          report.removed = (await db.query(`SELECT count(*)::int AS n FROM service_attendance WHERE source <> 'telefono'`)).rows[0].n;
+          report.created = prepared.length;
+        } else {
+          for (const p of prepared) (existing.has(p.key) ? report.updated++ : report.created++);
+        }
         if (req.body.accion === 'importar') {
           await tx(db, async (c) => {
+            if (replace) await c.query(`DELETE FROM service_attendance WHERE source <> 'telefono'`);
             for (const { value: v } of prepared) {
               await c.query(
                 `INSERT INTO service_attendance (service_date, sede, day_name, horario, att_start, att_mid, att_end, guests, conversions, servers, pastors, kids, preteens, teens, notes)
@@ -417,16 +428,23 @@ function attendanceRouter(ctx) {
           saved = true;
         }
       }
-      if (saved) return go(res, '/asistencia', { ok: `Importación lista: ${report.created} nuevos, ${report.updated} actualizados.` });
+      if (saved) {
+        const msg = replace ? `Historial reemplazado: se quitaron ${report.removed} registros y se cargaron ${report.created}.` : `Importación lista: ${report.created} nuevos, ${report.updated} actualizados.`;
+        return go(res, '/asistencia', { ok: msg });
+      }
       const html = report.errors.length
         ? `<div class="flash err"><strong>No se guardó nada.</strong> Corrige esto y vuelve a intentar:<br>${report.errors
             .slice(0, 40)
             .map((e) => `Línea ${esc(e.line)}: ${e.errors.map(esc).join(' ')}`)
             .join('<br>')}${report.errors.length > 40 ? `<br>… y ${report.errors.length - 40} más.` : ''}</div>`
-        : `<div class="flash ok">Todo correcto: ${report.created} nuevos y ${report.updated} por actualizar. Pulsa "Importar" para guardar.${
+        : `<div class="flash ok">Todo correcto: ${
+            replace
+              ? `se borrarán ${report.removed} registros actuales y se cargarán ${report.created}`
+              : `${report.created} nuevos y ${report.updated} por actualizar`
+          }. Pulsa "Importar" para guardar.${
             unknown.length ? `<br>Columnas ignoradas: ${unknown.map(esc).join(', ')}.` : ''
           }</div>`;
-      page(req, res, 'Importar asistencia', importPage(text, html));
+      page(req, res, 'Importar asistencia', importPage(text, html, replace));
     })
   );
 
