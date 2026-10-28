@@ -26,3 +26,12 @@ Recordatorios y confirmaciones por WhatsApp y correo. Node 22, Express, PostgreS
 - Apagado por defecto (`AGENT_ENABLED`). Solo temas de congregación y grupos de cuidado; todo lo demás se escala a un líder/pastor.
 - Nunca darle al modelo datos de otras personas. Las crisis se responden con texto fijo, sin modelo.
 - Cualquier cambio al prompt o a los filtros debe pasar por el subagente `safety-reviewer` y mantener `test/agent.test.js` en verde.
+
+## Consolidación y Nueva Vida (`src/consolidation/`, `src/nuevavida/`)
+- Seguimiento de nuevos creyentes: decisión, llamada (estándar del ministerio: dentro de las 48 horas), reunión de Nueva Vida, Primeros Pasos, bautismo, grupo de cuidado y riel.
+- Registrar a alguien en consolidación o en Nueva Vida **nunca** cambia su `opt_in`. Las personas nuevas se crean con `opt_in = FALSE`.
+- Unión de personas: el teléfono normalizado (`normalizePhone`) es la clave. Un nombre parecido solo es una sugerencia y siempre se confirma a mano; nunca se une ni se duplica solo.
+- Las personas de listas viejas se conectan como **históricas** (`consolidation.historical`): no cuentan en el embudo ni en la retención salvo que se pida.
+- Datos sensibles (direcciones, edades, menores, notas de llamadas): solo en la ficha, nunca en listas ni en CSV descargables. Hoy solo los ve el nivel administrador.
+- Los archivos con datos reales de personas **nunca** se suben al repo (es público). Las pruebas usan datos inventados.
+- Pruebas con base real: `npm install --no-save @electric-sql/pglite` y `npm test` (o `DATABASE_URL_TEST` en CI). Sin ellas, esas pruebas se omiten.
