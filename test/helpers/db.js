@@ -14,11 +14,25 @@ async function openTestDb() {
   const url = process.env.DATABASE_URL_TEST;
 
   if (url) {
+    // Cada prueba usa su propio esquema, para que varios archivos puedan correr a la vez sin pisarse
+    // (integration.test.js recrea "public"; esto no lo toca).
+    const { Pool } = require('pg');
     const { createPool, migrate } = require('../../src/db');
-    const pool = createPool(url);
-    await pool.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+    const schema = `t_${process.pid}_${Math.random().toString(36).slice(2, 8)}`;
+    const admin = new Pool({ connectionString: url, max: 1 });
+    await admin.query(`CREATE SCHEMA ${schema}`);
+    const sep = url.includes('?') ? '&' : '?';
+    const pool = createPool(`${url}${sep}options=${encodeURIComponent(`-c search_path=${schema}`)}`);
     await migrate(pool);
-    return { db: pool, close: () => pool.end(), engine: 'postgres' };
+    return {
+      db: pool,
+      engine: 'postgres',
+      close: async () => {
+        await pool.end();
+        await admin.query(`DROP SCHEMA ${schema} CASCADE`);
+        await admin.end();
+      },
+    };
   }
 
   let PGlite;

@@ -231,3 +231,33 @@ test('responsables: salen del ministerio Nueva Vida y se encuentran por nombre',
     assert.equal(store.matchResponsible('', vols), null);
   });
 });
+
+test('ficha: get, llamadas, historial, datos editables y borrado (sin tocar a la persona)', async (t) => {
+  await withDb(t, async (db) => {
+    const a = await person(db, 'Persona Siete', '584140000007');
+    const v = await person(db, 'Voluntaria Dos');
+    const { id } = await store.upsertConsolidation(db, a, { decision_date: '2026-10-05', sede: 'Las Mercedes', assigned_to: v, call_date: '2026-10-08' });
+    await store.logCall(db, id, { calledBy: v, result: 'no_contesto', note: 'Buzón' });
+    await store.logCall(db, id, { calledBy: v, result: 'contesto', note: 'Quedó en venir' });
+    const row = await store.get(db, id);
+    assert.equal(row.full_name, 'Persona Siete');
+    assert.equal(row.responsible_name, 'Voluntaria Dos');
+    assert.equal(row.decision_iso, '2026-10-05');
+    assert.equal(row.call_date_iso, '2026-10-08');
+    assert.equal(row.opt_in, false);
+    const calls = await store.callsOf(db, id);
+    assert.deepEqual(calls.map((c) => [c.result, c.by_name, c.note]), [['contesto', 'Voluntaria Dos', 'Quedó en venir'], ['no_contesto', 'Voluntaria Dos', 'Buzón']]);
+    assert.equal((await store.statusLogOf(db, id)).length, 1);
+    // la decisión no puede quedar después de una etapa ya marcada
+    assert.match(await store.updateData(db, id, { decisionDate: '2026-10-09', sede: 'x', invitedBy: '', assignedTo: v }), /Llamada de Nueva Vida/);
+    assert.equal(await store.updateData(db, id, { decisionDate: '2026-10-03', sede: 'Nuarito', invitedBy: 'Su tía', assignedTo: null, lastSeen: '2026-10-12' }), null);
+    const upd = await store.get(db, id);
+    assert.deepEqual([upd.decision_iso, upd.sede, upd.invited_by, upd.assigned_to, upd.seen_iso], ['2026-10-03', 'Nuarito', 'Su tía', null, '2026-10-12']);
+    const opts = await store.filterOptions(db);
+    assert.deepEqual([opts.sedes, opts.months], [['Nuarito'], ['2026-10']]);
+    await store.remove(db, id);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM consolidation')).rows[0].n, 0);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM consolidation_calls')).rows[0].n, 0);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM people WHERE id = $1', [a])).rows[0].n, 1);
+  });
+});

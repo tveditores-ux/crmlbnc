@@ -156,4 +156,66 @@ async function list(db, f = {}, limit = 500) {
   return rows;
 }
 
-module.exports = { nuevaVidaPeople, matchResponsible, upsertConsolidation, setStage, clearStage, setStatus, logCall, funnel, list, filterSql };
+/** Una consolidación con los datos de la persona y los nombres de los responsables de cada etapa. */
+async function get(db, id) {
+  const { rows } = await db.query(
+    `SELECT c.*, c.decision_date::text AS decision_iso, c.last_seen_date::text AS seen_iso,
+            p.full_name, p.phone, p.opt_in, r.full_name AS responsible_name,
+            (current_date - c.decision_date)::int AS days,
+            ${STAGES.filter((s) => s.by)
+              .map((s) => `(SELECT full_name FROM people WHERE id = c.${s.by}) AS ${s.by}_name, c.${s.date}::text AS ${s.date}_iso`)
+              .join(', ')}
+       FROM consolidation c JOIN people p ON p.id = c.person_id LEFT JOIN people r ON r.id = c.assigned_to WHERE c.id = $1`,
+    [id]
+  );
+  return rows[0] || null;
+}
+
+async function callsOf(db, id) {
+  return (
+    await db.query(
+      `SELECT k.id, k.result, k.note, k.called_at, p.full_name AS by_name
+         FROM consolidation_calls k LEFT JOIN people p ON p.id = k.called_by WHERE k.consolidation_id = $1 ORDER BY k.called_at DESC, k.id DESC`,
+      [id]
+    )
+  ).rows;
+}
+
+async function statusLogOf(db, id) {
+  return (await db.query(`SELECT status, reason, changed_on::text AS d FROM consolidation_status_log WHERE consolidation_id = $1 ORDER BY changed_on DESC, id DESC`, [id])).rows;
+}
+
+/** Datos generales editables. La decisión no puede quedar después de una etapa ya marcada. */
+async function updateData(db, id, { decisionDate, sede, invitedBy, assignedTo, lastSeen }) {
+  const cols = STAGES.filter((s) => s.by).map((s) => `${s.date}::text AS ${s.date}`).join(', ');
+  const c = (await db.query(`SELECT ${cols} FROM consolidation WHERE id = $1`, [id])).rows[0];
+  if (!c) return 'No existe esa consolidación.';
+  if (decisionDate) {
+    for (const s of STAGES.filter((x) => x.by)) {
+      const d = c[s.date];
+      if (d && decisionDate > d) return `La decisión no puede ser después de «${s.label}» (${d}).`;
+    }
+  }
+  await db.query(
+    `UPDATE consolidation SET decision_date = COALESCE($2::date, decision_date), sede = $3, invited_by = $4, assigned_to = $5,
+            last_seen_date = $6, updated_at = now() WHERE id = $1`,
+    [id, decisionDate || null, String(sede || '').trim().slice(0, 80), String(invitedBy || '').trim().slice(0, 120), assignedTo || null, lastSeen || null]
+  );
+  return null;
+}
+
+async function remove(db, id) {
+  await db.query('DELETE FROM consolidation WHERE id = $1', [id]);
+}
+
+/** Valores para los filtros del tablero. */
+async function filterOptions(db) {
+  const sedes = (await db.query(`SELECT DISTINCT sede FROM consolidation WHERE sede <> '' ORDER BY sede`)).rows.map((r) => r.sede);
+  const months = (await db.query(`SELECT DISTINCT to_char(decision_date, 'YYYY-MM') AS m FROM consolidation ORDER BY m DESC`)).rows.map((r) => r.m);
+  const responsibles = (
+    await db.query(`SELECT DISTINCT p.id, p.full_name FROM consolidation c JOIN people p ON p.id = c.assigned_to ORDER BY p.full_name`)
+  ).rows;
+  return { sedes, months, responsibles };
+}
+
+module.exports = { nuevaVidaPeople, matchResponsible, upsertConsolidation, setStage, clearStage, setStatus, logCall, funnel, list, filterSql, get, callsOf, statusLogOf, updateData, remove, filterOptions };
