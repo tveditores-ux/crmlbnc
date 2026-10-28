@@ -11,7 +11,8 @@ const { dayNameFor } = require('../attendance-store');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
-const SEDES = ['Agua Viva', 'Las Mercedes', 'Nuarito'];
+// Sedes que hoy registran asistencia. Agua Viva se unió a Las Mercedes en octubre de 2025; sigue en el historial.
+const SEDES = ['Las Mercedes', 'Nuarito'];
 const DAYS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Otro'];
 const COUNT_FIELDS = [
   ['att_start', 'Asistencia al inicio'],
@@ -209,7 +210,15 @@ function attendanceRouter(ctx) {
         <div class="table-scroll"><table><tr><th>Fecha</th><th>Sede</th><th>Inicio / medio / final</th><th>Invitados</th><th>Conversiones</th><th>Servidores</th><th>Pastores</th><th>Niños / pre / adolesc.</th><th>Novedades</th><th></th></tr>${
           list || '<tr><td colspan="10" class="muted">Aún no hay registros.</td></tr>'
         }</table></div>
-        <div class="card" style="border-color:var(--bad);margin-top:28px">
+        <div class="card" style="margin-top:28px">
+          <h3 style="margin-top:0">Unificar sedes</h3>
+          <p class="muted" style="margin-top:0">Pasa todos los registros de una sede a otra, por ejemplo cuando dos sedes se unen. Se detiene si algún registro coincide en fecha y horario.</p>
+          <form method="post" action="/asistencia/unificar-sedes" class="toolbar" onsubmit="return confirm('Se cambiará la sede de todos esos registros. ¿Continuar?')">
+            <div><label>Pasar los registros de</label><select name="origen">${sedeOpts.map((x) => `<option ${x === 'Las Mercedes, Agua Viva' ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></div>
+            <div><label>a la sede</label><input type="text" name="destino" value="Las Mercedes" required></div>
+            <button class="sec">Unificar</button></form>
+        </div>
+        <div class="card" style="border-color:var(--bad);margin-top:16px">
           <h3 style="margin-top:0;color:var(--bad)">Borrar todo (provisional)</h3>
           <p class="muted" style="margin-top:0">Elimina <strong>todos</strong> los registros de asistencia, incluidos los enviados desde el teléfono. No se puede deshacer.
             Descarga la lista antes si quieres un respaldo. Este botón es temporal.</p>
@@ -218,6 +227,33 @@ function attendanceRouter(ctx) {
             <button class="danger">Borrar todo</button></form>
         </div>`
       );
+    })
+  );
+
+  // Unificar sedes: pasa todos los registros de una sede a otra (por ejemplo, tras una fusión). Se aborta si chocan fecha y horario.
+  r.post(
+    '/asistencia/unificar-sedes',
+    ah(async (req, res) => {
+      const origen = String(req.body.origen || '').trim();
+      const destino = String(req.body.destino || '').trim().replace(/s+/g, ' ');
+      if (!origen || !destino || origen.toLowerCase() === destino.toLowerCase()) {
+        return go(res, '/asistencia', { err: 'Elige una sede de origen y escribe otra distinta como destino.' });
+      }
+      const out = await tx(db, async (c) => {
+        const clash = (
+          await c.query(
+            `SELECT count(*)::int AS n FROM service_attendance a JOIN service_attendance b
+               ON a.service_date = b.service_date AND a.horario = b.horario
+              WHERE lower(a.sede) = lower($1) AND lower(b.sede) = lower($2)`,
+            [origen, destino]
+          )
+        ).rows[0].n;
+        if (clash) return { clash };
+        const { rowCount } = await c.query('UPDATE service_attendance SET sede = $2, updated_at = now() WHERE lower(sede) = lower($1)', [origen, destino]);
+        return { moved: rowCount };
+      });
+      if (out.clash) return go(res, '/asistencia', { err: `No se unificó nada: ${out.clash} registros de «${origen}» coinciden en fecha y horario con «${destino}». Revísalos antes.` });
+      go(res, '/asistencia', { ok: `Listo: ${out.moved} registros de «${origen}» ahora son de «${destino}».` });
     })
   );
 
@@ -316,7 +352,7 @@ function attendanceRouter(ctx) {
     '/asistencia/enlaces',
     ah(async (req, res) => {
       const links = (await db.query('SELECT * FROM attendance_links ORDER BY active DESC, id DESC')).rows;
-      const sedes = [...new Set([...SEDES, ...(await db.query('SELECT DISTINCT sede FROM service_attendance')).rows.map((x) => x.sede)])];
+      const sedes = [...SEDES, 'Todas las sedes'];
       const rows = links
         .map((l) => {
           const url = `${config.publicUrl}/a/${l.token}`;

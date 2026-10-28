@@ -181,3 +181,36 @@ test('borrar todo (provisional): exige escribir BORRAR y vacía la tabla solo en
     server.close();
   }
 });
+
+test('unificar sedes: se detiene si chocan fecha y horario y mueve los registros si no', async () => {
+  const { attendanceRouter } = require('../src/routes/attendance');
+  let clashes = 3;
+  const log = [];
+  const client = {
+    query: async (sql, p) => {
+      log.push(sql.trim().split(/\s+/).slice(0, 2).join(' '));
+      if (/count\(\*\)::int AS n/.test(sql)) return { rows: [{ n: clashes }] };
+      if (/^\s*UPDATE service_attendance SET sede/.test(sql)) return { rowCount: 218, rows: [] };
+      return { rows: [] };
+    },
+    release() {},
+  };
+  const db = { connect: async () => client, query: async () => ({ rows: [] }) };
+  const app = express();
+  app.use(express.urlencoded({ extended: false }));
+  app.use(attendanceRouter({ db, config }));
+  const server = app.listen(0);
+  const post = (fields) => fetch(`http://127.0.0.1:${server.address().port}/asistencia/unificar-sedes`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(fields), redirect: 'manual' });
+  const loc = (r) => decodeURIComponent(r.headers.get('location').replaceAll('+', ' '));
+  try {
+    assert.match(loc(await post({ origen: 'Las Mercedes, Agua Viva', destino: 'las mercedes ' })), /err=.*3 registros/);
+    assert.ok(!log.includes('UPDATE service_attendance'));
+    assert.match(loc(await post({ origen: 'A', destino: 'a' })), /err=Elige/); // mismo nombre
+    clashes = 0;
+    log.length = 0;
+    assert.match(loc(await post({ origen: 'Las Mercedes, Agua Viva', destino: 'Las Mercedes' })), /ok=Listo: 218 registros/);
+    assert.deepEqual([log[0], log[log.length - 1]], ['BEGIN', 'COMMIT']);
+  } finally {
+    server.close();
+  }
+});

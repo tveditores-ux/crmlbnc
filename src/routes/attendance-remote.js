@@ -44,9 +44,9 @@ function remoteRouter(ctx) {
   const invalid = () =>
     shell('Enlace no válido', '<div class="card"><h1>Enlace no válido</h1><p class="muted">Este enlace ya no está activo. Pídele uno nuevo a quien administra el panel.</p></div>', 404);
 
+  // Solo las sedes que hoy registran asistencia (Agua Viva se unió a Las Mercedes).
   async function sedeOptions() {
-    const rows = (await db.query('SELECT DISTINCT sede FROM service_attendance ORDER BY sede')).rows.map((x) => x.sede);
-    return [...new Set(['Agua Viva', 'Las Mercedes', 'Nuarito', ...rows])];
+    return ['Las Mercedes', 'Nuarito', 'Todas las sedes'];
   }
 
   async function form(link, v = {}, errors = []) {
