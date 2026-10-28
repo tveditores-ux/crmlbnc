@@ -160,19 +160,20 @@ function adminRouter(ctx) {
   r.get(
     '/personas',
     ah(async (req, res) => {
-      const q = String(req.query.q || '').trim();
-      const m = parseInt(req.query.m, 10) || null;
+      const v = members.parseView(req.query);
       const ministries = await allMinistries();
-      const { rows } = await db.query(
-        `SELECT p.*, coalesce(array_agg(mi.name ORDER BY mi.name) FILTER (WHERE mi.id IS NOT NULL), '{}') AS mins
-           FROM people p
-           LEFT JOIN person_ministries pm ON pm.person_id = p.id
-           LEFT JOIN ministries mi ON mi.id = pm.ministry_id
-          WHERE ($1 = '' OR p.full_name ILIKE '%' || $1 || '%' OR p.phone LIKE '%' || $1 || '%' OR p.email ILIKE '%' || $1 || '%')
-            AND ($2::int IS NULL OR EXISTS (SELECT 1 FROM person_ministries x WHERE x.person_id = p.id AND x.ministry_id = $2))
-          GROUP BY p.id ORDER BY p.active DESC, p.full_name`,
-        [q, m]
-      );
+      const f = members.filterSql(v);
+      const [{ rows }, counts] = await Promise.all([
+        db.query(
+          `SELECT p.*, coalesce(array_agg(mi.name ORDER BY mi.name) FILTER (WHERE mi.id IS NOT NULL), '{}') AS mins
+             FROM people p
+             LEFT JOIN person_ministries pm ON pm.person_id = p.id
+             LEFT JOIN ministries mi ON mi.id = pm.ministry_id${f.sql}
+            GROUP BY p.id ORDER BY p.active DESC, p.full_name`,
+          f.params
+        ),
+        members.counts(db),
+      ]);
       const quality = (
         await db.query(
           `SELECT count(*)::int AS total, count(phone)::int AS phone, count(email)::int AS email,
@@ -180,29 +181,49 @@ function adminRouter(ctx) {
              FROM people WHERE active`
         )
       ).rows[0];
+      const TIPO_BADGE = { miembro: 'b-ok', amigo: 'b-warn' };
+      // Los filtros activos viajan con cada botón rápido, para volver a la misma vista.
+      const keep = `<input type="hidden" name="filtro" value="${esc(v.tipo)}"><input type="hidden" name="grupo" value="${esc(v.grupo)}"><input type="hidden" name="q" value="${esc(v.q)}"><input type="hidden" name="m" value="${v.m || ''}">`;
+      const quick = (p, tipo) =>
+        `<form class="inline" method="post" action="/personas/${p.id}/tipo">
+          <input type="hidden" name="tipo" value="${tipo}">${keep}
+          <button class="small ${p.membership === tipo ? '' : 'sec'}" ${p.membership === tipo ? 'aria-pressed="true"' : ''}>${esc(members.TIPOS[tipo])}</button></form>`;
       const list = rows
         .map(
           (p) => `<tr style="${p.active ? '' : 'opacity:.55'}">
         <td><a href="/personas/${p.id}">${esc(p.full_name)}</a>${p.role ? `<div class="muted">${esc(p.role)}</div>` : ''}</td>
         <td>${esc(displayPhone(p.phone))}<div class="muted">${esc(p.email || '')}</div></td>
         <td>${p.mins.map((n) => `<span class="chip">${esc(n)}</span>`).join('')}</td>
+        <td style="white-space:nowrap"><span class="badge ${TIPO_BADGE[p.membership] || 'b-muted'}">${esc(members.tipoLabel(p.membership))}</span></td>
+        <td>${p.in_official_group ? 'Sí' : 'No'}</td>
         <td>${CHANNEL_LABEL[p.preferred_channel]}</td>
         <td>${p.opt_in ? '<span class="badge b-ok">Sí</span>' : '<span class="badge b-bad">No</span>'}</td>
-        <td style="white-space:nowrap"><a class="btn sec small" href="/personas/${p.id}">Editar</a>
+        <td style="white-space:nowrap">${quick(p, 'miembro')} ${quick(p, 'amigo')} <a class="btn sec small" href="/personas/${p.id}">Editar</a>
           <form class="inline" method="post" action="/personas/${p.id}/eliminar" onsubmit="return confirm('¿Eliminar a ' + this.dataset.n + ' y su historial? Si solo dejó de servir, mejor edítala y desmarca Activo.')" data-n="${esc(p.full_name)}">
             <button class="danger small" title="Eliminar" aria-label="Eliminar ${esc(p.full_name)}">✕</button></form></td></tr>`
         )
         .join('');
+      const pills = Object.entries(members.FILTERS)
+        .map(([k, label]) => `<a class="btn ${v.tipo === k ? '' : 'sec'} small" href="/personas${esc(members.viewQuery({ ...v, tipo: k }))}">${esc(label)} <strong>${counts[k]}</strong></a>`)
+        .join(' ');
+      const filtered = v.tipo !== 'todos' || v.grupo !== 'todos' || v.q || v.m;
       page(
         req,
         res,
         'Personas',
         '/personas',
-        `<h1>Personas</h1><p class="sub">${rows.length} registradas. Solo reciben mensajes las activas que aceptaron.</p>
+        `<h1>Personas</h1><p class="sub">${filtered ? `${rows.length} con estos filtros (de ${counts.todos}).` : `${rows.length} registradas.`} Solo reciben mensajes las activas que aceptaron; ser miembro, amigo o estar en el grupo de WhatsApp no cuenta como aceptar.</p>
         <div class="actions"><a class="btn" href="/personas/nueva">Agregar persona</a>
           <a class="btn sec" href="/personas/importar">Importar desde hoja (CSV)</a>
+          <a class="btn sec" href="/personas/importar-grupo">Importar lista del grupo</a>
           <a class="btn sec" href="/personas/duplicados">Unir duplicados</a>
-          <a class="btn sec" href="/personas/exportar.csv">Descargar lista</a></div>
+          <a class="btn sec" href="/personas/exportar.csv${esc(members.viewQuery(v))}">Descargar lista${filtered ? ' (con estos filtros)' : ''}</a></div>
+        <div class="grid">
+          <div class="card"><div class="stat" style="color:var(--ok)">${counts.miembro}</div><div class="stat-label">miembros</div></div>
+          <div class="card"><div class="stat" style="color:var(--warn)">${counts.amigo}</div><div class="stat-label">amigos</div></div>
+          <div class="card"><div class="stat">${counts.sin}</div><div class="stat-label">por clasificar</div></div>
+          <div class="card"><div class="stat">${counts.grupo}</div><div class="stat-label">en el grupo oficial</div></div>
+        </div>
         <div class="card"><h3 style="margin-top:0">Qué tan completa está la lista (personas activas: ${quality.total})</h3>${charts.hBarChart(
           [
             { label: 'Con WhatsApp', value: quality.phone },
@@ -212,14 +233,21 @@ function adminRouter(ctx) {
           ],
           { title: 'Datos completos entre las personas activas' }
         )}</div>
-        <form class="toolbar" method="get">
-          <div><label>Buscar</label><input type="search" name="q" value="${esc(q)}" placeholder="Nombre, teléfono o correo"></div>
+        <div class="actions" style="margin-bottom:6px">${pills}</div>
+        <form class="toolbar" method="get" action="/personas">
+          <div><label>Buscar</label><input type="search" name="q" value="${esc(v.q)}" placeholder="Nombre, teléfono o correo"></div>
           <div><label>Ministerio</label><select name="m"><option value="">Todos</option>${ministries
-            .map((x) => `<option value="${x.id}" ${x.id === m ? 'selected' : ''}>${esc(x.name)}</option>`)
+            .map((x) => `<option value="${x.id}" ${x.id === v.m ? 'selected' : ''}>${esc(x.name)}</option>`)
+            .join('')}</select></div>
+          <div><label>Tipo</label><select name="tipo">${Object.entries(members.FILTERS)
+            .map(([k, label]) => `<option value="${k}" ${v.tipo === k ? 'selected' : ''}>${esc(label)}</option>`)
+            .join('')}</select></div>
+          <div><label>Grupo oficial</label><select name="grupo">${Object.entries(members.GROUP_FILTERS)
+            .map(([k, label]) => `<option value="${k}" ${v.grupo === k ? 'selected' : ''}>${esc(label)}</option>`)
             .join('')}</select></div>
           <button class="sec">Filtrar</button></form>
-        <div class="table-scroll"><table><tr><th>Nombre</th><th>Contacto</th><th>Ministerios</th><th>Canal</th><th>Acepta</th><th></th></tr>${
-          list || '<tr><td colspan="6" class="muted">Sin resultados.</td></tr>'
+        <div class="table-scroll"><table><tr><th>Nombre</th><th>Contacto</th><th>Ministerios</th><th>Tipo</th><th>Grupo oficial</th><th>Canal</th><th>Acepta</th><th></th></tr>${
+          list || '<tr><td colspan="8" class="muted">Sin resultados.</td></tr>'
         }</table></div>`
       );
     })
@@ -254,6 +282,8 @@ function adminRouter(ctx) {
       <select name="membership" style="max-width:260px"><option value="">Por clasificar</option>${Object.entries(members.TIPOS)
         .map(([k, label]) => `<option value="${k}" ${p.membership === k ? 'selected' : ''}>${esc(label)}</option>`)
         .join('')}</select>
+      <input type="hidden" name="in_group_present" value="1">
+      <label class="check" style="margin-top:10px"><input type="checkbox" name="in_official_group" value="1" ${p.in_official_group ? 'checked' : ''}> Está en el grupo oficial de WhatsApp <span class="muted">(no significa que aceptó recibir recordatorios)</span></label>
       <label style="margin-top:14px">Acceso al panel (opcional)</label>
       <div class="row">
         <div><label>Correo de Google</label><input type="email" name="google_email" value="${esc(p.google_email || '')}" placeholder="persona@gmail.com"></div>
@@ -298,7 +328,7 @@ function adminRouter(ctx) {
         'Persona',
         '/personas',
         `<h1>${id ? 'Editar persona' : 'Nueva persona'}</h1>${personForm(
-          { ...value, phone_display: req.body.phone || '', email: req.body.email, membership: req.body.membership },
+          { ...value, phone_display: req.body.phone || '', email: req.body.email, membership: req.body.membership, in_official_group: req.body.in_official_group === '1' },
           ministries,
           minIds,
           id ? `/personas/${id}` : '/personas',
@@ -314,6 +344,7 @@ function adminRouter(ctx) {
     });
     // El tipo (miembro / amigo) se guarda aparte para que importar personas nunca lo borre.
     const tipoErr = req.body.membership === undefined ? null : await members.setMembership(db, pid, req.body.membership);
+    if (req.body.in_group_present === '1') await members.setOfficialGroup(db, pid, req.body.in_official_group === '1');
     // Si la persona entra a un ministerio, se suma a los próximos eventos de ese ministerio.
     const { rows } = await db.query(
       `SELECT DISTINCT em.event_id FROM event_ministries em JOIN events e ON e.id = em.event_id
@@ -390,17 +421,19 @@ function adminRouter(ctx) {
   r.get(
     '/personas/exportar.csv',
     ah(async (req, res) => {
+      const f = members.filterSql(members.parseView(req.query));
       const { rows } = await db.query(
         `SELECT p.*, coalesce(string_agg(mi.name, '; ' ORDER BY mi.name), '') AS mins
            FROM people p LEFT JOIN person_ministries pm ON pm.person_id = p.id
-           LEFT JOIN ministries mi ON mi.id = pm.ministry_id
-          GROUP BY p.id ORDER BY p.full_name`
+           LEFT JOIN ministries mi ON mi.id = pm.ministry_id${f.sql}
+          GROUP BY p.id ORDER BY p.full_name`,
+        f.params
       );
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', 'attachment; filename="personas.csv"');
       res.send(
         toCsv([
-          [...TEMPLATE_HEADERS, 'activo'],
+          [...TEMPLATE_HEADERS, 'activo', 'tipo', 'en_grupo_oficial'],
           ...rows.map((p) => [
             p.full_name,
             p.phone ? `+${p.phone}` : '',
@@ -410,6 +443,8 @@ function adminRouter(ctx) {
             p.opt_in ? 'si' : 'no',
             p.preferred_channel,
             p.active ? 'si' : 'no',
+            p.membership,
+            p.in_official_group ? 'si' : 'no',
           ]),
         ])
       );

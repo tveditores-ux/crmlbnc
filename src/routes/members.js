@@ -2,120 +2,48 @@
 const express = require('express');
 const { layout } = require('../views/layout');
 const { esc } = require('../util');
-const { displayPhone } = require('../phone');
-const { toCsv } = require('../csv');
 const members = require('../members');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
-const TIPO_BADGE = { miembro: 'b-ok', amigo: 'b-warn' };
 
-/** Pestaña "Miembros y amigos": clasificar a las personas y cargar la lista del grupo oficial de WhatsApp. */
+/**
+ * Miembros y amigos ya no es una pestaña aparte: es la misma tabla `people`, dentro de Personas.
+ * Este router conserva lo que no cabe en la lista de Personas:
+ *  - el cambio rápido de tipo (POST), con el que se clasifica desde la lista,
+ *  - la importación de la lista del grupo oficial de WhatsApp (/personas/importar-grupo),
+ *  - las redirecciones de /miembros, para no romper enlaces guardados.
+ */
 function membersRouter(ctx) {
   const { db, config } = ctx;
   const r = express.Router();
-  r.use('/miembros', (req, res, next) => {
+  r.use(['/miembros', '/personas/importar-grupo'], (req, res, next) => {
     res.setHeader('Cache-Control', 'no-store'); // datos personales
     next();
   });
-  const page = (req, res, title, body) => res.send(layout({ title, active: '/miembros', body, config, query: req.query }));
+  const page = (req, res, title, body) => res.send(layout({ title, active: '/personas', body, config, query: req.query }));
 
-  /** Filtro y búsqueda que se conservan al volver a la lista. Solo valores conocidos: nunca se copia una URL cruda. */
-  const view = (src) => ({
-    tipo: Object.hasOwn(members.FILTERS, src.tipo) && src.tipo !== 'todos' ? src.tipo : 'todos',
-    q: String(src.q || '').trim().slice(0, 80),
+  /* ------------------------- Redirecciones desde /miembros ------------------------- */
+  // 302 (temporal): si algún día cambia el destino, los navegadores no se quedan con el viejo.
+  const toPersonas = (path, extra) => (req, res) => res.redirect(302, `${path}${members.viewQuery(members.parseView(req.query), extra)}`);
+  r.get('/miembros', toPersonas('/personas'));
+  r.get('/miembros/exportar.csv', toPersonas('/personas/exportar.csv'));
+  r.get('/miembros/importar', (req, res) => res.redirect(302, '/personas/importar-grupo'));
+  r.post('/miembros/importar', (req, res) => res.redirect(307, '/personas/importar-grupo')); // 307 conserva el envío (por si había una pestaña abierta)
+
+  /* ------------------------- Cambio rápido de tipo ------------------------- */
+  const setTipo = ah(async (req, res) => {
+    const v = members.parseView({ tipo: req.body.filtro, grupo: req.body.grupo, q: req.body.q, m: req.body.m });
+    const back = (flash) => res.redirect(303, `/personas${members.viewQuery(v, flash)}`);
+    const tipo = String(req.body.tipo ?? '');
+    const err = await members.setMembership(db, +req.params.id, tipo);
+    if (err) return back({ err });
+    const { rows } = await db.query('SELECT full_name FROM people WHERE id = $1', [+req.params.id]);
+    back({ ok: `${rows[0].full_name}: ${members.tipoLabel(tipo)}` });
   });
-  const qs = (v, extra = {}) => {
-    const p = new URLSearchParams();
-    if (v.tipo !== 'todos') p.set('tipo', v.tipo);
-    if (v.q) p.set('q', v.q);
-    for (const [k, x] of Object.entries(extra)) p.set(k, x);
-    const s = p.toString();
-    return s ? `?${s}` : '';
-  };
-  const back = (res, v, flash) => res.redirect(303, `/miembros${qs(v, flash)}`);
+  r.post('/personas/:id(\\d{1,9})/tipo', setTipo);
+  r.post('/miembros/:id(\\d{1,9})/tipo', setTipo); // por si había una pestaña vieja abierta
 
-  /* ------------------------------ Lista ------------------------------ */
-  r.get(
-    '/miembros',
-    ah(async (req, res) => {
-      const v = view(req.query);
-      const [rows, c] = await Promise.all([members.list(db, v), members.counts(db)]);
-      const pills = Object.entries(members.FILTERS)
-        .map(([k, label]) => {
-          const n = c[k];
-          return `<a class="btn ${v.tipo === k ? '' : 'sec'} small" href="/miembros${qs({ tipo: k, q: v.q })}">${esc(label)} <strong>${n}</strong></a>`;
-        })
-        .join(' ');
-      const btn = (x, tipo) =>
-        `<form class="inline" method="post" action="/miembros/${x.id}/tipo">
-          <input type="hidden" name="tipo" value="${tipo}"><input type="hidden" name="filtro" value="${esc(v.tipo)}"><input type="hidden" name="q" value="${esc(v.q)}">
-          <button class="small ${x.membership === tipo ? '' : 'sec'}" ${x.membership === tipo ? 'aria-pressed="true"' : ''}>${esc(members.TIPOS[tipo])}</button></form>`;
-      const list = rows
-        .map(
-          (x) => `<tr style="${x.active ? '' : 'opacity:.55'}">
-          <td><a href="/personas/${x.id}">${esc(x.full_name)}</a>${x.whatsapp_name && x.whatsapp_name !== x.full_name ? `<div class="muted" style="font-size:12px">WhatsApp: ${esc(x.whatsapp_name)}</div>` : ''}</td>
-          <td>${esc(displayPhone(x.phone) || '—')}</td>
-          <td><span class="badge ${TIPO_BADGE[x.membership] || 'b-muted'}">${esc(members.tipoLabel(x.membership))}</span></td>
-          <td>${x.in_official_group ? 'Sí' : 'No'}</td>
-          <td style="white-space:nowrap">${btn(x, 'miembro')} ${btn(x, 'amigo')} <a class="btn sec small" href="/personas/${x.id}">Ficha</a></td></tr>`
-        )
-        .join('');
-      page(
-        req,
-        res,
-        'Miembros y amigos',
-        `<h1>Miembros y amigos</h1>
-        <p class="sub">Clasifica a cada persona como miembro o amigo de la iglesia. Estar en el grupo de WhatsApp no significa haber aceptado recordatorios.</p>
-        <div class="actions"><a class="btn" href="/miembros/importar">Importar lista del grupo</a>
-          <a class="btn sec" href="/miembros/exportar.csv${qs(v)}">Descargar lista</a></div>
-        <div class="grid">
-          <div class="card"><div class="stat" style="color:var(--ok)">${c.miembro}</div><div class="stat-label">miembros</div></div>
-          <div class="card"><div class="stat" style="color:var(--warn)">${c.amigo}</div><div class="stat-label">amigos</div></div>
-          <div class="card"><div class="stat">${c.sin}</div><div class="stat-label">por clasificar</div></div>
-          <div class="card"><div class="stat">${c.grupo}</div><div class="stat-label">en el grupo oficial</div></div>
-        </div>
-        <div class="actions" style="margin-bottom:6px">${pills}</div>
-        <form class="toolbar" method="get" action="/miembros">
-          ${v.tipo !== 'todos' ? `<input type="hidden" name="tipo" value="${esc(v.tipo)}">` : ''}
-          <div><label>Buscar por nombre o teléfono</label><input type="search" name="q" value="${esc(v.q)}" placeholder="Nombre o teléfono"></div>
-          <button class="sec">Buscar</button></form>
-        <h2>${rows.length} ${rows.length === 1 ? 'persona' : 'personas'}${rows.length >= 1000 ? ' (se muestran las primeras 1000: usa los filtros)' : ''}</h2>
-        <div class="table-scroll"><table><tr><th>Nombre</th><th>Teléfono</th><th>Tipo</th><th>Grupo oficial</th><th></th></tr>${
-          list || '<tr><td colspan="5" class="muted">No hay nadie con ese filtro.</td></tr>'
-        }</table></div>`
-      );
-    })
-  );
-
-  /* ------------------------------ Cambiar el tipo ------------------------------ */
-  r.post(
-    '/miembros/:id(\\d{1,9})/tipo',
-    ah(async (req, res) => {
-      const v = view({ tipo: req.body.filtro, q: req.body.q });
-      const err = await members.setMembership(db, +req.params.id, String(req.body.tipo ?? ''));
-      if (err) return back(res, v, { err });
-      const { rows } = await db.query('SELECT full_name FROM people WHERE id = $1', [+req.params.id]);
-      back(res, v, { ok: `${rows[0].full_name}: ${members.tipoLabel(String(req.body.tipo ?? ''))}` });
-    })
-  );
-
-  /* ------------------------------ Descargar ------------------------------ */
-  r.get(
-    '/miembros/exportar.csv',
-    ah(async (req, res) => {
-      const rows = await members.list(db, view(req.query), 5000);
-      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-      res.setHeader('Content-Disposition', 'attachment; filename="miembros-y-amigos.csv"');
-      res.send(
-        toCsv([
-          ['Nombre', 'Teléfono', 'Tipo', 'En el grupo oficial'],
-          ...rows.map((x) => [x.full_name, displayPhone(x.phone), members.tipoLabel(x.membership), x.in_official_group ? 'Sí' : 'No']),
-        ])
-      );
-    })
-  );
-
-  /* ------------------------------ Importar la lista del grupo ------------------------------ */
+  /* ------------------------- Importar la lista del grupo ------------------------- */
   function importPage(csvText, reportHtml) {
     return `<h1>Importar la lista del grupo</h1>
       <p class="sub">Columnas: <span class="mono">Nombre, Teléfono, Admin, Origen del nombre</span> (y, si quieres, <span class="mono">Tipo</span> con miembro o amigo).
@@ -126,7 +54,7 @@ function membersRouter(ctx) {
         <label>O pega el contenido aquí</label>
         <textarea name="csv" id="csv" style="min-height:180px" class="mono">${esc(csvText || '')}</textarea>
         <div class="actions"><button name="accion" value="revisar" class="sec">Revisar sin guardar</button>
-        <button name="accion" value="importar">Importar</button><a class="btn sec" href="/miembros">Cancelar</a></div>
+        <button name="accion" value="importar">Importar</button><a class="btn sec" href="/personas">Cancelar</a></div>
       </form>
       ${reportHtml || ''}
       <script>
@@ -139,10 +67,10 @@ function membersRouter(ctx) {
       </script>`;
   }
 
-  r.get('/miembros/importar', (req, res) => page(req, res, 'Importar lista del grupo', importPage('')));
+  r.get('/personas/importar-grupo', (req, res) => page(req, res, 'Importar lista del grupo', importPage('')));
 
   r.post(
-    '/miembros/importar',
+    '/personas/importar-grupo',
     ah(async (req, res) => {
       const text = String(req.body.csv || '');
       const dryRun = req.body.accion !== 'importar';
@@ -160,7 +88,7 @@ function membersRouter(ctx) {
       } else if (dryRun) {
         html = `<div class="flash ok">Todo correcto: ${report.created} personas nuevas y ${report.updated} por actualizar. Pulsa "Importar" para guardar.</div>${unk}`;
       } else {
-        return res.redirect(303, `/miembros?${new URLSearchParams({ ok: `Importación lista: ${report.created} nuevas, ${report.updated} actualizadas.` })}`);
+        return res.redirect(303, `/personas?${new URLSearchParams({ ok: `Importación lista: ${report.created} nuevas, ${report.updated} actualizadas.` })}`);
       }
       page(req, res, 'Importar lista del grupo', importPage(text, html));
     })

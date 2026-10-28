@@ -144,6 +144,37 @@ async function setMembership(db, id, tipo) {
   return rowCount ? null : 'No existe esa persona.';
 }
 
+/** Marca o desmarca "en el grupo oficial". Devuelve un mensaje de error o null. */
+async function setOfficialGroup(db, id, inGroup) {
+  const { rowCount } = await db.query('UPDATE people SET in_official_group = $2, updated_at = now() WHERE id = $1', [id, Boolean(inGroup)]);
+  return rowCount ? null : 'No existe esa persona.';
+}
+
+const GROUP_FILTERS = { todos: 'Todos', si: 'En el grupo oficial', no: 'Fuera del grupo' };
+
+/** Filtros de la lista de Personas, a partir de la URL o de un formulario. Solo valores conocidos. */
+function parseView(src = {}) {
+  return {
+    tipo: Object.hasOwn(FILTERS, src.tipo) ? src.tipo : 'todos',
+    grupo: src.grupo === 'si' || src.grupo === 'no' ? src.grupo : 'todos',
+    q: String(src.q || '').trim().slice(0, 80),
+    m: /^\d{1,9}$/.test(String(src.m || '')) ? +src.m : null,
+  };
+}
+
+/** La URL que conserva los filtros (sin los que están en su valor por defecto). Nunca copia una URL cruda. */
+function viewQuery(v, extra = {}) {
+  const p = new URLSearchParams();
+  if (v.tipo && v.tipo !== 'todos') p.set('tipo', v.tipo);
+  if (v.grupo && v.grupo !== 'todos') p.set('grupo', v.grupo);
+  if (v.q) p.set('q', v.q);
+  if (v.m) p.set('m', String(v.m));
+  for (const [k, x] of Object.entries(extra)) p.set(k, x);
+  const s = p.toString();
+  return s ? `?${s}` : '';
+}
+
+/** Condiciones para la tabla people (alias p): tipo, grupo oficial, ministerio y búsqueda por nombre, teléfono o correo. */
 function filterSql(f) {
   const where = [];
   const params = [];
@@ -153,13 +184,20 @@ function filterSql(f) {
   } else if (f.tipo === 'sin') {
     where.push(`p.membership = ''`);
   }
+  if (f.grupo === 'si') where.push('p.in_official_group');
+  else if (f.grupo === 'no') where.push('NOT p.in_official_group');
+  const min = f.ministry ?? f.m;
+  if (/^\d{1,9}$/.test(String(min ?? ''))) {
+    params.push(+min);
+    where.push(`EXISTS (SELECT 1 FROM person_ministries x WHERE x.person_id = p.id AND x.ministry_id = $${params.length})`);
+  }
   const q = String(f.q || '').trim().slice(0, 80);
   if (q) {
     params.push(`%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`);
     const i = params.length;
     // El teléfono se guarda con código de país (58414…); quien busca escribe 0414…, así que se quita el cero inicial.
     const digits = q.replace(/\D/g, '').replace(/^0+/, '');
-    let cond = `p.full_name ILIKE $${i} OR p.whatsapp_name ILIKE $${i}`;
+    let cond = `p.full_name ILIKE $${i} OR p.whatsapp_name ILIKE $${i} OR p.email ILIKE $${i}`;
     if (digits.length >= 3) {
       params.push(`%${digits}%`);
       cond += ` OR p.phone LIKE $${params.length}`;
@@ -193,4 +231,7 @@ async function counts(db) {
   return r;
 }
 
-module.exports = { TIPOS, FILTERS, ADMIN_ROLE, tipoLabel, parseTipo, addAdminRole, validateRow, importGroup, setMembership, list, counts, filterSql };
+module.exports = {
+  TIPOS, FILTERS, GROUP_FILTERS, ADMIN_ROLE, tipoLabel, parseTipo, addAdminRole, validateRow, importGroup, setMembership, setOfficialGroup,
+  parseView, viewQuery, list, counts, filterSql,
+};

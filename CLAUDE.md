@@ -36,10 +36,11 @@ Recordatorios y confirmaciones por WhatsApp y correo. Node 22, Express, PostgreS
 - Los archivos con datos reales de personas **nunca** se suben al repo (es público). Las pruebas usan datos inventados.
 - Pruebas con base real: `npm install --no-save @electric-sql/pglite` y `npm test` (o `DATABASE_URL_TEST` en CI). Sin ellas, esas pruebas se omiten.
 
-## Miembros y amigos (`src/members.js`, pestaña `/miembros`)
+## Miembros y amigos (`src/members.js`, dentro de Personas)
+- **No es una pestaña aparte**: es la misma tabla `people`. `/personas` tiene columnas Tipo y Grupo oficial, filtros (tipo, grupo oficial, ministerio, búsqueda por nombre o teléfono), clasificación rápida y el importador de la lista del grupo (`/personas/importar-grupo`). `/miembros*` solo redirige a `/personas` para no romper enlaces guardados.
 - `people.membership`: '' (por clasificar), 'miembro' o 'amigo'. `whatsapp_name` es el nombre de perfil de WhatsApp. `in_official_group` marca a quien está en el grupo oficial.
 - **Estar en el grupo de WhatsApp NO es aceptar recordatorios.** Importar la lista crea personas con `opt_in = FALSE` y nunca cambia el `opt_in` de quien ya existe.
-- El importador (`/miembros/importar`) usa el teléfono normalizado como clave: a quien ya existe no se le pisa el nombre, el correo ni el consentimiento; el rol solo crece ("Admin grupo WhatsApp"). Todo en una transacción.
+- El importador (`/personas/importar-grupo`) usa el teléfono normalizado como clave: a quien ya existe no se le pisa el nombre, el correo ni el consentimiento; el rol solo crece ("Admin grupo WhatsApp"). Todo en una transacción.
 - El tipo se guarda aparte (`setMembership`), para que importar o editar personas nunca lo borre sin querer.
 
 ## Unir duplicados (`src/people-merge.js`, `/personas/duplicados`)

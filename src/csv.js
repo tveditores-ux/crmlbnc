@@ -82,10 +82,11 @@ const HEADER_ALIASES = {
   consentimiento: 'acepta_mensajes',
   canal: 'canal',
   canal_preferido: 'canal',
-  // Lista del grupo oficial de WhatsApp (pestaña Miembros y amigos)
+  // Lista del grupo oficial de WhatsApp (importador en Personas) y columnas de la descarga
   admin: 'admin',
   origen_del_nombre: 'origen_del_nombre',
   tipo: 'tipo',
+  en_grupo_oficial: 'en_grupo_oficial',
 };
 
 /** Convierte el CSV en objetos con claves estándar. Devuelve { records, unknownHeaders }. */
