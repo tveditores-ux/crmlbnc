@@ -43,6 +43,7 @@ function consolidationRouter(ctx) {
         status: String(req.query.estado || ''),
         responsable: String(req.query.responsable || ''),
         mes: String(req.query.mes || ''),
+        historicos: req.query.historicos === '1',
       };
       const etapa = STAGES.some((s) => s.key === req.query.etapa) ? req.query.etapa : '';
       const [fun, rowsAll, opts] = await Promise.all([store.funnel(db, f), store.list(db, f), store.filterOptions(db)]);
@@ -56,7 +57,7 @@ function consolidationRouter(ctx) {
       const list = rows
         .map(
           (x) => `<tr>
-          <td><a href="/consolidacion/${x.id}">${esc(x.full_name)}</a><div class="muted" style="font-size:12px">${esc(displayPhone(x.phone) || 'sin teléfono')}</div></td>
+          <td><a href="/consolidacion/${x.id}">${esc(x.full_name)}</a>${x.historical ? ' <span class="badge b-muted" title="Viene de una lista vieja, sin etapas confiables">Histórica</span>' : ''}<div class="muted" style="font-size:12px">${esc(displayPhone(x.phone) || 'sin teléfono')}</div></td>
           <td>${esc(dmy(x.decision_iso))}<div class="muted" style="font-size:12px">hace ${x.days} días</div></td>
           <td>${esc(x.sede)}</td>
           <td><span class="chip">${esc(currentStage(x).label)}</span></td>
@@ -86,7 +87,9 @@ function consolidationRouter(ctx) {
           <div><label>Responsable</label>${sel('responsable', opts.responsibles.map((x) => ({ value: x.id, label: x.full_name })), f.responsable, 'Todos')}</div>
           <div><label>Estado</label>${sel('estado', Object.entries(STATUSES).map(([k, v]) => ({ value: k, label: v })), f.status, 'Todos')}</div>
           <div><label>Mes de la decisión</label>${sel('mes', opts.months.map((m) => ({ value: m, label: m })), f.mes, 'Todos')}</div>
+          <label class="check" style="flex:0 0 auto"><input type="checkbox" name="historicos" value="1" ${f.historicos ? 'checked' : ''}> Incluir históricas</label>
           <button class="sec">Filtrar</button></form>
+        ${f.historicos ? '<p class="muted" style="font-size:13px">Estás viendo también a las personas históricas (de listas viejas, sin etapas confiables): el embudo y los porcentajes salen más bajos de lo real.</p>' : ''}
         <div class="charts">
           <div class="card wide"><h3 style="margin-top:0">Embudo: cuántas personas llegaron a cada etapa</h3>${charts.hBarChart(
             fun.map((s) => ({ label: s.label, value: s.count })),
@@ -326,7 +329,7 @@ function consolidationRouter(ctx) {
         res,
         c.full_name,
         `<h1>${esc(c.full_name)} ${badge(c.status, c.lost_reason)}</h1>
-        <p class="sub">${esc(displayPhone(c.phone) || 'Sin teléfono')} · Etapa actual: <strong>${esc(cur.label)}</strong> · Decidió hace ${c.days} días ·
+        <p class="sub">${esc(displayPhone(c.phone) || 'Sin teléfono')} · Etapa actual: <strong>${esc(cur.label)}</strong> · Decidió hace ${c.days} días${c.historical ? ' · <span class="badge b-muted" title="Viene de una lista vieja, sin etapas confiables">Histórica</span>' : ''} ·
           <a href="/personas/${c.person_id}">Ver ficha de la persona</a>${c.do_not_call ? ' · <span class="badge b-bad">Pidió no ser llamada</span>' : ''}</p>
         <div class="charts">
           <div>

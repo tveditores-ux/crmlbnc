@@ -7,6 +7,7 @@ const { googleRouter } = require('./routes/google');
 const { attendanceRouter } = require('./routes/attendance');
 const { reportRouter } = require('./routes/report');
 const { consolidationRouter } = require('./routes/consolidation');
+const { nuevaVidaRouter } = require('./routes/nueva-vida');
 const { remoteRouter } = require('./routes/attendance-remote');
 const { layout } = require('./views/layout');
 const { esc } = require('./util');
@@ -107,6 +108,7 @@ function createApp(ctx) {
   app.use(attendanceRouter(ctx));
   app.use(reportRouter(ctx));
   app.use(consolidationRouter(ctx));
+  app.use(nuevaVidaRouter(ctx));
   app.use(adminRouter(ctx));
 
   app.use((req, res) => res.status(404).send(layout({ title: 'No encontrado', config, body: '<h1>Página no encontrada</h1>' })));

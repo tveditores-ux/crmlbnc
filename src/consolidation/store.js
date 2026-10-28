@@ -33,8 +33,8 @@ async function upsertConsolidation(db, personId, v) {
   const { rows } = await db.query(
     `INSERT INTO consolidation (person_id, decision_date, sede, invited_by, assigned_to, call_date, meeting_date,
                                 pp_start_date, pp_end_date, baptism_date, group_date, group_name, riel_date,
-                                status, lost_reason, status_since)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$2)
+                                status, lost_reason, status_since, historical)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$2,$16)
      ON CONFLICT (person_id) DO UPDATE SET
        sede = CASE WHEN consolidation.sede = '' THEN EXCLUDED.sede ELSE consolidation.sede END,
        invited_by = CASE WHEN consolidation.invited_by = '' THEN EXCLUDED.invited_by ELSE consolidation.invited_by END,
@@ -53,6 +53,7 @@ async function upsertConsolidation(db, personId, v) {
       personId, v.decision_date, v.sede || '', v.invited_by || '', v.assigned_to || null, v.call_date || null, v.meeting_date || null,
       v.pp_start_date || null, v.pp_end_date || null, v.baptism_date || null, v.group_date || null, v.group_name || '', v.riel_date || null,
       v.status && STATUSES[v.status] ? v.status : 'activo', v.status === 'perdido' ? v.lost_reason || null : null,
+      Boolean(v.historical),
     ]
   );
   if (rows[0].created) {
@@ -130,6 +131,8 @@ function filterSql(f, startIdx = 1) {
     params.push(v);
     where.push(sql.replace('?', `$${startIdx + params.length - 1}`));
   };
+  // Las personas históricas (de listas viejas, sin etapas confiables) no cuentan salvo que se pidan.
+  if (!f.historicos) where.push('c.historical = FALSE');
   if (f.sede) add('lower(c.sede) = lower(?)', f.sede);
   if (f.status && STATUSES[f.status]) add('c.status = ?', f.status);
   if (/^\d{1,9}$/.test(String(f.responsable || ''))) add('c.assigned_to = ?', +f.responsable);
