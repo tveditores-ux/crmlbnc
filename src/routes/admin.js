@@ -201,6 +201,7 @@ function adminRouter(ctx) {
         `<h1>Personas</h1><p class="sub">${rows.length} registradas. Solo reciben mensajes las activas que aceptaron.</p>
         <div class="actions"><a class="btn" href="/personas/nueva">Agregar persona</a>
           <a class="btn sec" href="/personas/importar">Importar desde hoja (CSV)</a>
+          <a class="btn sec" href="/personas/duplicados">Unir duplicados</a>
           <a class="btn sec" href="/personas/exportar.csv">Descargar lista</a></div>
         <div class="card"><h3 style="margin-top:0">Qué tan completa está la lista (personas activas: ${quality.total})</h3>${charts.hBarChart(
           [
@@ -356,6 +357,9 @@ function adminRouter(ctx) {
         rows[0].full_name,
         '/personas',
         `<h1>${esc(rows[0].full_name)}</h1>${personForm(rows[0], ministries, sel, `/personas/${id}`)}
+        <div class="card"><strong>¿Esta persona está repetida?</strong>
+          <p class="muted" style="margin:4px 0 10px">Si hay otra ficha de la misma persona, únelas: se conserva la más antigua y se pasa todo lo de la otra.</p>
+          <a class="btn sec" href="/personas/${id}/unir">Unir con otra persona</a></div>
         <form method="post" action="/personas/${id}/eliminar" onsubmit="return confirm('¿Eliminar a esta persona y su historial? Si solo dejó de servir, mejor desmarca Activo.')">
           <button class="danger small">Eliminar persona</button></form>`
       );

@@ -41,3 +41,9 @@ Recordatorios y confirmaciones por WhatsApp y correo. Node 22, Express, PostgreS
 - **Estar en el grupo de WhatsApp NO es aceptar recordatorios.** Importar la lista crea personas con `opt_in = FALSE` y nunca cambia el `opt_in` de quien ya existe.
 - El importador (`/miembros/importar`) usa el teléfono normalizado como clave: a quien ya existe no se le pisa el nombre, el correo ni el consentimiento; el rol solo crece ("Admin grupo WhatsApp"). Todo en una transacción.
 - El tipo se guarda aparte (`setMembership`), para que importar o editar personas nunca lo borre sin querer.
+
+## Unir duplicados (`src/people-merge.js`, `/personas/duplicados`)
+- Se conserva siempre la ficha **más antigua** y se elimina la otra, en una sola transacción: si algo falla, no cambia nada.
+- Pasan a la conservada: ministerios (y coordinación), participaciones en eventos con sus mensajes, conversaciones, consolidación (unida si las dos la tenían), registros de Nueva Vida, y los campos que le falten (teléfono, correo, notas, rol, tipo, grupo oficial). Los datos únicos distintos quedan anotados en las notas.
+- **El consentimiento (`opt_in`) no se hereda** salvo que se marque expresamente: dos fichas con el mismo nombre pueden ser dos personas distintas. Mantener esta regla.
+- Si agregas una tabla con una columna que apunte a `people`, súmala a `mergePeople`; hay una prueba que busca referencias que quedaron colgando.

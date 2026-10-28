@@ -6,6 +6,7 @@ const { conversationsRouter } = require('./routes/conversations');
 const { googleRouter } = require('./routes/google');
 const { attendanceRouter } = require('./routes/attendance');
 const { membersRouter } = require('./routes/members');
+const { duplicatesRouter } = require('./routes/duplicates');
 const { reportRouter } = require('./routes/report');
 const { consolidationRouter } = require('./routes/consolidation');
 const { nuevaVidaRouter } = require('./routes/nueva-vida');
@@ -108,6 +109,7 @@ function createApp(ctx) {
   app.use(conversationsRouter(ctx));
   app.use(attendanceRouter(ctx));
   app.use(membersRouter(ctx));
+  app.use(duplicatesRouter(ctx));
   app.use(reportRouter(ctx));
   app.use(consolidationRouter(ctx));
   app.use(nuevaVidaRouter(ctx));
