@@ -5,6 +5,7 @@ const { publicRouter } = require('./routes/public');
 const { conversationsRouter } = require('./routes/conversations');
 const { googleRouter } = require('./routes/google');
 const { attendanceRouter } = require('./routes/attendance');
+const { membersRouter } = require('./routes/members');
 const { reportRouter } = require('./routes/report');
 const { consolidationRouter } = require('./routes/consolidation');
 const { nuevaVidaRouter } = require('./routes/nueva-vida');
@@ -106,6 +107,7 @@ function createApp(ctx) {
 
   app.use(conversationsRouter(ctx));
   app.use(attendanceRouter(ctx));
+  app.use(membersRouter(ctx));
   app.use(reportRouter(ctx));
   app.use(consolidationRouter(ctx));
   app.use(nuevaVidaRouter(ctx));
