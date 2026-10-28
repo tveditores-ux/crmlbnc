@@ -157,3 +157,27 @@ test('importador: reemplazar borra dentro de la transacción, solo si se pide, y
     server.close();
   }
 });
+
+test('borrar todo (provisional): exige escribir BORRAR y vacía la tabla solo entonces', async () => {
+  const { attendanceRouter } = require('../src/routes/attendance');
+  const queries = [];
+  const db = { query: async (sql) => (queries.push(sql), { rows: [], rowCount: 7 }) };
+  const app = express();
+  app.use(express.urlencoded({ extended: false }));
+  app.use(attendanceRouter({ db, config }));
+  const server = app.listen(0);
+  const post = (fields) => fetch(`http://127.0.0.1:${server.address().port}/asistencia/borrar-todo`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(fields), redirect: 'manual' });
+  try {
+    for (const bad of [{}, { confirmar: '' }, { confirmar: 'borrar' }, { confirmar: 'SI' }]) {
+      const r = await post(bad);
+      assert.equal(r.status, 303);
+      assert.match(r.headers.get('location'), /err=/);
+    }
+    assert.equal(queries.length, 0); // ningún intento erróneo tocó la base de datos
+    const ok = await post({ confirmar: ' BORRAR ' });
+    assert.match(ok.headers.get('location'), /ok=Asistencia\+borrada/);
+    assert.deepEqual(queries, ['DELETE FROM service_attendance']);
+  } finally {
+    server.close();
+  }
+});

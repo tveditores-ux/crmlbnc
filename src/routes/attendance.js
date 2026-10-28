@@ -207,8 +207,28 @@ function attendanceRouter(ctx) {
         <h2>Registros</h2>
         <div class="table-scroll"><table><tr><th>Fecha</th><th>Sede</th><th>Inicio / medio / final</th><th>Invitados</th><th>Conversiones</th><th>Servidores</th><th>Pastores</th><th>Niños / pre / adolesc.</th><th>Novedades</th><th></th></tr>${
           list || '<tr><td colspan="10" class="muted">Aún no hay registros.</td></tr>'
-        }</table></div>`
+        }</table></div>
+        <div class="card" style="border-color:var(--bad);margin-top:28px">
+          <h3 style="margin-top:0;color:var(--bad)">Borrar todo (provisional)</h3>
+          <p class="muted" style="margin-top:0">Elimina <strong>todos</strong> los registros de asistencia, incluidos los enviados desde el teléfono. No se puede deshacer.
+            Descarga la lista antes si quieres un respaldo. Este botón es temporal.</p>
+          <form method="post" action="/asistencia/borrar-todo" class="toolbar" onsubmit="return confirm('Se borrará TODA la asistencia registrada. No se puede deshacer. ¿Continuar?')">
+            <div><label>Para confirmar, escribe BORRAR</label><input type="text" name="confirmar" autocomplete="off" placeholder="BORRAR"></div>
+            <button class="danger">Borrar todo</button></form>
+        </div>`
       );
+    })
+  );
+
+  // Provisional: vaciar la asistencia. Pide escribir BORRAR además del aviso del navegador.
+  r.post(
+    '/asistencia/borrar-todo',
+    ah(async (req, res) => {
+      if (String(req.body.confirmar || '').trim() !== 'BORRAR') {
+        return go(res, '/asistencia', { err: 'No se borró nada: hay que escribir la palabra BORRAR.' });
+      }
+      const { rowCount } = await db.query('DELETE FROM service_attendance');
+      go(res, '/asistencia', { ok: `Asistencia borrada: ${rowCount} registros.` });
     })
   );
 
