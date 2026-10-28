@@ -152,7 +152,7 @@ test('importador: reemplazar borra dentro de la transacción, solo si se pide, y
     assert.equal(r.status, 303);
     assert.deepEqual(log.slice(0, 2), ['BEGIN', 'DELETE FROM service_attendance']);
     assert.equal(log[log.length - 1], 'COMMIT');
-    assert.match(decodeURIComponent(r.headers.get('location').replace(/+/g, ' ')), /se quitaron 203 registros y se cargaron 2/);
+    assert.match(decodeURIComponent(r.headers.get('location').replaceAll('+', ' ')), /se quitaron 203 registros y se cargaron 2/);
   } finally {
     server.close();
   }
