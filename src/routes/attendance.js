@@ -117,6 +117,7 @@ function attendanceRouter(ctx) {
     ah(async (req, res) => {
       const f = filters(req.query);
       const rows = (await db.query(`${SELECT}${f.sql} ORDER BY service_date DESC, sede, horario LIMIT 300`, f.params)).rows;
+      const total = (await db.query(`SELECT count(*)::int AS n FROM service_attendance${f.sql}`, f.params)).rows[0].n;
       const sum = (
         await db.query(
           `SELECT sede, count(*)::int AS servicios, round(avg(att_end))::int AS prom_final,
@@ -187,7 +188,7 @@ function attendanceRouter(ctx) {
         res,
         'Asistencia',
         `<h1>Asistencia a los servicios</h1>
-        <p class="sub">Registra cada servicio de celebración. ${rows.length} registros en esta vista.</p>
+        <p class="sub">Registra cada servicio de celebración. ${total} registros${total > rows.length ? ` (se muestran los ${rows.length} más recientes; usa los filtros para ver otros)` : ''}.</p>
         <div class="actions"><a class="btn" href="/asistencia/nueva">Registrar servicio</a>
           <a class="btn sec" href="/asistencia/enlaces">Registrar desde el teléfono</a>
           <a class="btn sec" href="/asistencia/importar">Importar desde hoja (CSV)</a>
