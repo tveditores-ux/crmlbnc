@@ -261,3 +261,25 @@ test('ficha: get, llamadas, historial, datos editables y borrado (sin tocar a la
     assert.equal((await db.query('SELECT count(*)::int AS n FROM people WHERE id = $1', [a])).rows[0].n, 1);
   });
 });
+
+test('fechas: ancladas al final y con rango de años razonable', () => {
+  assert.equal(parseDate('2026-10-05xyz'), null);
+  assert.equal(parseDate('1000-01-01'), null);
+  assert.equal(parseDate('2101-01-01'), null);
+  assert.equal(parseDate('2026-10-05 10:30:00'), '2026-10-05');
+  assert.equal(parseDate('5/10/2026 8:00'), '2026-10-05');
+});
+
+test('los catálogos no aceptan claves heredadas de Object', () => {
+  const { STATUSES, LOST_REASONS, CALL_RESULTS, STAGE_BY_KEY } = require('../src/consolidation/stages');
+  for (const map of [STATUSES, LOST_REASONS, CALL_RESULTS, STAGE_BY_KEY]) {
+    for (const k of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) assert.equal(map[k], undefined, k);
+  }
+  assert.equal(STATUSES.activo, 'Activa');
+});
+
+test('CSV descargables: las celdas que empiezan con = @ + - no se ejecutan como fórmulas, pero los teléfonos sí se respetan', () => {
+  const { toCsv } = require('../src/csv');
+  const out = toCsv([['=1+1', '@SUM(A1)', '- nota', '+cmd|x', '+584141234567', '+58 414 123.45.67', 'Normal', '-5']]);
+  assert.match(out, /'=1\+1,'@SUM\(A1\),'- nota,'\+cmd\|x,\+584141234567,\+58 414 123\.45\.67,Normal,-5/);
+});

@@ -98,8 +98,10 @@ async function setStatus(db, id, status, reason, date) {
   if (status === 'perdido' && !LOST_REASONS[reason]) return 'Elige el motivo por el que se perdió.';
   const { rows } = await db.query('SELECT decision_date::text AS d FROM consolidation WHERE id = $1', [id]);
   if (!rows[0]) return 'No existe esa consolidación.';
-  const when = date || (await db.query('SELECT current_date::text AS d')).rows[0].d;
+  const today = (await db.query('SELECT current_date::text AS d')).rows[0].d;
+  const when = date || today;
   if (when < rows[0].d) return 'La fecha no puede ser anterior a la decisión.';
+  if (when > today) return 'La fecha no puede ser futura.';
   await db.query(
     `UPDATE consolidation SET status = $2, lost_reason = $3, status_since = $4, updated_at = now() WHERE id = $1`,
     [id, status, status === 'perdido' ? reason : null, when]
@@ -130,7 +132,7 @@ function filterSql(f, startIdx = 1) {
   };
   if (f.sede) add('lower(c.sede) = lower(?)', f.sede);
   if (f.status && STATUSES[f.status]) add('c.status = ?', f.status);
-  if (/^\d+$/.test(String(f.responsable || ''))) add('c.assigned_to = ?', +f.responsable);
+  if (/^\d{1,9}$/.test(String(f.responsable || ''))) add('c.assigned_to = ?', +f.responsable);
   if (/^\d{4}-\d{2}$/.test(String(f.mes || ''))) add("to_char(c.decision_date, 'YYYY-MM') = ?", f.mes);
   return { sql: where.length ? ` WHERE ${where.join(' AND ')}` : '', params };
 }
@@ -190,6 +192,8 @@ async function updateData(db, id, { decisionDate, sede, invitedBy, assignedTo, l
   const cols = STAGES.filter((s) => s.by).map((s) => `${s.date}::text AS ${s.date}`).join(', ');
   const c = (await db.query(`SELECT ${cols} FROM consolidation WHERE id = $1`, [id])).rows[0];
   if (!c) return 'No existe esa consolidación.';
+  const today = (await db.query('SELECT current_date::text AS d')).rows[0].d;
+  if ((decisionDate && decisionDate > today) || (lastSeen && lastSeen > today)) return 'Las fechas no pueden ser futuras.';
   if (decisionDate) {
     for (const s of STAGES.filter((x) => x.by)) {
       const d = c[s.date];

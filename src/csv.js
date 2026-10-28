@@ -103,7 +103,9 @@ function csvToRecords(text) {
 
 function toCsv(rows) {
   const esc = (v) => {
-    const s = v === null || v === undefined ? '' : String(v);
+    let s = v === null || v === undefined ? '' : String(v);
+    // Excel y Sheets ejecutan celdas que empiezan con = @ + - (salvo teléfonos como +58...): se les antepone una comilla.
+    if (/^[=@\t\r]/.test(s) || /^[+-](?![\d\s().-]+$)/.test(s)) s = `'${s}`;
     return /[",;\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   return '﻿' + rows.map((r) => r.map(esc).join(',')).join('\r\n') + '\r\n';

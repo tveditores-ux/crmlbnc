@@ -18,6 +18,11 @@ const STATUS_BADGE = { activo: 'b-ok', en_pausa: 'b-warn', perdido: 'b-bad' };
 function consolidationRouter(ctx) {
   const { db, config } = ctx;
   const r = express.Router();
+  // Datos personales: que el navegador y los intermediarios no los guarden en caché.
+  r.use('/consolidacion', (req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
   const today = () => new Date().toLocaleDateString('en-CA', { timeZone: config.timezone });
   const page = (req, res, title, body) => res.send(layout({ title, active: '/consolidacion', body, config, query: req.query }));
   const go = (res, path, flash) => res.redirect(303, flash ? `${path}?${new URLSearchParams(flash).toString()}` : path);
@@ -126,17 +131,20 @@ function consolidationRouter(ctx) {
     '/consolidacion/nueva',
     ah(async (req, res) => {
       const b = req.body;
-      const { value, errors } = importer.validateRow({
-        name: b.name, phone: b.phone, decision_date: b.decision_date, sede: b.sede, invited_by: b.invited_by,
-      });
-      if (value.decision_date && value.decision_date > today()) errors.push('La fecha de la decisión no puede ser futura.');
-      const assigned = /^\d+$/.test(b.assigned_to || '') ? +b.assigned_to : null;
+      const { value, errors } = importer.validateRow(
+        { name: b.name, phone: b.phone, decision_date: b.decision_date, sede: b.sede, invited_by: b.invited_by },
+        config.defaultCountryCode,
+        today()
+      );
+      const who = await volunteerId(b.assigned_to);
+      if (who.error) errors.push(who.error);
+      const assigned = who.id;
       if (errors.length) return page(req, res, 'Registrar decisión', `<h1>Registrar decisión</h1>${await decisionForm(b, errors)}`);
 
       const people = (await db.query('SELECT id, full_name, phone FROM people')).rows;
       const cls = classify({ name: value.name, phone: value.phone }, people, config.defaultCountryCode);
       const phone = normalizePhone(value.phone, config.defaultCountryCode);
-      let personId;
+      let personId = null; // null = hay que crear la persona
       if (cls.group === 'existe') {
         personId = cls.person.id;
       } else if (cls.group === 'posible') {
@@ -161,15 +169,18 @@ function consolidationRouter(ctx) {
               <div class="actions"><button>Continuar</button><a class="btn sec" href="/consolidacion/nueva">Volver</a></div></form>`
           );
         }
-        if (choice === 'nueva') personId = await importer.createPerson(db, value, phone);
+        if (choice === 'nueva') personId = null;
         else if (cls.candidates.some((c) => String(c.person.id) === choice)) personId = +choice;
         else return go(res, '/consolidacion/nueva', { err: 'Elección no válida.' });
-      } else {
-        personId = await importer.createPerson(db, value, phone);
       }
-      const dup = (await db.query('SELECT id FROM consolidation WHERE person_id = $1', [personId])).rows[0];
-      if (dup) return go(res, `/consolidacion/${dup.id}`, { err: 'Esa persona ya estaba en consolidación. Aquí está su ficha.' });
-      const out = await store.upsertConsolidation(db, personId, { ...value, assigned_to: assigned });
+      // Crear la persona y su consolidación va junto: si algo falla, no queda una persona suelta.
+      const out = await tx(db, async (c) => {
+        const pid = personId === null ? await importer.createPerson(c, value, phone) : personId;
+        const dup = (await c.query('SELECT id FROM consolidation WHERE person_id = $1', [pid])).rows[0];
+        if (dup) return { dupId: dup.id };
+        return store.upsertConsolidation(c, pid, { ...value, assigned_to: assigned });
+      });
+      if (out.dupId) return go(res, `/consolidacion/${out.dupId}`, { err: 'Esa persona ya estaba en consolidación. Aquí está su ficha.' });
       go(res, `/consolidacion/${out.id}`, { ok: 'Decisión registrada.' });
     })
   );
@@ -253,7 +264,7 @@ function consolidationRouter(ctx) {
     '/consolidacion/importar',
     ah(async (req, res) => {
       const text = String(req.body.csv || '');
-      const prep = await importer.prepare(db, text, config.defaultCountryCode);
+      const prep = await importer.prepare(db, text, config.defaultCountryCode, today());
       if (req.body.accion === 'guardar') {
         const decisions = {};
         for (const [k, v] of Object.entries(req.body)) if (/^d_\d+$/.test(k)) decisions[k.slice(2)] = String(v);
@@ -272,7 +283,7 @@ function consolidationRouter(ctx) {
 
   /* ------------------------------ Ficha ------------------------------ */
   r.get(
-    '/consolidacion/:id(\\d+)',
+    '/consolidacion/:id(\\d{1,9})',
     ah(async (req, res) => {
       const id = +req.params.id;
       const c = await store.get(db, id);
@@ -326,7 +337,7 @@ function consolidationRouter(ctx) {
             <form method="post" action="/consolidacion/${id}/llamada" class="card toolbar">
               <div><label>Resultado</label><select name="result" required>${options(Object.entries(CALL_RESULTS).map(([k, v]) => ({ value: k, label: v })), '', 'Elige…')}</select></div>
               <div><label>Quién llamó</label><select name="by">${options(volOpts, c.assigned_to, 'Sin indicar')}</select></div>
-              <div style="flex-basis:100%"><label>Nota corta (la ven solo el responsable y los administradores)</label><input type="text" name="note" maxlength="1000"></div>
+              <div style="flex-basis:100%"><label>Nota corta (por ahora la ven solo los administradores)</label><input type="text" name="note" maxlength="1000"></div>
               <button>Registrar llamada</button></form>
             <p class="muted" style="font-size:13px">Si contestó y la etapa «Llamada» estaba vacía, se marca con la fecha de hoy.</p>
             <div class="table-scroll"><table><tr><th>Fecha</th><th>Resultado</th><th>Llamó</th><th>Nota</th></tr>${callRows || '<tr><td colspan="4" class="muted">Sin llamadas todavía.</td></tr>'}</table></div>
@@ -352,48 +363,63 @@ function consolidationRouter(ctx) {
           </div>
           <div class="actions"><button>Guardar datos</button></div>
         </form>
-        <form method="post" action="/consolidacion/${id}/eliminar" onsubmit="return confirm('¿Quitar a esta persona de consolidación? Su ficha de persona no se borra.')">
+        <form method="post" action="/consolidacion/${id}/eliminar" onsubmit="return confirm('¿Quitar a esta persona de consolidación? Se borran sus etapas, sus llamadas, sus notas y su historial de estados. Su ficha de persona no se borra. No se puede deshacer.')">
           <button class="danger small">Quitar de consolidación</button></form>`
       );
     })
   );
 
   const back = (res, id, err) => go(res, `/consolidacion/${id}`, err ? { err } : { ok: 'Guardado.' });
-  const byId = (v) => (/^\d+$/.test(String(v || '')) ? +v : null);
+  /** Un responsable debe ser una persona de Nueva Vida de la lista. Vacío = sin responsable. */
+  async function volunteerId(raw) {
+    const v = String(raw || '').trim();
+    if (!v) return { id: null };
+    if (!/^\d{1,9}$/.test(v)) return { error: 'Elige a una persona de Nueva Vida de la lista.' };
+    const ok = (await store.nuevaVidaPeople(db)).some((x) => String(x.id) === v);
+    return ok ? { id: +v } : { error: 'Elige a una persona de Nueva Vida de la lista.' };
+  }
 
   r.post(
-    '/consolidacion/:id(\\d+)/etapa',
+    '/consolidacion/:id(\\d{1,9})/etapa',
     ah(async (req, res) => {
       const date = parseDate(req.body.date);
       if (!date) return back(res, req.params.id, 'Escribe una fecha válida.');
-      back(res, req.params.id, await store.setStage(db, +req.params.id, String(req.body.stage), date, byId(req.body.by), { groupName: req.body.group_name }));
+      const who = await volunteerId(req.body.by);
+      if (who.error) return back(res, req.params.id, who.error);
+      back(res, req.params.id, await store.setStage(db, +req.params.id, String(req.body.stage), date, who.id, { groupName: req.body.group_name }));
     })
   );
-  r.post('/consolidacion/:id(\\d+)/etapa/quitar', ah(async (req, res) => back(res, req.params.id, await store.clearStage(db, +req.params.id, String(req.body.stage)))));
+  r.post('/consolidacion/:id(\\d{1,9})/etapa/quitar', ah(async (req, res) => back(res, req.params.id, await store.clearStage(db, +req.params.id, String(req.body.stage)))));
   r.post(
-    '/consolidacion/:id(\\d+)/estado',
+    '/consolidacion/:id(\\d{1,9})/estado',
     ah(async (req, res) => back(res, req.params.id, await store.setStatus(db, +req.params.id, String(req.body.status), String(req.body.reason || ''), parseDate(req.body.date))))
   );
   r.post(
-    '/consolidacion/:id(\\d+)/llamada',
-    ah(async (req, res) => back(res, req.params.id, await store.logCall(db, +req.params.id, { calledBy: byId(req.body.by), result: String(req.body.result || ''), note: req.body.note })))
+    '/consolidacion/:id(\\d{1,9})/llamada',
+    ah(async (req, res) => {
+      const who = await volunteerId(req.body.by);
+      if (who.error) return back(res, req.params.id, who.error);
+      back(res, req.params.id, await store.logCall(db, +req.params.id, { calledBy: who.id, result: String(req.body.result || ''), note: req.body.note }));
+    })
   );
   r.post(
-    '/consolidacion/:id(\\d+)/datos',
+    '/consolidacion/:id(\\d{1,9})/datos',
     ah(async (req, res) => {
       const decisionDate = parseDate(req.body.decision_date);
       if (!decisionDate) return back(res, req.params.id, 'Escribe una fecha de decisión válida.');
+      const who = await volunteerId(req.body.assigned_to);
+      if (who.error) return back(res, req.params.id, who.error);
       back(
         res,
         req.params.id,
         await store.updateData(db, +req.params.id, {
-          decisionDate, sede: req.body.sede, invitedBy: req.body.invited_by, assignedTo: byId(req.body.assigned_to), lastSeen: parseDate(req.body.last_seen),
+          decisionDate, sede: req.body.sede, invitedBy: req.body.invited_by, assignedTo: who.id, lastSeen: parseDate(req.body.last_seen),
         })
       );
     })
   );
   r.post(
-    '/consolidacion/:id(\\d+)/eliminar',
+    '/consolidacion/:id(\\d{1,9})/eliminar',
     ah(async (req, res) => {
       await tx(db, (c) => store.remove(c, +req.params.id));
       go(res, '/consolidacion', { ok: 'Quitada de consolidación. Su ficha de persona sigue en la lista.' });

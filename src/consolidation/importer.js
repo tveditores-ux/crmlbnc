@@ -30,9 +30,10 @@ const DATE_LABEL = {
 };
 
 const key = (s) => normName(s).replace(/\s+/g, '_');
-const byLabel = (obj) => Object.fromEntries(Object.entries(obj).flatMap(([k, label]) => [[key(label), k], [key(k), k]]));
-const STATUS_IN = { ...byLabel(STATUSES), pausa: 'en_pausa', activa: 'activo', perdida: 'perdido' };
+const byLabel = (obj) => Object.assign(Object.create(null), Object.fromEntries(Object.entries(obj).flatMap(([k, label]) => [[key(label), k], [key(k), k]])));
+const STATUS_IN = Object.assign(byLabel(STATUSES), { pausa: 'en_pausa', activa: 'activo', perdida: 'perdido' });
 const REASON_IN = byLabel(LOST_REASONS);
+const MAX_ROWS = 2000;
 
 const TEMPLATE_HEADERS = ['nombre', 'telefono', 'fecha_decision', 'sede', 'invitado_por', 'responsable', 'llamada', 'reunion', 'primeros_pasos_inicio', 'primeros_pasos_fin', 'bautismo', 'grupo', 'fecha_grupo', 'riel', 'estado', 'motivo'];
 
@@ -46,7 +47,8 @@ function readCsv(text) {
   const fileErrors = [];
   if (!fields.includes('name')) fileErrors.push('Falta la columna "nombre".');
   if (!fields.includes('decision_date')) fileErrors.push('Falta la columna "fecha_decision".');
-  const out = rows.slice(1).map((r, idx) => {
+  if (rows.length - 1 > MAX_ROWS) fileErrors.push(`El archivo tiene más de ${MAX_ROWS} filas. Divídelo en partes.`);
+  const out = rows.slice(1, MAX_ROWS + 1).map((r, idx) => {
     const raw = {};
     fields.forEach((f, i) => {
       if (f) raw[f] = (r[i] || '').trim();
@@ -56,29 +58,34 @@ function readCsv(text) {
   return { rows: out, fileErrors, unknown };
 }
 
-/** Valida una fila. Devuelve { value, errors }. */
-function validateRow(raw) {
+/** Valida una fila. Devuelve { value, errors }. `today` ('AAAA-MM-DD') impide fechas futuras. */
+function validateRow(raw, countryCode = '58', today = new Date().toISOString().slice(0, 10)) {
   const errors = [];
   const value = {
     name: String(raw.name || '').trim().replace(/\s+/g, ' '),
-    phone: String(raw.phone || '').trim(),
+    phone: String(raw.phone || '').trim().slice(0, 40),
     sede: String(raw.sede || '').trim().replace(/\s+/g, ' '),
     invited_by: String(raw.invited_by || '').trim(),
-    responsible: String(raw.responsible || '').trim(),
+    responsible: String(raw.responsible || '').trim().slice(0, 120),
     group_name: String(raw.group_name || '').trim().slice(0, 120),
   };
   if (!value.name) errors.push('Falta el nombre.');
-  if (value.phone && !normalizePhone(value.phone)) errors.push(`Teléfono no válido: "${value.phone}".`);
+  if (value.name.length > 120) errors.push('El nombre es demasiado largo (máximo 120 caracteres).');
+  if (value.sede.length > 80) errors.push('La sede es demasiado larga (máximo 80 caracteres).');
+  if (value.invited_by.length > 120) errors.push('«Invitado por» es demasiado largo (máximo 120 caracteres).');
+  if (value.phone && !normalizePhone(value.phone, countryCode)) errors.push(`Teléfono no válido: "${value.phone}".`);
   for (const f of DATE_FIELDS) {
     const d = parseDate(raw[f]);
     if (String(raw[f] || '').trim() && !d) errors.push(`Fecha no válida en ${DATE_LABEL[f]}: "${raw[f]}".`);
     value[f] = d;
+    if (d && d > today) errors.push(`La fecha de ${DATE_LABEL[f]} no puede ser futura.`);
   }
   if (!value.decision_date && !errors.some((e) => e.includes('decisión'))) errors.push('Falta la fecha de decisión.');
   if (value.decision_date) {
     for (const f of ORDER.slice(1)) {
       if (value[f] && value[f] < value.decision_date) errors.push(`La fecha de ${DATE_LABEL[f]} es anterior a la decisión.`);
     }
+    if (value.pp_start_date && value.pp_end_date && value.pp_end_date < value.pp_start_date) errors.push('El fin de Primeros Pasos es anterior a su inicio.');
   }
   const st = String(raw.status || '').trim();
   value.status = 'activo';
@@ -98,16 +105,16 @@ function validateRow(raw) {
  * Revisa el archivo sin guardar nada. Cada fila queda en uno de tres grupos:
  *  existe (mismo teléfono), posible (nombre parecido, hay que confirmar) o nueva.
  */
-async function prepare(db, text, countryCode = '58') {
+async function prepare(db, text, countryCode = '58', today) {
   const { rows, fileErrors, unknown } = readCsv(text);
-  const people = (await db.query('SELECT id, full_name, phone FROM people')).rows;
+  const people = (await db.query('SELECT id, full_name, phone, active FROM people')).rows;
   const inConsolidation = new Set((await db.query('SELECT person_id FROM consolidation')).rows.map((r) => r.person_id));
   const volunteers = await store.nuevaVidaPeople(db);
   const seenPhone = new Map();
   const seenName = new Map();
   const records = [];
   for (const { line, raw } of rows) {
-    const { value, errors } = validateRow(raw);
+    const { value, errors } = validateRow(raw, countryCode, today);
     const warnings = [];
     const phone = normalizePhone(value.phone, countryCode);
     if (phone && seenPhone.has(phone)) errors.push(`Repetida: mismo teléfono que la línea ${seenPhone.get(phone)}.`);
@@ -119,6 +126,7 @@ async function prepare(db, text, countryCode = '58') {
     }
     const cls = classify({ name: value.name, phone: value.phone }, people, countryCode);
     if (cls.group === 'existe' && inConsolidation.has(cls.person.id)) warnings.push('Ya está en consolidación: solo se completarán los datos que falten.');
+    if (cls.group === 'existe' && cls.person.active === false) warnings.push('La ficha existente está marcada como inactiva.');
     let responsibleId = null;
     if (value.responsible) {
       responsibleId = store.matchResponsible(value.responsible, volunteers);

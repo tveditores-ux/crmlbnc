@@ -11,39 +11,45 @@ const STAGES = [
   { key: 'grupo', label: 'Grupo de cuidado', date: 'group_date', by: 'group_by' },
   { key: 'riel', label: 'Riel de capacitación', date: 'riel_date', by: 'riel_by' },
 ];
-const STAGE_BY_KEY = Object.fromEntries(STAGES.map((s) => [s.key, s]));
+// Mapas sin prototipo: claves como 'constructor' o 'toString' no cuentan como válidas.
+const plain = (o) => Object.assign(Object.create(null), o);
+const STAGE_BY_KEY = plain(Object.fromEntries(STAGES.map((s) => [s.key, s])));
 
-const STATUSES = { activo: 'Activa', en_pausa: 'En pausa', perdido: 'Perdida' };
-const LOST_REASONS = {
+const STATUSES = plain({ activo: 'Activa', en_pausa: 'En pausa', perdido: 'Perdida' });
+const LOST_REASONS = plain({
   no_contesta: 'No contesta',
   se_mudo: 'Se mudó',
   otra_iglesia: 'Otra iglesia',
   otra_ciudad_pais: 'Otra ciudad o país',
   no_interesa: 'No le interesa',
-};
-const CALL_RESULTS = {
+});
+const CALL_RESULTS = plain({
   contesto: 'Contestó',
   no_contesto: 'No contestó',
   numero_equivocado: 'Número equivocado',
   no_llamar: 'Pidió no ser llamada',
-};
+});
 
-/** Acepta 2026-10-05 o 5/10/2026 (también 05-10-2026). Devuelve 'AAAA-MM-DD' o null. */
+const ISO_DATE = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T]\d{1,2}:\d{2}.*)?$/;
+const DMY_DATE = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4}|\d{2})(?:[ T]\d{1,2}:\d{2}.*)?$/;
+
+/** Acepta 2026-10-05 o 5/10/2026 (también 05-10-2026), con hora opcional. Años de 2000 a 2100. Devuelve 'AAAA-MM-DD' o null. */
 function parseDate(raw) {
   const s = String(raw ?? '').trim();
   if (!s) return null;
   let y;
   let m;
   let d;
-  let r = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s);
+  let r = ISO_DATE.exec(s);
   if (r) [, y, m, d] = r;
-  else if ((r = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4}|\d{2})(?!\d)/.exec(s))) {
+  else if ((r = DMY_DATE.exec(s))) {
     [, d, m, y] = r;
     if (y.length === 2) y = `20${y}`;
   } else return null;
   y = +y;
   m = +m;
   d = +d;
+  if (y < 2000 || y > 2100) return null;
   const dt = new Date(Date.UTC(y, m - 1, d));
   if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
   return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;

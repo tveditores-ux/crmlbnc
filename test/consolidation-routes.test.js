@@ -115,6 +115,9 @@ test('validaciones al registrar: sin nombre, fecha futura o teléfono inválido 
 test('ficha: avanzar etapa, quitarla, cambiar estado y registrar llamadas', async (t) => {
   await withApp(t, async ({ db, get, post, loc }) => {
     const vol = await add(db, 'Voluntaria Uno');
+    const mid = (await db.query(`INSERT INTO ministries (name) VALUES ('Nueva Vida') RETURNING id`)).rows[0].id;
+    await db.query('INSERT INTO person_ministries (person_id, ministry_id) VALUES ($1,$2)', [vol, mid]);
+    const outsider = await add(db, 'Alguien de Alabanza');
     const p = await add(db, 'Persona Ocho', '584140000008');
     const c = (await db.query(`INSERT INTO consolidation (person_id, decision_date) VALUES ($1, $2) RETURNING id`, [p, day(-10)])).rows[0].id;
     const base = `/consolidacion/${c}`;
@@ -146,7 +149,7 @@ test('ficha: avanzar etapa, quitarla, cambiar estado y registrar llamadas', asyn
     // quitar de consolidación no borra a la persona
     assert.match(loc(await post(`${base}/eliminar`, {})), /ok=Quitada de consolidación/);
     assert.equal(await count(db, 'consolidation'), 0);
-    assert.equal(await count(db, 'people'), 2);
+    assert.equal(await count(db, 'people'), 3); // la voluntaria, el ajeno y la persona: ninguna se borra
   });
 });
 
@@ -231,5 +234,85 @@ test('importar con errores: se muestran y no se puede guardar', async (t) => {
     const g = await post('/consolidacion/importar', { csv: bad, accion: 'guardar' });
     assert.match(await g.text(), /No se guardó nada: El archivo tiene errores/);
     assert.equal(await count(db, 'people'), 0);
+  });
+});
+
+test('endurecimiento: responsables de Nueva Vida, claves inválidas, ids enormes y sin caché', async (t) => {
+  await withApp(t, async ({ db, get, post, loc }) => {
+    const vol = await add(db, 'Voluntaria Tres');
+    const mid = (await db.query(`INSERT INTO ministries (name) VALUES ('Nueva Vida') RETURNING id`)).rows[0].id;
+    await db.query('INSERT INTO person_ministries (person_id, ministry_id) VALUES ($1,$2)', [vol, mid]);
+    const outsider = await add(db, 'Alguien de Alabanza');
+    const p = await add(db, 'Persona Nueve', '584140000009');
+    const c = (await db.query(`INSERT INTO consolidation (person_id, decision_date) VALUES ($1, $2) RETURNING id`, [p, day(-10)])).rows[0].id;
+    const base = `/consolidacion/${c}`;
+    // el responsable debe ser de Nueva Vida
+    for (const bad of [String(outsider), '999999', 'abc', '99999999999999999999']) {
+      assert.match(loc(await post(`${base}/etapa`, { stage: 'llamada', date: day(-8), by: bad })), /err=Elige a una persona de Nueva Vida/, bad);
+      assert.match(loc(await post(`${base}/llamada`, { result: 'contesto', by: bad })), /err=Elige a una persona de Nueva Vida/, bad);
+      assert.match(loc(await post(`${base}/datos`, { decision_date: day(-10), assigned_to: bad })), /err=Elige a una persona de Nueva Vida/, bad);
+    }
+    assert.equal(await count(db, 'consolidation_calls'), 0);
+    assert.match(loc(await post(`${base}/etapa`, { stage: 'llamada', date: day(-8), by: String(vol) })), /ok=/);
+    // claves heredadas de los objetos no cuentan como válidas (antes daban error 500)
+    for (const word of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+      assert.match(loc(await post(`${base}/estado`, { status: word, reason: '' })), /err=Estado no válido/, word);
+      assert.match(loc(await post(`${base}/estado`, { status: 'perdido', reason: word })), /err=Elige el motivo/, word);
+      assert.match(loc(await post(`${base}/llamada`, { result: word })), /err=Resultado no válido/, word);
+      assert.match(loc(await post(`${base}/etapa`, { stage: word, date: day(-8) })), /err=Etapa no válida/, word);
+    }
+    // fechas futuras en estado y datos
+    assert.match(loc(await post(`${base}/estado`, { status: 'en_pausa', date: day(6) })), /err=La fecha no puede ser futura/);
+    assert.match(loc(await post(`${base}/datos`, { decision_date: day(-10), last_seen: day(6) })), /err=Las fechas no pueden ser futuras/);
+    // ids demasiado largos no llegan a la base de datos
+    assert.equal((await get('/consolidacion/99999999999')).status, 404);
+    assert.equal((await post('/consolidacion/99999999999/eliminar', {})).status, 404);
+    // filtro con un número gigante: no revienta
+    assert.equal((await get('/consolidacion?responsable=99999999999999999999')).status, 200);
+    // datos personales: sin caché
+    for (const path of ['/consolidacion', base, '/consolidacion/importar', '/consolidacion/nueva']) {
+      assert.equal((await get(path)).headers.get('cache-control'), 'no-store', path);
+    }
+    // el aviso de borrado dice lo que se pierde
+    assert.match(await (await get(base)).text(), /Se borran sus etapas, sus llamadas, sus notas y su historial/);
+  });
+});
+
+test('registrar a mano: un responsable ajeno a Nueva Vida se rechaza y no queda nada a medias', async (t) => {
+  await withApp(t, async ({ db, post }) => {
+    const outsider = await add(db, 'Alguien de Alabanza');
+    const r = await post('/consolidacion/nueva', { name: 'Nueva Persona', phone: '0414-777.00.00', decision_date: day(-1), assigned_to: String(outsider) });
+    assert.equal(r.status, 200);
+    assert.match(await r.text(), /Elige a una persona de Nueva Vida/);
+    assert.equal(await count(db, 'people'), 1); // solo la sembrada
+    assert.equal(await count(db, 'consolidation'), 0);
+  });
+});
+
+test('importar: límites de filas y de texto, fechas futuras y orden de Primeros Pasos', async (t) => {
+  await withApp(t, async ({ db, post }) => {
+    await add(db, 'Persona Inactiva', '584143330000');
+    await db.query(`UPDATE people SET active = FALSE WHERE phone = '584143330000'`);
+    const long = 'x'.repeat(130);
+    const csv = [
+      'nombre,telefono,fecha_decision,sede,invitado_por,primeros_pasos_inicio,primeros_pasos_fin,bautismo',
+      `${long},0414-000.00.01,${day(-5)},Sede,,,,`,
+      `Futuro Uno,0414-000.00.02,${day(-5)},Sede,,${day(-1)},${day(3)},`,
+      `Orden Malo,0414-000.00.03,${day(-5)},Sede,,${day(-1)},${day(-3)},`,
+      `Sede Larga,0414-000.00.04,${day(-5)},${long},,,,`,
+      `Inactiva,0414-333.00.00,${day(-5)},Sede,,,,`,
+    ].join('\n');
+    const html = await (await post('/consolidacion/importar', { csv, accion: 'revisar' })).text();
+    assert.match(html, /Línea 2: El nombre es demasiado largo/);
+    assert.match(html, /Línea 3: La fecha de fin de Primeros Pasos no puede ser futura/);
+    assert.match(html, /Línea 4: El fin de Primeros Pasos es anterior a su inicio/);
+    assert.match(html, /Línea 5: La sede es demasiado larga/);
+    // demasiadas filas
+    const many = 'nombre,telefono,fecha_decision\n' + Array.from({ length: 2001 }, (_, i) => `P${i},,2026-01-01`).join('\n');
+    assert.match(await (await post('/consolidacion/importar', { csv: many, accion: 'revisar' })).text(), /más de 2000 filas/);
+    // aviso de ficha inactiva
+    const ok = 'nombre,telefono,fecha_decision\nInactiva,0414-333.00.00,2026-01-01';
+    assert.match(await (await post('/consolidacion/importar', { csv: ok, accion: 'revisar' })).text(), /marcada como inactiva/);
+    assert.equal(await count(db, 'consolidation'), 0);
   });
 });
