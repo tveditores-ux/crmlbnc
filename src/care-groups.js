@@ -101,7 +101,8 @@ async function listGroups(db, today) {
   const { rows } = await db.query(
     `SELECT g.*,
             (SELECT max(meeting_date)::text FROM care_group_reports r WHERE r.group_id = g.id) AS last_report,
-            (SELECT count(*)::int FROM care_group_reports r WHERE r.group_id = g.id AND r.meeting_date > ($1::date - 30)) AS reports_30d
+            (SELECT count(*)::int FROM care_group_reports r WHERE r.group_id = g.id AND r.meeting_date > ($1::date - 30)) AS reports_30d,
+            EXISTS (SELECT 1 FROM care_group_photos p WHERE p.group_id = g.id) AS has_photo
        FROM care_groups g ORDER BY g.active DESC, lower(g.name)`,
     [today]
   );
@@ -180,4 +181,79 @@ async function importGroups(pool, text, countryCode = '58', { dryRun = false } =
   return report;
 }
 
-module.exports = { importGroups, STAGES, DAYS, parseGroup, parseReport, upsertReport, listGroups, daysSince, newToken };
+/* ------------- Datos del líder (fecha de nacimiento y foto) ------------- */
+const MAX_PHOTO_BYTES = 1200 * 1024;
+
+/** Fecha 'YYYY-MM-DD' real, no futura y razonable. Devuelve { value, error }; vacío es válido. */
+function parseBirthDate(raw, today, who = 'del líder') {
+  const v = String(raw ?? '').trim();
+  if (!v) return { value: '' };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return { value: '', error: `La fecha de nacimiento ${who} no es válida.` };
+  const [y, m, d] = v.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return { value: '', error: `La fecha de nacimiento ${who} no existe.` };
+  if (y < 1910 || (today && v > today)) return { value: '', error: `Revisa la fecha de nacimiento ${who}: el año no parece correcto.` };
+  return { value: v };
+}
+
+/** Datos del formulario "Datos del grupo": lo de parseGroup más nacimiento del líder y de su pareja. */
+function parseLeaderProfile(src, countryCode, today) {
+  const { value, errors } = parseGroup(src, countryCode);
+  const b1 = parseBirthDate(src.leader_birth_date, today, 'del líder');
+  const b2 = parseBirthDate(src.co_leader_birth_date, today, 'de la pareja o co-líder');
+  if (b1.error) errors.push(b1.error);
+  if (b2.error) errors.push(b2.error);
+  value.leader_birth_date = b1.value;
+  value.co_leader_birth_date = b2.value;
+  value.co_leader_name = clean(src.co_leader_name, 120);
+  return { value, errors };
+}
+
+/** Foto en data URL JPEG (el teléfono la reduce y la reconvierte). Devuelve { buffer } o { error }; vacío = sin foto nueva. */
+function parsePhoto(raw) {
+  const v = String(raw ?? '').trim();
+  if (!v) return { buffer: null };
+  const m = /^data:image\/jpeg;base64,([A-Za-z0-9+/]+={0,2})$/.exec(v);
+  if (!m) return { error: 'No pude leer la foto. Prueba con otra.' };
+  const buffer = Buffer.from(m[1], 'base64');
+  if (buffer.length < 200 || buffer.length > MAX_PHOTO_BYTES) return { error: 'La foto es demasiado grande o está dañada. Prueba con otra.' };
+  if (!(buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) || !(buffer[buffer.length - 2] === 0xff && buffer[buffer.length - 1] === 0xd9)) {
+    return { error: 'La foto no es válida. Prueba con otra.' };
+  }
+  return { buffer };
+}
+
+async function savePhoto(db, groupId, buffer) {
+  await db.query(
+    `INSERT INTO care_group_photos (group_id, data) VALUES ($1, $2)
+     ON CONFLICT (group_id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`,
+    [groupId, buffer]
+  );
+}
+
+/** Próximos cumpleaños (líder y pareja) dentro de `days` días. today = 'YYYY-MM-DD'. */
+function upcomingBirthdays(groups, today, days = 45) {
+  const [ty, tm, td] = today.split('-').map(Number);
+  const t0 = Date.UTC(ty, tm - 1, td);
+  const out = [];
+  const consider = (group, who, iso) => {
+    if (!iso) return;
+    const [by, bm, bd] = iso.split('-').map(Number);
+    for (const year of [ty, ty + 1]) {
+      let day = bd;
+      if (bm === 2 && bd === 29 && new Date(Date.UTC(year, 1, 29)).getUTCMonth() !== 1) day = 28; // 29 de febrero en año no bisiesto
+      const diff = Math.round((Date.UTC(year, bm - 1, day) - t0) / 86400000);
+      if (diff < 0) continue;
+      if (diff <= days) out.push({ group, who, month: bm, day, turns: year - by, inDays: diff });
+      break;
+    }
+  };
+  for (const g of groups) {
+    if (!g.active) continue;
+    consider(g.name, g.co_leader_name ? g.leader_name : g.leader_name || 'Líder', g.leader_birth_date);
+    consider(g.name, g.co_leader_name || `${g.leader_name || 'Líder'} (pareja)`, g.co_leader_birth_date);
+  }
+  return out.sort((a, b) => a.inDays - b.inDays || a.who.localeCompare(b.who));
+}
+
+module.exports = { parseBirthDate, parseLeaderProfile, parsePhoto, savePhoto, upcomingBirthdays, MAX_PHOTO_BYTES, importGroups, STAGES, DAYS, parseGroup, parseReport, upsertReport, listGroups, daysSince, newToken };

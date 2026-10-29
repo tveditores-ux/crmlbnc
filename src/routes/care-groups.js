@@ -69,12 +69,13 @@ function careGroupsRouter(ctx) {
       ).rows[0];
       const everyone = (await db.query('SELECT p.milestones FROM care_group_people p JOIN care_groups g ON g.id = p.group_id WHERE g.active')).rows;
       const route = views.milestoneCounts(everyone);
+      const birthdays = cg.upcomingBirthdays(groups, t, 45);
       const rows = groups
         .map((g) => {
           const d = cg.daysSince(g.last_report, t);
           const badge = !g.active ? '<span class="badge b-muted">Inactivo</span>' : d === null ? '<span class="badge b-warn">Sin reportes</span>' : d > STALE_DAYS ? `<span class="badge b-warn">Hace ${d} días</span>` : `<span class="badge b-ok">Al día</span>`;
           return `<tr style="${g.active ? '' : 'opacity:.55'}">
-            <td><a href="/grupos/${g.id}"><strong>${esc(g.name)}</strong></a><div class="muted">${esc([g.stage, g.congregation].filter(Boolean).join(' · '))}</div></td>
+            <td>${g.has_photo ? `<img src="/grupos/${g.id}/foto" alt="" width="36" height="36" style="float:left;margin:0 8px 0 0;border-radius:50%;object-fit:cover">` : ''}<a href="/grupos/${g.id}"><strong>${esc(g.name)}</strong></a><div class="muted">${esc([g.stage, g.congregation].filter(Boolean).join(' · '))}</div></td>
             <td>${esc(g.leader_name)}<div class="muted">${esc(displayPhone(g.leader_phone))}</div></td>
             <td>${esc([g.meeting_day, g.meeting_time].filter(Boolean).join(' '))}<div class="muted">${esc(g.place)}</div></td>
             <td>${badge}<div class="muted">${g.last_report ? esc(short(g.last_report)) : ''}</div></td>
@@ -95,6 +96,9 @@ function careGroupsRouter(ctx) {
           <div class="card"><div class="stat">${stale.length}</div><div class="stat-label">sin reportar hace más de ${STALE_DAYS} días</div></div>
         </div>
         <p class="toolbar"><a class="btn" href="/grupos/nuevo">Agregar grupo</a> <a class="btn sec" href="/grupos/solicitud">Pedir datos a los líderes</a> <a class="btn sec" href="/grupos/importar">Importar grupos (CSV)</a> <a class="btn sec" href="/grupos/reportes.csv">Descargar reportes</a></p>
+        ${birthdays.length ? `<div class="card"><h3>Próximos cumpleaños de líderes (45 días)</h3><div class="table-scroll"><table>${birthdays
+          .map((b) => `<tr><td>${b.inDays === 0 ? '<span class="badge b-ok">Hoy</span>' : `${String(b.day).padStart(2, '0')}/${String(b.month).padStart(2, '0')}`}</td><td>${esc(b.who)}</td><td>${esc(b.group)}</td><td class="muted">cumple ${b.turns}</td></tr>`)
+          .join('')}</table></div></div>` : ''}
         ${weekly.length ? `<div class="card"><h3>Asistencia semanal en todos los grupos</h3>${charts.lineChart(weekly.map((w) => w.lbl), [{ name: 'Asistentes', values: weekly.map((w) => w.att) }, { name: 'Invitados', values: weekly.map((w) => w.guests) }], { title: 'Asistencia semanal en los grupos de cuidado' })}</div>` : ''}
         ${everyone.length ? `<div class="card"><h3>Ruta de crecimiento: personas por hito (${everyone.length} en total)</h3>${charts.barChart(route, { title: 'Personas por hito de la ruta de crecimiento', color: '#6b5b95' })}</div>` : ''}
         <div class="table-scroll"><table><tr><th>Grupo</th><th>Líder</th><th>Reunión</th><th>Último reporte</th><th>Reportes (30 d)</th><th>Datos del grupo</th></tr>${
@@ -229,6 +233,18 @@ function careGroupsRouter(ctx) {
     return (await db.query('SELECT * FROM care_groups WHERE id = $1', [id])).rows[0];
   }
 
+  // foto del líder: solo con sesión del panel (este router va después del guardia de sesión)
+  r.get(
+    '/grupos/:id(\\d{1,9})/foto',
+    ah(async (req, res) => {
+      const p = (await db.query('SELECT data FROM care_group_photos WHERE group_id = $1', [+req.params.id])).rows[0];
+      if (!p) return res.status(404).end();
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.send(Buffer.from(p.data));
+    })
+  );
+
   r.get(
     '/grupos/:id(\\d{1,9})',
     ah(async (req, res) => {
@@ -238,6 +254,7 @@ function careGroupsRouter(ctx) {
         await db.query(`SELECT *, meeting_date::text AS d FROM care_group_reports WHERE group_id = $1 ORDER BY meeting_date DESC LIMIT 60`, [g.id])
       ).rows;
       const url = `${config.publicUrl}/g/${g.token}`;
+      const hasPhoto = (await db.query('SELECT 1 FROM care_group_photos WHERE group_id = $1', [g.id])).rows.length > 0;
       const people = await fmt.listPeople(db, g.id);
       const month = today().slice(0, 7);
       const plan = await fmt.getPlan(db, g.id, month);
@@ -263,6 +280,11 @@ function careGroupsRouter(ctx) {
         `<p><a href="/grupos">← Grupos de cuidado</a></p>
         <h1>${esc(g.name)} ${g.active ? '' : '<span class="badge b-muted">Inactivo</span>'}</h1>
         <p class="sub">${esc([g.stage, g.leader_name && `Líder: ${g.leader_name}`, g.advisor_name && `Asesor: ${g.advisor_name}`, [g.meeting_day, g.meeting_time].filter(Boolean).join(' '), g.place].filter(Boolean).join(' · '))}</p>
+        ${hasPhoto || g.leader_birth_date || g.co_leader_birth_date || g.co_leader_name ? `<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+          ${hasPhoto ? `<img src="/grupos/${g.id}/foto" alt="Foto del líder" width="96" height="96" style="border-radius:16px;object-fit:cover">` : ''}
+          <div><h3 style="margin:0 0 4px">Datos del líder</h3>
+            <div>${esc(g.leader_name)}${g.leader_birth_date ? ` <span class="muted">· nació el ${esc(short(g.leader_birth_date))}</span>` : ''}</div>
+            ${g.co_leader_name || g.co_leader_birth_date ? `<div>${esc(g.co_leader_name || 'Pareja o co-líder')}${g.co_leader_birth_date ? ` <span class="muted">· nació el ${esc(short(g.co_leader_birth_date))}</span>` : ''}</div>` : ''}</div></div>` : ''}
         <div class="card"><h3>Enlace del líder</h3>
           <p class="muted" style="font-size:13px">Quien tenga este enlace puede enviar reportes de este grupo. Compártelo solo con el líder; si se pierde, genera uno nuevo y el anterior deja de funcionar.</p>
           <input type="text" readonly value="${esc(url)}" onclick="this.select()" style="font-size:13px" ${g.link_active ? '' : 'disabled'}>

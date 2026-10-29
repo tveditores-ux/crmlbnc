@@ -4,7 +4,7 @@ const { layout } = require('../views/layout');
 const { esc } = require('../util');
 const { displayPhone } = require('../phone');
 const { createRateLimiter } = require('../attendance-store');
-const { parseReport, upsertReport, parseGroup, STAGES: cgStages, DAYS: cgDays } = require('../care-groups');
+const { parseReport, upsertReport, parseLeaderProfile, parsePhoto, savePhoto, STAGES: cgStages, DAYS: cgDays } = require('../care-groups');
 const fmt = require('../care-formats');
 const views = require('../views/care-formats');
 
@@ -35,6 +35,9 @@ const CSS = `<style>
 .chip2 span{display:inline-block;min-width:44px;text-align:center;padding:10px 8px;border-radius:10px;border:1px solid var(--line);background:#fff;font-size:15px}
 .chip2 input:checked+span{background:var(--accent);color:#fff;border-color:var(--accent)}
 .chip2 input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
+.photo-box img{display:block;width:100%;max-width:260px;aspect-ratio:1/1;object-fit:cover;border-radius:16px;border:1px solid var(--line);margin:0 0 10px}
+.photo-box .quick{display:flex;gap:8px;flex-wrap:wrap}
+.remote .photo-btn{display:inline-block;margin:0;font-weight:600;font-size:16px;padding:12px 14px;text-align:center;cursor:pointer;flex:1 1 140px}
 .hp{position:absolute;left:-9999px;height:0;overflow:hidden}
 </style>`;
 
@@ -125,9 +128,23 @@ function careRemoteRouter(ctx) {
       <form method="post" autocomplete="off">${honey}
         <h2>Líder</h2>
         ${t('leader_name', 'Nombre del líder o líderes', 'maxlength="120" required')}
+        <label for="leader_birth_date">Fecha de nacimiento del líder</label><input id="leader_birth_date" type="date" name="leader_birth_date" min="1910-01-01" max="${esc(today())}" value="${esc(v.leader_birth_date || '')}">
+        ${t('co_leader_name', 'Pareja o co-líder, si lo hay (opcional)')}
+        <label for="co_leader_birth_date">Fecha de nacimiento de la pareja o co-líder</label><input id="co_leader_birth_date" type="date" name="co_leader_birth_date" min="1910-01-01" max="${esc(today())}" value="${esc(v.co_leader_birth_date || '')}">
         <label for="leader_phone">Teléfono (WhatsApp)</label><input id="leader_phone" type="tel" inputmode="tel" name="leader_phone" value="${esc(v.leader_phone_input ?? '')}" placeholder="0414-000.00.00">
         <label for="leader_email">Correo (opcional)</label><input id="leader_email" type="email" inputmode="email" name="leader_email" value="${esc(v.leader_email || '')}">
         ${t('advisor_name', 'Líder asesor (opcional)')}
+        <h2>Foto</h2>
+        <p class="muted" style="font-size:14px;margin:6px 0">Una foto del líder o de la pareja, de frente y con buena luz. Es opcional.</p>
+        <div class="photo-box">
+          <img id="photo_prev" alt="Vista previa de la foto" ${v.photo_data ? `src="${esc(v.photo_data)}"` : v.has_photo ? `src="/g/${esc(token)}/foto?v=${esc(v.photo_v || '')}"` : 'style="display:none"'}>
+          <div class="quick">
+            <label class="btn sec photo-btn">Tomar foto<input id="photo_cam" type="file" accept="image/*" capture="user" hidden></label>
+            <label class="btn sec photo-btn">Elegir de la galería<input id="photo_gal" type="file" accept="image/*" hidden></label>
+          </div>
+          <p id="photo_msg" class="muted" style="font-size:13px;margin:6px 0 0"></p>
+          <input type="hidden" id="photo_data" name="photo_data" value="${esc(v.photo_data || '')}">
+        </div>
         <h2>Reunión</h2>
         ${sel('meeting_day', 'Día', cgDays)}
         <label for="meeting_time">Hora</label><input id="meeting_time" type="time" name="meeting_time" value="${esc(v.meeting_time || '')}">
@@ -138,7 +155,29 @@ function careRemoteRouter(ctx) {
         ${t('belongs_to', 'Pertenece a (opcional)')}
         ${t('congregation', 'Congregación (opcional)')}
         <button class="go">Guardar datos</button>
-      </form>`;
+      </form>
+      <script>
+        (function () {
+          var data = document.getElementById('photo_data'), prev = document.getElementById('photo_prev'), msg = document.getElementById('photo_msg');
+          function take(file) {
+            if (!file) return;
+            msg.textContent = 'Preparando la foto…';
+            var url = URL.createObjectURL(file), img = new Image();
+            img.onload = function () {
+              var s = Math.min(1, 900 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+              c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+              c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+              data.value = c.toDataURL('image/jpeg', 0.82); // se reconvierte: así no viaja la ubicación de la foto
+              prev.src = data.value; prev.style.display = 'block';
+              msg.textContent = 'Foto lista. Se enviará al guardar.';
+              URL.revokeObjectURL(url);
+            };
+            img.onerror = function () { msg.textContent = 'No pude leer esa foto. Prueba con otra.'; URL.revokeObjectURL(url); };
+            img.src = url;
+          }
+          ['photo_cam', 'photo_gal'].forEach(function (id) { document.getElementById(id).addEventListener('change', function (e) { take(e.target.files[0]); }); });
+        })();
+      </script>`;
   }
 
   function form(g, v = {}, errors = []) {
@@ -220,7 +259,21 @@ function careRemoteRouter(ctx) {
     ah(async (req, res) => {
       const g = await findGroup(req.params.token);
       if (!g) return send(res, invalid());
-      send(res, shell('Datos del grupo', datosForm(g, req.params.token, { ...g, leader_phone_input: displayPhone(g.leader_phone) })));
+      const photo = (await db.query('SELECT extract(epoch from updated_at)::bigint AS v FROM care_group_photos WHERE group_id = $1', [g.id])).rows[0];
+      send(res, shell('Datos del grupo', datosForm(g, req.params.token, { ...g, leader_phone_input: displayPhone(g.leader_phone), has_photo: !!photo, photo_v: photo ? photo.v : '' })));
+    })
+  );
+  // la foto actual, para que el líder la vea; solo con su enlace
+  r.get(
+    '/g/:token/foto',
+    ah(async (req, res) => {
+      const g = await findGroup(req.params.token);
+      if (!g) return send(res, invalid());
+      const p = (await db.query('SELECT data FROM care_group_photos WHERE group_id = $1', [g.id])).rows[0];
+      if (!p) return res.status(404).end();
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.send(Buffer.from(p.data));
     })
   );
   r.post(
@@ -230,13 +283,20 @@ function careRemoteRouter(ctx) {
       if (!g) return send(res, invalid());
       if (req.body.web) return send(res, shell('Gracias', '<div class="ok">Gracias.</div>'));
       if (!limiter.take(`${req.ip}|${req.params.token}`)) return send(res, tooMany());
-      const { value, errors } = parseGroup({ ...req.body, name: g.name }, config.defaultCountryCode);
+      const { value, errors } = parseLeaderProfile({ ...req.body, name: g.name }, config.defaultCountryCode, today());
       if (!value.leader_name) errors.push('Escribe el nombre del líder.');
-      if (errors.length) return send(res, shell('Datos del grupo', datosForm(g, req.params.token, { ...req.body, leader_phone_input: req.body.leader_phone }, errors), 400));
+      const photo = parsePhoto(req.body.photo_data);
+      if (photo.error) errors.push(photo.error);
+      if (errors.length) {
+        const keep = photo.error ? {} : { photo_data: req.body.photo_data };
+        return send(res, shell('Datos del grupo', datosForm(g, req.params.token, { ...req.body, ...keep, leader_phone_input: req.body.leader_phone }, errors), 400));
+      }
       await db.query(
-        `UPDATE care_groups SET leader_name=$2, leader_phone=$3, leader_email=$4, advisor_name=$5, belongs_to=$6, congregation=$7, address=$8, place=$9, meeting_day=$10, meeting_time=$11, stage=$12, profile_updated_at=now(), uses = uses + 1, last_used_at = now() WHERE id=$1`,
-        [g.id, value.leader_name, value.leader_phone, value.leader_email, value.advisor_name, value.belongs_to, value.congregation, value.address, value.place, value.meeting_day, value.meeting_time, value.stage]
+        `UPDATE care_groups SET leader_name=$2, leader_phone=$3, leader_email=$4, advisor_name=$5, belongs_to=$6, congregation=$7, address=$8, place=$9, meeting_day=$10, meeting_time=$11, stage=$12,
+           leader_birth_date=$13, co_leader_name=$14, co_leader_birth_date=$15, profile_updated_at=now(), uses = uses + 1, last_used_at = now() WHERE id=$1`,
+        [g.id, value.leader_name, value.leader_phone, value.leader_email, value.advisor_name, value.belongs_to, value.congregation, value.address, value.place, value.meeting_day, value.meeting_time, value.stage, value.leader_birth_date, value.co_leader_name, value.co_leader_birth_date]
       );
+      if (photo.buffer) await savePhoto(db, g.id, photo.buffer);
       send(res, saved(req.params.token, '/datos', 'Datos del grupo guardados. ¡Gracias!'));
     })
   );
