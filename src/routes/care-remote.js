@@ -2,8 +2,9 @@
 const express = require('express');
 const { layout } = require('../views/layout');
 const { esc } = require('../util');
+const { displayPhone } = require('../phone');
 const { createRateLimiter } = require('../attendance-store');
-const { parseReport, upsertReport, STAGES: cgStages } = require('../care-groups');
+const { parseReport, upsertReport, parseGroup, STAGES: cgStages, DAYS: cgDays } = require('../care-groups');
 const fmt = require('../care-formats');
 const views = require('../views/care-formats');
 
@@ -52,15 +53,15 @@ function careRemoteRouter(ctx) {
 
   async function findGroup(token) {
     if (!/^[A-Za-z0-9_-]{16,64}$/.test(String(token))) return null;
-    const { rows } = await db.query('SELECT id, name, token, leader_name, meeting_day, active, link_active FROM care_groups WHERE token = $1', [token]);
+    const { rows } = await db.query('SELECT * FROM care_groups WHERE token = $1', [token]);
     return rows[0] && rows[0].active && rows[0].link_active ? rows[0] : null;
   }
 
   const invalid = () =>
     shell('Enlace no válido', '<div class="card"><h1>Enlace no válido</h1><p class="muted">Este enlace ya no está activo. Pídele uno nuevo a quien administra el panel.</p></div>', 404);
 
-  const TABS = [['', 'Reporte'], ['/planificador', 'Planificador'], ['/gente', 'Ruta de crecimiento'], ['/foda', 'F.O.D.A.'], ['/trimestral', 'Trimestral']];
-  const tabKey = { '': 'reporte', '/planificador': 'planificador', '/gente': 'gente', '/foda': 'foda', '/trimestral': 'trimestral' };
+  const TABS = [['/datos', 'Datos del grupo'], ['', 'Reporte'], ['/planificador', 'Planificador'], ['/gente', 'Ruta de crecimiento'], ['/foda', 'F.O.D.A.'], ['/trimestral', 'Trimestral']];
+  const tabKey = { '/datos': 'datos', '': 'reporte', '/planificador': 'planificador', '/gente': 'gente', '/foda': 'foda', '/trimestral': 'trimestral' };
   const tabs = (token, on) =>
     `<div class="tabs">${TABS.map(([p, l]) => `<a href="/g/${esc(token)}${p}" class="${tabKey[p] === on ? 'on' : ''}">${l}</a>`).join('')}</div>`;
   const tooMany = () => shell('Demasiados envíos', '<div class="card"><h1>Demasiados envíos</h1><p class="muted">Espera un rato antes de enviar otro.</p></div>', 429);
@@ -112,6 +113,32 @@ function careRemoteRouter(ctx) {
       <form method="post" autocomplete="off">${honey}<input type="hidden" name="quarter" value="${esc(quarter)}">
         ${area('strengths', 'Fortalezas')}${area('opportunities', 'Oportunidades')}${area('weaknesses', 'Debilidades')}${area('threats', 'Amenazas')}
         <button class="go">Guardar F.O.D.A.</button></form>`;
+  }
+
+  function datosForm(g, token, v, errors = []) {
+    const t = (name, label, extra = '') => `<label for="${name}">${label}</label><input id="${name}" type="text" name="${name}" value="${esc(v[name] || '')}" ${extra}>`;
+    const sel = (name, label, options) => `<label for="${name}">${label}</label><select id="${name}" name="${name}" style="font-size:18px;padding:12px;width:100%;border-radius:10px;border:1px solid var(--line)"><option value="">Sin definir</option>${options.map((o) => `<option ${v[name] === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+    return `${tabs(token, 'datos')}<h1>Datos del grupo</h1>
+      <p class="sub" style="margin:0"><strong>${esc(g.name)}</strong></p>
+      <p class="muted" style="font-size:14px">Revisa que todo esté bien y corrige lo que haga falta. Al guardar, la información llega directo a la iglesia.${g.profile_updated_at ? ' <strong>Ya confirmaste estos datos antes; puedes actualizarlos cuando cambien.</strong>' : ''}</p>
+      ${flashErr(errors)}
+      <form method="post" autocomplete="off">${honey}
+        <h2>Líder</h2>
+        ${t('leader_name', 'Nombre del líder o líderes', 'maxlength="120" required')}
+        <label for="leader_phone">Teléfono (WhatsApp)</label><input id="leader_phone" type="tel" inputmode="tel" name="leader_phone" value="${esc(v.leader_phone_input ?? '')}" placeholder="0414-000.00.00">
+        <label for="leader_email">Correo (opcional)</label><input id="leader_email" type="email" inputmode="email" name="leader_email" value="${esc(v.leader_email || '')}">
+        ${t('advisor_name', 'Líder asesor (opcional)')}
+        <h2>Reunión</h2>
+        ${sel('meeting_day', 'Día', cgDays)}
+        <label for="meeting_time">Hora</label><input id="meeting_time" type="time" name="meeting_time" value="${esc(v.meeting_time || '')}">
+        ${t('place', 'Lugar de reunión')}
+        ${t('address', 'Dirección o punto de referencia')}
+        ${sel('stage', 'Etapa del grupo', cgStages)}
+        <h2>Pertenencia</h2>
+        ${t('belongs_to', 'Pertenece a (opcional)')}
+        ${t('congregation', 'Congregación (opcional)')}
+        <button class="go">Guardar datos</button>
+      </form>`;
   }
 
   function form(g, v = {}, errors = []) {
@@ -187,6 +214,32 @@ function careRemoteRouter(ctx) {
   const monthNow = () => today().slice(0, 7);
   const quarterNow = () => fmt.quarterOf(today());
   const saved = (token, path, msg) => shell('Guardado', `<h1>¡Listo!</h1><div class="ok">${esc(msg)}</div><a class="btn go" style="display:block;text-align:center;box-sizing:border-box" href="${link(token, path)}">Volver</a>`);
+
+  r.get(
+    '/g/:token/datos',
+    ah(async (req, res) => {
+      const g = await findGroup(req.params.token);
+      if (!g) return send(res, invalid());
+      send(res, shell('Datos del grupo', datosForm(g, req.params.token, { ...g, leader_phone_input: displayPhone(g.leader_phone) })));
+    })
+  );
+  r.post(
+    '/g/:token/datos',
+    ah(async (req, res) => {
+      const g = await findGroup(req.params.token);
+      if (!g) return send(res, invalid());
+      if (req.body.web) return send(res, shell('Gracias', '<div class="ok">Gracias.</div>'));
+      if (!limiter.take(`${req.ip}|${req.params.token}`)) return send(res, tooMany());
+      const { value, errors } = parseGroup({ ...req.body, name: g.name }, config.defaultCountryCode);
+      if (!value.leader_name) errors.push('Escribe el nombre del líder.');
+      if (errors.length) return send(res, shell('Datos del grupo', datosForm(g, req.params.token, { ...req.body, leader_phone_input: req.body.leader_phone }, errors), 400));
+      await db.query(
+        `UPDATE care_groups SET leader_name=$2, leader_phone=$3, leader_email=$4, advisor_name=$5, belongs_to=$6, congregation=$7, address=$8, place=$9, meeting_day=$10, meeting_time=$11, stage=$12, profile_updated_at=now(), uses = uses + 1, last_used_at = now() WHERE id=$1`,
+        [g.id, value.leader_name, value.leader_phone, value.leader_email, value.advisor_name, value.belongs_to, value.congregation, value.address, value.place, value.meeting_day, value.meeting_time, value.stage]
+      );
+      send(res, saved(req.params.token, '/datos', 'Datos del grupo guardados. ¡Gracias!'));
+    })
+  );
 
   r.get(
     '/g/:token/planificador',

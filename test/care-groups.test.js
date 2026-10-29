@@ -225,3 +225,73 @@ test('importar grupos: una fila mala cancela todo y se explican los problemas', 
     assert.match(await noName.text(), /Falta la columna/);
   });
 });
+
+test('el líder confirma los datos de su grupo desde su enlace y llegan a la ficha; el nombre del grupo no cambia', async (t) => {
+  await withApp(t, async ({ db, get, post }) => {
+    const g = await newGroup(post, db, { name: 'GdC Datos', leader_name: 'Viejo Nombre' });
+    const T = `/g/${g.token}/datos`;
+    const form = await get(T);
+    assert.equal(form.status, 200);
+    assert.equal(form.headers.get('cache-control'), 'no-store');
+    assert.match(await form.text(), /Viejo Nombre/);
+    assert.equal(g.profile_updated_at, null);
+
+    const ok = await post(T, { name: 'Intento de renombrar', leader_name: 'Líder Nuevo', leader_phone: '0414-000.00.07', leader_email: 'lider@ejemplo.com', meeting_day: 'Jueves', meeting_time: '18:30', place: 'Casa de prueba', stage: 'Equipo', congregation: 'Sede' });
+    assert.equal(ok.status, 200);
+    assert.match(await ok.text(), /Datos del grupo guardados/);
+    const row = (await db.query('SELECT * FROM care_groups WHERE id = $1', [g.id])).rows[0];
+    assert.equal(row.name, 'GdC Datos');
+    assert.equal(row.leader_name, 'Líder Nuevo');
+    assert.equal(row.leader_phone, '584140000007');
+    assert.equal(row.meeting_day, 'Jueves');
+    assert.equal(row.meeting_time, '18:30');
+    assert.equal(row.token, g.token);
+    assert.ok(row.profile_updated_at);
+
+    const again = await (await get(T)).text();
+    assert.match(again, /0414-000\.00\.07/);
+    assert.match(again, /Ya confirmaste/);
+    const list = await (await get('/grupos')).text();
+    assert.match(list, /Confirmados/);
+  });
+});
+
+test('datos del grupo: líder obligatorio, teléfono válido, robots, enlace caído; no guarda nada si falla', async (t) => {
+  await withApp(t, async ({ db, get, post }) => {
+    const g = await newGroup(post, db, { name: 'GdC Datos 2', leader_name: 'Líder Original' });
+    const T = `/g/${g.token}/datos`;
+    const noLeader = await post(T, { leader_name: '' });
+    assert.equal(noLeader.status, 400);
+    assert.match(await noLeader.text(), /nombre del líder/);
+    const badPhone = await post(T, { leader_name: 'X', leader_phone: '12' });
+    assert.equal(badPhone.status, 400);
+    const bot = await post(T, { leader_name: 'Spam', web: 'x' });
+    assert.equal(bot.status, 200);
+    const row = (await db.query('SELECT * FROM care_groups WHERE id = $1', [g.id])).rows[0];
+    assert.equal(row.leader_name, 'Líder Original');
+    assert.equal(row.profile_updated_at, null);
+
+    await post(`/grupos/${g.id}/enlace/desactivar`);
+    assert.equal((await get(T)).status, 404);
+    assert.equal((await post(T, { leader_name: 'Otro' })).status, 404);
+  });
+});
+
+test('página de solicitud: un enlace /datos por grupo, estado, y sin grupos inactivos ni con enlace apagado', async (t) => {
+  await withApp(t, async ({ db, get, post }) => {
+    const a = await newGroup(post, db, { name: 'Grupo A', leader_name: 'Líder A', leader_phone: '0414-000.00.01' });
+    const b = await newGroup(post, db, { name: 'Grupo B', leader_name: 'Líder B' });
+    const c = await newGroup(post, db, { name: 'Grupo C' });
+    await post(`/grupos/${c.id}/enlace/desactivar`);
+    const html = await (await get('/grupos/solicitud')).text();
+    assert.match(html, /Grupo A/);
+    assert.match(html, /Grupo B/);
+    assert.ok(!html.includes('Grupo C'));
+    assert.match(html, new RegExp(`/g/${a.token}/datos`));
+    assert.match(html, /data-phone="584140000001"/);
+    assert.match(html, /Sin teléfono/); // el grupo B no tiene
+    assert.match(html, /2 de 2 grupos aún no confirman/);
+    assert.match(html, /{nombre}/);
+    assert.ok(b.id);
+  });
+});

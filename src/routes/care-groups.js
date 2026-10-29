@@ -78,7 +78,8 @@ function careGroupsRouter(ctx) {
             <td>${esc(g.leader_name)}<div class="muted">${esc(displayPhone(g.leader_phone))}</div></td>
             <td>${esc([g.meeting_day, g.meeting_time].filter(Boolean).join(' '))}<div class="muted">${esc(g.place)}</div></td>
             <td>${badge}<div class="muted">${g.last_report ? esc(short(g.last_report)) : ''}</div></td>
-            <td>${g.reports_30d}</td></tr>`;
+            <td>${g.reports_30d}</td>
+            <td>${g.profile_updated_at ? `<span class="badge b-ok">Confirmados</span><div class="muted">${esc(short(new Date(g.profile_updated_at).toLocaleDateString('en-CA', { timeZone: config.timezone })))}</div>` : '<span class="badge b-warn">Pendientes</span>'}</td></tr>`;
         })
         .join('');
       page(
@@ -93,11 +94,11 @@ function careGroupsRouter(ctx) {
           <div class="card"><div class="stat">${totals.att}</div><div class="stat-label">asistentes (30 días)</div></div>
           <div class="card"><div class="stat">${stale.length}</div><div class="stat-label">sin reportar hace más de ${STALE_DAYS} días</div></div>
         </div>
-        <p class="toolbar"><a class="btn" href="/grupos/nuevo">Agregar grupo</a> <a class="btn sec" href="/grupos/importar">Importar grupos (CSV)</a> <a class="btn sec" href="/grupos/reportes.csv">Descargar reportes</a></p>
+        <p class="toolbar"><a class="btn" href="/grupos/nuevo">Agregar grupo</a> <a class="btn sec" href="/grupos/solicitud">Pedir datos a los líderes</a> <a class="btn sec" href="/grupos/importar">Importar grupos (CSV)</a> <a class="btn sec" href="/grupos/reportes.csv">Descargar reportes</a></p>
         ${weekly.length ? `<div class="card"><h3>Asistencia semanal en todos los grupos</h3>${charts.lineChart(weekly.map((w) => w.lbl), [{ name: 'Asistentes', values: weekly.map((w) => w.att) }, { name: 'Invitados', values: weekly.map((w) => w.guests) }], { title: 'Asistencia semanal en los grupos de cuidado' })}</div>` : ''}
         ${everyone.length ? `<div class="card"><h3>Ruta de crecimiento: personas por hito (${everyone.length} en total)</h3>${charts.barChart(route, { title: 'Personas por hito de la ruta de crecimiento', color: '#6b5b95' })}</div>` : ''}
-        <div class="table-scroll"><table><tr><th>Grupo</th><th>Líder</th><th>Reunión</th><th>Último reporte</th><th>Reportes (30 d)</th></tr>${
-          rows || '<tr><td colspan="5" class="muted">Aún no hay grupos. Agrega el primero.</td></tr>'
+        <div class="table-scroll"><table><tr><th>Grupo</th><th>Líder</th><th>Reunión</th><th>Último reporte</th><th>Reportes (30 d)</th><th>Datos del grupo</th></tr>${
+          rows || '<tr><td colspan="6" class="muted">Aún no hay grupos. Agrega el primero.</td></tr>'
         }</table></div>`
       );
     })
@@ -147,6 +148,47 @@ function careGroupsRouter(ctx) {
         return go(res, '/grupos', { ok: `Importación lista: ${report.created} grupos nuevos, ${report.updated} actualizados.` });
       }
       page(req, res, 'Importar grupos', importPage(text, html));
+    })
+  );
+
+  /* ----------------- Pedir los datos a los líderes (WhatsApp manual) ----------------- */
+  const DEFAULT_ASK = 'Hola {nombre}, la paz del Señor. Estamos actualizando los datos de los grupos de cuidado de la iglesia. ¿Me ayudas llenando este formulario desde tu teléfono? Son dos minutos: {enlace}';
+  r.get(
+    '/grupos/solicitud',
+    ah(async (req, res) => {
+      const groups = (await cg.listGroups(db, today())).filter((g) => g.active && g.link_active);
+      const pending = groups.filter((g) => !g.profile_updated_at).length;
+      const rows = groups
+        .map((g) => {
+          const url = `${config.publicUrl}/g/${g.token}/datos`;
+          return `<tr data-name="${esc(g.leader_name || g.name)}" data-url="${esc(url)}" data-phone="${esc(g.leader_phone)}">
+            <td><strong>${esc(g.name)}</strong><div class="muted">${esc(g.leader_name)}</div></td>
+            <td>${g.profile_updated_at ? '<span class="badge b-ok">Confirmados</span>' : '<span class="badge b-warn">Pendientes</span>'}</td>
+            <td style="white-space:nowrap">${g.leader_phone ? '<a class="btn small wa" target="_blank" rel="noopener" href="#">WhatsApp</a>' : '<span class="muted">Sin teléfono</span>'}
+              <button type="button" class="small sec cp">Copiar mensaje</button></td></tr>`;
+        })
+        .join('');
+      page(
+        req,
+        res,
+        'Pedir datos a los líderes',
+        `<p><a href="/grupos">← Grupos de cuidado</a></p><h1>Pedir los datos a los líderes</h1>
+        <p class="sub">Cada líder recibe su propio enlace a un formulario para el teléfono. Lo que llenen llega directo a su ficha. El mensaje lo envías tú desde tu WhatsApp, uno por uno: el sistema no manda nada por su cuenta.</p>
+        <div class="card"><label>Mensaje (puedes cambiarlo; {nombre} y {enlace} se rellenan solos)</label>
+          <textarea id="tpl" style="min-height:110px">${esc(DEFAULT_ASK)}</textarea>
+          <p class="muted" style="margin:6px 0 0">${pending} de ${groups.length} grupos aún no confirman sus datos.</p></div>
+        <div class="table-scroll"><table><tr><th>Grupo</th><th>Datos</th><th></th></tr>${rows || '<tr><td colspan="3" class="muted">No hay grupos activos con enlace.</td></tr>'}</table></div>
+        <script>
+          var tpl = document.getElementById('tpl');
+          function msg(tr){ return tpl.value.split('{nombre}').join(tr.dataset.name).split('{enlace}').join(tr.dataset.url); }
+          function refresh(){ document.querySelectorAll('tr[data-url]').forEach(function(tr){
+            var a = tr.querySelector('a.wa'); if (a) a.href = 'https://wa.me/' + tr.dataset.phone + '?text=' + encodeURIComponent(msg(tr)); }); }
+          tpl.addEventListener('input', refresh); refresh();
+          document.querySelectorAll('button.cp').forEach(function(b){ b.addEventListener('click', function(){
+            var t = msg(b.closest('tr'));
+            (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function(){ b.textContent = '¡Copiado!'; }, function(){ tpl.select(); b.textContent = 'Copia desde arriba'; }); }); });
+        </script>`
+      );
     })
   );
 
@@ -224,6 +266,7 @@ function careGroupsRouter(ctx) {
         <div class="card"><h3>Enlace del líder</h3>
           <p class="muted" style="font-size:13px">Quien tenga este enlace puede enviar reportes de este grupo. Compártelo solo con el líder; si se pierde, genera uno nuevo y el anterior deja de funcionar.</p>
           <input type="text" readonly value="${esc(url)}" onclick="this.select()" style="font-size:13px" ${g.link_active ? '' : 'disabled'}>
+          <p class="muted" style="font-size:13px">Datos del grupo: ${g.profile_updated_at ? `confirmados por el líder el ${esc(short(new Date(g.profile_updated_at).toLocaleDateString('en-CA', { timeZone: config.timezone })))}` : 'el líder aún no los ha confirmado'}. Para pedírselos, usa <a href="/grupos/solicitud">Pedir datos a los líderes</a>.</p>
           <p class="toolbar" style="margin-top:8px"><button type="button" class="small sec" data-copy="${esc(url)}">Copiar</button>
             <form class="inline" method="post" action="/grupos/${g.id}/enlace/${g.link_active ? 'desactivar' : 'activar'}"><button class="small ${g.link_active ? 'danger' : 'sec'}">${g.link_active ? 'Desactivar enlace' : 'Activar enlace'}</button></form>
             <form class="inline" method="post" action="/grupos/${g.id}/enlace/nuevo"><button class="small sec">Generar enlace nuevo</button></form>
