@@ -37,9 +37,10 @@ const loc = (r) => decodeURIComponent((r.headers.get('location') || '').replaceA
 const mkGroup = async (db, name, phone = '', leader = 'Líder Registrado', congregation = '') =>
   (await db.query('INSERT INTO care_groups (name, leader_name, leader_phone, congregation, token) VALUES ($1,$2,$3,$4,$5) RETURNING *', [name, leader, phone, congregation, `tok${Math.random().toString(36).slice(2).padEnd(18, 'x')}`])).rows[0];
 const tokenOf = async (db) => (await intake.ensureToken(db)).token;
-const base = { leader_name: 'Líder X', leader_phone: '0414-000.00.01', congregation: 'Mujeres' };
+// lo obligatorio: congregación, nombre, teléfono, correo, líder asesor y foto
+const base = { leader_name: 'Líder X', leader_phone: '0414-000.00.01', congregation: 'Mujeres', leader_email: 'lider@ejemplo.com', advisor_name: 'Asesor Uno', photo_data: dataUrl(fakeJpeg(5)) };
 
-test('reconocer el grupo por el teléfono: uno solo, varios (desempatan nombre o congregación) o ninguno', () => {
+test('reconocer el grupo por el teléfono: uno solo, varios (desempata la congregación) o ninguno', () => {
   const groups = [
     { id: 1, name: 'Mujeres · Ana', leader_phone: '584140000001', congregation: 'Mujeres' },
     { id: 2, name: 'Jóvenes · Hombres', leader_phone: '584140000002', congregation: 'Jóvenes' },
@@ -50,11 +51,8 @@ test('reconocer el grupo por el teléfono: uno solo, varios (desempatan nombre o
   const parse = (extra) => intake.parseSubmission({ ...base, ...extra }, groups, '58', TODAY);
   assert.equal(parse({}).groupId, 1);
   assert.equal(parse({ leader_phone: '0414-000.00.02', congregation: 'Jóvenes' }).groupId, null); // dos grupos iguales: ambiguo
-  assert.equal(parse({ leader_phone: '0414-000.00.02', congregation: 'Jóvenes', group_name: 'jóvenes · chicas' }).groupId, 3); // lo desempata el nombre
   assert.equal(parse({ leader_phone: '0414-000.00.03', congregation: 'Matrimonios' }).groupId, 4); // lo desempata la congregación
   assert.equal(parse({ leader_phone: '0424-999.99.99' }).groupId, null); // teléfono desconocido
-  const nuevo = parse({ leader_phone: '0424-999.99.99', congregation: 'Hombres', group_name: ' Grupo   Nuevo ' });
-  assert.equal(nuevo.newGroupName, 'Grupo Nuevo');
   assert.equal(parse({ leader_phone: '0424-999.99.99', congregation: 'Hombres' }).newGroupName, 'Hombres · Líder X');
 });
 
@@ -66,6 +64,15 @@ test('la congregación es obligatoria y solo vale una de la lista', () => {
   assert.ok(parse({ congregation: 'Inventada' }).errors.includes('Elige tu congregación.'));
   assert.ok(parse({ leader_phone: '' }).errors.some((e) => /teléfono/.test(e)));
   assert.ok(parse({ leader_name: '' }).errors.some((e) => /nombre del líder/.test(e)));
+});
+
+test('correo, líder asesor y foto son obligatorios; el nacimiento no', () => {
+  const parse = (extra) => intake.parseSubmission({ ...base, ...extra }, [], '58', TODAY);
+  assert.ok(parse({ leader_email: '' }).errors.includes('Escribe el correo del líder.'));
+  assert.ok(parse({ advisor_name: '' }).errors.includes('Escribe el nombre del líder asesor.'));
+  assert.ok(parse({ photo_data: '' }).errors.includes('Falta la foto del líder.'));
+  assert.ok(parse({ leader_email: 'no-es-correo' }).errors.some((e) => /correo/.test(e)));
+  assert.deepEqual(parse({ leader_birth_date: '' }).errors, []); // el nacimiento sigue siendo opcional
 });
 
 test('el formulario común pide la congregación, no lista grupos ni teléfonos, y rechaza enlaces malos o apagados', async (t) => {
@@ -80,6 +87,10 @@ test('el formulario común pide la congregación, no lista grupos ni teléfonos,
     assert.match(html, /¿Cuál es tu congregación\?/);
     for (const c of CONGREGATIONS) assert.ok(html.includes(`<option >${c}</option>`) || html.includes(`>${c}</option>`), c);
     assert.ok(!html.includes('¿Cuál es tu grupo?'));
+    for (const gone of ['Nombre de tu grupo', 'Pareja', 'co-líder', 'Pertenece', 'Pertenencia', 'líderes', '(opcional)']) assert.ok(!html.includes(gone), gone);
+    for (const id of ['leader_email', 'advisor_name', 'leader_phone', 'leader_name']) assert.match(html, new RegExp(`id="${id}"[^>]*required|required[^>]*id="${id}"`), id);
+    assert.match(html, /Foto del líder/);
+    assert.match(html, /La foto es obligatoria/);
     assert.ok(!html.includes('Grupo Secreto')); // ya no se muestran los grupos
     assert.ok(!html.includes('584140000001') && !html.includes('0414-000.00.01'));
     assert.match(html, /capture="user"/);
@@ -103,7 +114,7 @@ test('con el teléfono del líder, los datos y la foto se aplican solos al grupo
     const g = await mkGroup(db, 'Grupo Uno', '584140000001', 'Nombre Viejo');
     const token = await tokenOf(db);
     const r = await post(`/registro/${token}`, {
-      ...base, leader_name: 'Nombre Nuevo', leader_birth_date: '1985-11-05', co_leader_name: 'Pareja Uno', meeting_day: 'Lunes', meeting_time: '18:00', place: 'Casa de prueba', photo_data: dataUrl(fakeJpeg(3)),
+      ...base, leader_name: 'Nombre Nuevo', leader_birth_date: '1985-11-05', meeting_day: 'Lunes', meeting_time: '18:00', place: 'Casa de prueba', photo_data: dataUrl(fakeJpeg(3)),
     });
     assert.equal(r.status, 200);
     assert.match(await r.text(), /ya quedaron actualizados/);
@@ -111,6 +122,8 @@ test('con el teléfono del líder, los datos y la foto se aplican solos al grupo
     assert.equal(row.leader_name, 'Nombre Nuevo');
     assert.equal(row.congregation, 'Mujeres');
     assert.equal(row.leader_birth_date, '1985-11-05');
+    assert.equal(row.leader_email, 'lider@ejemplo.com');
+    assert.equal(row.advisor_name, 'Asesor Uno');
     assert.equal(row.meeting_day, 'Lunes');
     assert.equal(row.name, 'Grupo Uno'); // el nombre del grupo no cambia
     assert.equal(row.token, g.token);
@@ -129,7 +142,7 @@ test('con un teléfono desconocido queda pendiente; se aprueba como grupo nuevo 
     const token = await tokenOf(db);
 
     // 1) el líder cambió de número: se asigna a su grupo existente desde el panel
-    const r = await post(`/registro/${token}`, { ...base, leader_name: 'Otra Persona', leader_phone: '0424-000.00.09', meeting_day: 'Jueves', group_name: 'Grupo Dos', photo_data: dataUrl(fakeJpeg()) });
+    const r = await post(`/registro/${token}`, { ...base, leader_name: 'Otra Persona', leader_phone: '0424-000.00.09', meeting_day: 'Jueves', photo_data: dataUrl(fakeJpeg()) });
     assert.match(await r.text(), /La iglesia los revisará/);
     const same = (await db.query('SELECT * FROM care_groups WHERE id = $1', [g.id])).rows[0];
     assert.equal(same.leader_name, 'Líder Registrado'); // intacto hasta que se apruebe
@@ -155,10 +168,10 @@ test('con un teléfono desconocido queda pendiente; se aprueba como grupo nuevo 
     assert.match(loc(await post(`/grupos/respuestas/${id}/aplicar`, { group_id: 'nuevo' })), /ya fue atendida/);
 
     // 2) un grupo nuevo: se crea con el nombre que escribió
-    await post(`/registro/${token}`, { ...base, leader_phone: '0414-000.00.05', congregation: 'Hombres', group_name: 'Grupo Nuevo de Prueba', place: 'Sede' });
+    await post(`/registro/${token}`, { ...base, leader_phone: '0414-000.00.05', congregation: 'Hombres', place: 'Sede' });
     const nid = (await db.query("SELECT id FROM care_group_submissions WHERE status = 'pendiente'")).rows[0].id;
     await post(`/grupos/respuestas/${nid}/aplicar`, { group_id: 'nuevo' });
-    const created = (await db.query("SELECT * FROM care_groups WHERE name = 'Grupo Nuevo de Prueba'")).rows[0];
+    const created = (await db.query("SELECT * FROM care_groups WHERE name = 'Hombres · Líder X'")).rows[0];
     assert.equal(created.congregation, 'Hombres');
     assert.equal(created.place, 'Sede');
     assert.match(created.token, /^[A-Za-z0-9_-]{16,}$/);
@@ -167,11 +180,11 @@ test('con un teléfono desconocido queda pendiente; se aprueba como grupo nuevo 
 
 test('un grupo nuevo con un nombre que ya existe no se duplica; se puede descartar; dos grupos del mismo teléfono van a revisión', async (t) => {
   await withApp(t, async ({ db, post }) => {
-    await mkGroup(db, 'Grupo Existente', '584140000009');
+    await mkGroup(db, 'Mujeres · Líder X', '584140000009');
     await mkGroup(db, 'Jóvenes · Hombres', '584140000010', 'Carlos', 'Jóvenes');
     await mkGroup(db, 'Jóvenes · Chicas', '584140000010', 'Carlos', 'Jóvenes');
     const token = await tokenOf(db);
-    await post(`/registro/${token}`, { ...base, leader_phone: '0424-000.00.77', group_name: 'GRUPO existente' });
+    await post(`/registro/${token}`, { ...base, leader_phone: '0424-000.00.77' }); // se llamaría "Mujeres · Líder X", como el que ya existe
     await post(`/registro/${token}`, { ...base, leader_phone: '0414-000.00.10', congregation: 'Jóvenes' }); // ambiguo
     const subs = (await db.query('SELECT id, group_id FROM care_group_submissions ORDER BY id')).rows;
     assert.equal(subs.length, 2);
@@ -206,6 +219,13 @@ test('envíos malos: 400, nada se guarda y la foto buena se conserva; trampa par
     assert.equal(badDate.status, 400);
     assert.ok((await badDate.text()).includes(dataUrl(fakeJpeg()).slice(0, 80)));
     assert.equal((await post(`/registro/${token}`, { ...base, photo_data: 'data:image/png;base64,AAAA' })).status, 400);
+    assert.equal(await count(), 0);
+
+    for (const [field, msg] of [['leader_email', /correo/], ['advisor_name', /líder asesor/], ['photo_data', /Falta la foto/]]) {
+      const r = await post(`/registro/${token}`, { ...base, [field]: '' });
+      assert.equal(r.status, 400, field);
+      assert.match(await r.text(), msg);
+    }
     assert.equal(await count(), 0);
 
     const bot = await post(`/registro/${token}`, { ...base, leader_name: 'Spam', web: 'x' });

@@ -39,9 +39,6 @@ function careIntakeRouter(ctx) {
         <select id="congregation" name="congregation" required style="font-size:18px;padding:12px;width:100%;border-radius:10px;border:1px solid var(--line)">
           <option value="">Elige…</option>${options}
         </select>
-        <label for="group_name">Nombre de tu grupo (opcional)</label>
-        <input id="group_name" type="text" name="group_name" maxlength="120" value="${esc(v.group_name || '')}">
-        <p class="muted" style="font-size:13px;margin:4px 0 0">Si lideras más de un grupo, escribe aquí a cuál te refieres.</p>
         ${leaderFields(v, { today: today(), stages: STAGES, days: DAYS, congregations: CONGREGATIONS, skipCongregation: true })}
         <button class="go">Enviar mis datos</button>
       </form>${PHOTO_SCRIPT}`;

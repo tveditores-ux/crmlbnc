@@ -2,11 +2,10 @@
 const { tx } = require('./db');
 const cg = require('./care-groups');
 
-const FIELDS = ['leader_name', 'leader_phone', 'leader_email', 'advisor_name', 'belongs_to', 'congregation', 'address', 'place', 'meeting_day', 'meeting_time', 'stage', 'leader_birth_date', 'co_leader_name', 'co_leader_birth_date'];
+const FIELDS = ['leader_name', 'leader_phone', 'leader_email', 'advisor_name', 'congregation', 'address', 'place', 'meeting_day', 'meeting_time', 'stage', 'leader_birth_date'];
 const LABELS = {
-  leader_name: 'Líder', leader_phone: 'Teléfono', leader_email: 'Correo', advisor_name: 'Líder asesor', belongs_to: 'Pertenece a', congregation: 'Congregación',
+  leader_name: 'Líder', leader_phone: 'Teléfono', leader_email: 'Correo', advisor_name: 'Líder asesor', congregation: 'Congregación',
   address: 'Dirección', place: 'Lugar', meeting_day: 'Día', meeting_time: 'Hora', stage: 'Etapa', leader_birth_date: 'Nacimiento del líder',
-  co_leader_name: 'Pareja o co-líder', co_leader_birth_date: 'Nacimiento de la pareja',
 };
 const keyOf = (name) => String(name).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
@@ -48,23 +47,19 @@ function parseSubmission(body, groups, countryCode, today) {
   if (!cg.CONGREGATIONS.includes(congregation)) errors.push('Elige tu congregación.');
   const { value, errors: e2 } = cg.parseLeaderProfile({ ...body, congregation, name: 'x' }, countryCode, today);
   errors.push(...e2);
-  if (!value.leader_name) errors.push('Escribe el nombre del líder.');
-  if (!value.leader_phone && !errors.some((e) => /teléfono/.test(e))) errors.push('Escribe tu teléfono: lo usamos para reconocer tu grupo.');
   const photo = cg.parsePhoto(body.photo_data);
   if (photo.error) errors.push(photo.error);
+  else if (!photo.buffer) errors.push('Falta la foto del líder.');
 
-  const typed = String(body.group_name ?? '').replace(/\s+/g, ' ').trim().slice(0, 120);
   const byPhone = value.leader_phone ? groups.filter((g) => g.leader_phone && g.leader_phone === value.leader_phone) : [];
   let groupId = null;
   if (byPhone.length === 1) {
     groupId = byPhone[0].id;
   } else if (byPhone.length > 1) {
-    const byName = typed ? byPhone.filter((g) => keyOf(g.name) === keyOf(typed)) : [];
     const byCong = byPhone.filter((g) => g.congregation === congregation);
-    if (byName.length === 1) groupId = byName[0].id;
-    else if (byCong.length === 1) groupId = byCong[0].id;
+    if (byCong.length === 1) groupId = byCong[0].id;
   }
-  const newGroupName = typed || `${congregation} · ${value.leader_name}`.slice(0, 120);
+  const newGroupName = `${congregation} · ${value.leader_name}`.slice(0, 120);
   return { value, photo, groupId, newGroupName, errors: [...new Set(errors)] };
 }
 
@@ -72,9 +67,9 @@ function parseSubmission(body, groups, countryCode, today) {
 async function submit(pool, sub) {
   const v = sub.value;
   const { rows } = await pool.query(
-    `INSERT INTO care_group_submissions (group_id, new_group_name, leader_name, leader_phone, leader_email, advisor_name, belongs_to, congregation, address, place, meeting_day, meeting_time, stage, leader_birth_date, co_leader_name, co_leader_birth_date, photo)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id`,
-    [sub.groupId, sub.newGroupName, v.leader_name, v.leader_phone, v.leader_email, v.advisor_name, v.belongs_to, v.congregation, v.address, v.place, v.meeting_day, v.meeting_time, v.stage, v.leader_birth_date, v.co_leader_name, v.co_leader_birth_date, sub.photo.buffer]
+    `INSERT INTO care_group_submissions (group_id, new_group_name, leader_name, leader_phone, leader_email, advisor_name, congregation, address, place, meeting_day, meeting_time, stage, leader_birth_date, photo)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+    [sub.groupId, sub.newGroupName, v.leader_name, v.leader_phone, v.leader_email, v.advisor_name, v.congregation, v.address, v.place, v.meeting_day, v.meeting_time, v.stage, v.leader_birth_date, sub.photo.buffer]
   );
   const id = rows[0].id;
   if (sub.groupId) {

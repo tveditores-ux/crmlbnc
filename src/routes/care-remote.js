@@ -235,17 +235,17 @@ function careRemoteRouter(ctx) {
       if (req.body.web) return send(res, shell('Gracias', '<div class="ok">Gracias.</div>'));
       if (!limiter.take(`${req.ip}|${req.params.token}`)) return send(res, tooMany());
       const { value, errors } = parseLeaderProfile({ ...req.body, name: g.name }, config.defaultCountryCode, today());
-      if (!value.leader_name) errors.push('Escribe el nombre del líder.');
       const photo = parsePhoto(req.body.photo_data);
       if (photo.error) errors.push(photo.error);
+      else if (!photo.buffer && !(await db.query('SELECT 1 FROM care_group_photos WHERE group_id = $1', [g.id])).rows.length) errors.push('Falta la foto del líder.');
       if (errors.length) {
         const keep = photo.error ? {} : { photo_data: req.body.photo_data };
         return send(res, shell('Datos del grupo', datosForm(g, req.params.token, { ...req.body, ...keep, leader_phone_input: req.body.leader_phone }, errors), 400));
       }
       await db.query(
-        `UPDATE care_groups SET leader_name=$2, leader_phone=$3, leader_email=$4, advisor_name=$5, belongs_to=$6, congregation=$7, address=$8, place=$9, meeting_day=$10, meeting_time=$11, stage=$12,
-           leader_birth_date=$13, co_leader_name=$14, co_leader_birth_date=$15, profile_updated_at=now(), uses = uses + 1, last_used_at = now() WHERE id=$1`,
-        [g.id, value.leader_name, value.leader_phone, value.leader_email, value.advisor_name, value.belongs_to, value.congregation, value.address, value.place, value.meeting_day, value.meeting_time, value.stage, value.leader_birth_date, value.co_leader_name, value.co_leader_birth_date]
+        `UPDATE care_groups SET leader_name=$2, leader_phone=$3, leader_email=$4, advisor_name=$5, congregation=COALESCE(NULLIF($6, ''), congregation), address=$7, place=$8, meeting_day=$9, meeting_time=$10, stage=$11,
+           leader_birth_date=$12, profile_updated_at=now(), uses = uses + 1, last_used_at = now() WHERE id=$1`,
+        [g.id, value.leader_name, value.leader_phone, value.leader_email, value.advisor_name, value.congregation, value.address, value.place, value.meeting_day, value.meeting_time, value.stage, value.leader_birth_date]
       );
       if (photo.buffer) await savePhoto(db, g.id, photo.buffer);
       send(res, saved(req.params.token, '/datos', 'Datos del grupo guardados. ¡Gracias!'));

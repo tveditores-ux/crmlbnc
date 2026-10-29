@@ -197,17 +197,24 @@ function parseBirthDate(raw, today, who = 'del líder') {
   return { value: v };
 }
 
-/** Datos del formulario "Datos del grupo": lo de parseGroup más nacimiento del líder y de su pareja. */
+/** Datos del formulario "Datos del grupo": lo de parseGroup más el nacimiento del líder. */
 function parseLeaderProfile(src, countryCode, today) {
   const { value, errors } = parseGroup(src, countryCode);
   const b1 = parseBirthDate(src.leader_birth_date, today, 'del líder');
-  const b2 = parseBirthDate(src.co_leader_birth_date, today, 'de la pareja o co-líder');
   if (b1.error) errors.push(b1.error);
-  if (b2.error) errors.push(b2.error);
   value.leader_birth_date = b1.value;
-  value.co_leader_birth_date = b2.value;
-  value.co_leader_name = clean(src.co_leader_name, 120);
+  errors.push(...leaderRequiredErrors(src, value));
   return { value, errors };
+}
+
+/** Obligatorios del formulario del líder: nombre, teléfono, correo y líder asesor (la foto la revisa quien llama). */
+function leaderRequiredErrors(src, value) {
+  const e = [];
+  if (!value.leader_name) e.push('Escribe el nombre del líder.');
+  if (!clean(src.leader_phone)) e.push('Escribe el teléfono del líder.');
+  if (!clean(src.leader_email)) e.push('Escribe el correo del líder.');
+  if (!value.advisor_name) e.push('Escribe el nombre del líder asesor.');
+  return e;
 }
 
 /** Foto en data URL JPEG (el teléfono la reduce y la reconvierte). Devuelve { buffer } o { error }; vacío = sin foto nueva. */
@@ -251,10 +258,9 @@ function upcomingBirthdays(groups, today, days = 45) {
   };
   for (const g of groups) {
     if (!g.active) continue;
-    consider(g.name, g.co_leader_name ? g.leader_name : g.leader_name || 'Líder', g.leader_birth_date);
-    consider(g.name, g.co_leader_name || `${g.leader_name || 'Líder'} (pareja)`, g.co_leader_birth_date);
+    consider(g.name, g.leader_name || 'Líder', g.leader_birth_date);
   }
   return out.sort((a, b) => a.inDays - b.inDays || a.who.localeCompare(b.who));
 }
 
-module.exports = { parseBirthDate, parseLeaderProfile, parsePhoto, savePhoto, upcomingBirthdays, MAX_PHOTO_BYTES, importGroups, STAGES, CONGREGATIONS, DAYS, parseGroup, parseReport, upsertReport, listGroups, daysSince, newToken };
+module.exports = { parseBirthDate, parseLeaderProfile, leaderRequiredErrors, parsePhoto, savePhoto, upcomingBirthdays, MAX_PHOTO_BYTES, importGroups, STAGES, CONGREGATIONS, DAYS, parseGroup, parseReport, upsertReport, listGroups, daysSince, newToken };

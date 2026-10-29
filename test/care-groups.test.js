@@ -63,6 +63,10 @@ async function withApp(t, fn) {
   }
 }
 
+// el formulario "Datos del grupo" exige nombre, teléfono, correo, líder asesor y foto
+const JPEG = `data:image/jpeg;base64,${Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(400, 7), Buffer.from([0xff, 0xd9])]).toString('base64')}`;
+const required = { leader_name: 'Líder Obligatorio', leader_phone: '0414-000.00.01', leader_email: 'lider@ejemplo.com', advisor_name: 'Asesor Uno', photo_data: JPEG };
+
 const newGroup = async (post, db, extra = {}) => {
   const r = await post('/grupos', { name: 'GdC Prueba', leader_name: 'Líder Uno', ...extra });
   assert.equal(r.status, 303);
@@ -236,7 +240,7 @@ test('el líder confirma los datos de su grupo desde su enlace y llegan a la fic
     assert.match(await form.text(), /Viejo Nombre/);
     assert.equal(g.profile_updated_at, null);
 
-    const ok = await post(T, { name: 'Intento de renombrar', leader_name: 'Líder Nuevo', leader_phone: '0414-000.00.07', leader_email: 'lider@ejemplo.com', meeting_day: 'Jueves', meeting_time: '18:30', place: 'Casa de prueba', stage: 'Equipo', congregation: 'Sede' });
+    const ok = await post(T, { ...required, name: 'Intento de renombrar', leader_name: 'Líder Nuevo', leader_phone: '0414-000.00.07', meeting_day: 'Jueves', meeting_time: '18:30', place: 'Casa de prueba', stage: 'Equipo', congregation: 'Mujeres' });
     assert.equal(ok.status, 200);
     assert.match(await ok.text(), /Datos del grupo guardados/);
     const row = (await db.query('SELECT * FROM care_groups WHERE id = $1', [g.id])).rows[0];
@@ -245,6 +249,8 @@ test('el líder confirma los datos de su grupo desde su enlace y llegan a la fic
     assert.equal(row.leader_phone, '584140000007');
     assert.equal(row.meeting_day, 'Jueves');
     assert.equal(row.meeting_time, '18:30');
+    assert.equal(row.congregation, 'Mujeres');
+    assert.equal(row.advisor_name, 'Asesor Uno');
     assert.equal(row.token, g.token);
     assert.ok(row.profile_updated_at);
 
@@ -256,15 +262,26 @@ test('el líder confirma los datos de su grupo desde su enlace y llegan a la fic
   });
 });
 
-test('datos del grupo: líder obligatorio, teléfono válido, robots, enlace caído; no guarda nada si falla', async (t) => {
+test('datos del grupo: obligatorios (líder, teléfono, correo, asesor, foto), teléfono válido, robots, enlace caído; no guarda nada si falla', async (t) => {
   await withApp(t, async ({ db, get, post }) => {
     const g = await newGroup(post, db, { name: 'GdC Datos 2', leader_name: 'Líder Original' });
     const T = `/g/${g.token}/datos`;
     const noLeader = await post(T, { leader_name: '' });
     assert.equal(noLeader.status, 400);
     assert.match(await noLeader.text(), /nombre del líder/);
-    const badPhone = await post(T, { leader_name: 'X', leader_phone: '12' });
+    const badPhone = await post(T, { ...required, leader_phone: '12' });
     assert.equal(badPhone.status, 400);
+    for (const [field, msg] of [['leader_phone', /teléfono/], ['leader_email', /correo/], ['advisor_name', /líder asesor/], ['photo_data', /Falta la foto/]]) {
+      const r = await post(T, { ...required, [field]: '' });
+      assert.equal(r.status, 400, field);
+      assert.match(await r.text(), msg);
+    }
+    // con una foto ya guardada, reenviar sin foto nueva sí vale
+    await db.query('INSERT INTO care_group_photos (group_id, data) VALUES ($1, $2)', [g.id, Buffer.from([0xff, 0xd8, 0xff, 0xd9])]);
+    const keep = await post(T, { ...required, photo_data: '' });
+    assert.equal(keep.status, 200);
+    await db.query('DELETE FROM care_group_photos WHERE group_id = $1', [g.id]);
+    await db.query("UPDATE care_groups SET leader_name = 'Líder Original', profile_updated_at = NULL WHERE id = $1", [g.id]);
     const bot = await post(T, { leader_name: 'Spam', web: 'x' });
     assert.equal(bot.status, 200);
     const row = (await db.query('SELECT * FROM care_groups WHERE id = $1', [g.id])).rows[0];

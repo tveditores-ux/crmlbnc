@@ -15,15 +15,14 @@ function leaderFields(v, { today, photoSrc = '', stages, days, congregations = [
       .join('')}</select>`;
   const preview = v.photo_data ? `src="${esc(v.photo_data)}"` : photoSrc ? `src="${esc(photoSrc)}"` : 'style="display:none"';
   return `<h2>Líder</h2>
-        ${t('leader_name', 'Nombre del líder o líderes', 'maxlength="120" required')}
+        ${t('leader_name', 'Nombre del líder', 'maxlength="120" required')}
         <label for="leader_birth_date">Fecha de nacimiento del líder</label><input id="leader_birth_date" type="date" name="leader_birth_date" min="1910-01-01" max="${esc(today)}" value="${esc(v.leader_birth_date || '')}">
-        ${t('co_leader_name', 'Pareja o co-líder, si lo hay (opcional)')}
-        <label for="co_leader_birth_date">Fecha de nacimiento de la pareja o co-líder</label><input id="co_leader_birth_date" type="date" name="co_leader_birth_date" min="1910-01-01" max="${esc(today)}" value="${esc(v.co_leader_birth_date || '')}">
-        <label for="leader_phone">Teléfono (WhatsApp)</label><input id="leader_phone" type="tel" inputmode="tel" name="leader_phone" value="${esc(v.leader_phone_input ?? '')}" placeholder="0414-000.00.00">
-        <label for="leader_email">Correo (opcional)</label><input id="leader_email" type="email" inputmode="email" name="leader_email" value="${esc(v.leader_email || '')}">
-        ${t('advisor_name', 'Líder asesor (opcional)')}
-        <h2>Foto</h2>
-        <p class="muted" style="font-size:14px;margin:6px 0">Una foto del líder o de la pareja, de frente y con buena luz. Es opcional.</p>
+        <label for="leader_phone">Teléfono del líder (WhatsApp)</label><input id="leader_phone" type="tel" inputmode="tel" name="leader_phone" required value="${esc(v.leader_phone_input ?? '')}" placeholder="0414-000.00.00">
+        <label for="leader_email">Correo del líder</label><input id="leader_email" type="email" inputmode="email" name="leader_email" required value="${esc(v.leader_email || '')}">
+        ${t('advisor_name', 'Líder asesor', 'maxlength="120" required')}
+        ${skipCongregation ? '' : sel('congregation', 'Congregación', v.congregation && !congregations.includes(v.congregation) ? [...congregations, v.congregation] : congregations)}
+        <h2>Foto del líder</h2>
+        <p class="muted" style="font-size:14px;margin:6px 0">Es obligatoria: una foto del líder, de frente y con buena luz.</p>
         <div class="photo-box">
           <img id="photo_prev" alt="Vista previa de la foto" ${preview}>
           <div class="quick">
@@ -38,10 +37,7 @@ function leaderFields(v, { today, photoSrc = '', stages, days, congregations = [
         <label for="meeting_time">Hora</label><input id="meeting_time" type="time" name="meeting_time" value="${esc(v.meeting_time || '')}">
         ${t('place', 'Lugar de reunión')}
         ${t('address', 'Dirección o punto de referencia')}
-        ${sel('stage', 'Etapa del grupo', stages)}
-        <h2>Pertenencia</h2>
-        ${t('belongs_to', 'Pertenece a (opcional)')}
-        ${skipCongregation ? '' : sel('congregation', 'Congregación', v.congregation && !congregations.includes(v.congregation) ? [...congregations, v.congregation] : congregations)}`;
+        ${sel('stage', 'Etapa del grupo', stages)}`;
 }
 
 /** La foto se reduce y se reconvierte a JPEG en el teléfono (así no viaja la ubicación). */
@@ -65,6 +61,10 @@ const PHOTO_SCRIPT = `<script>
             img.src = url;
           }
           ['photo_cam', 'photo_gal'].forEach(function (id) { document.getElementById(id).addEventListener('change', function (e) { take(e.target.files[0]); }); });
+          var form = data.closest('form');
+          if (form) form.addEventListener('submit', function (e) {
+            if (!data.value && !prev.getAttribute('src')) { e.preventDefault(); msg.textContent = 'La foto es obligatoria.'; msg.style.color = 'var(--bad)'; prev.scrollIntoView({ block: 'center' }); }
+          });
         })();
       </script>`;
 
