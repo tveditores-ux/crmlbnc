@@ -197,20 +197,35 @@ function parseBirthDate(raw, today, who = 'del líder') {
   return { value: v };
 }
 
-/** Datos del formulario "Datos del grupo": lo de parseGroup más el nacimiento del líder. */
+/** Cédula venezolana: V o E (V si no la escriben) y de 5 a 9 dígitos. Se guarda como 'V-12345678'. */
+function parseCedula(raw) {
+  const v = String(raw ?? '').toUpperCase().replace(/[\s.\-]/g, '');
+  if (!v) return { value: '' };
+  const m = /^([VE])?(\d{5,9})$/.exec(v);
+  if (!m) return { value: '', error: 'La cédula del líder no es válida. Escríbela así: V-12345678.' };
+  return { value: `${m[1] || 'V'}-${m[2]}` };
+}
+
+/** Datos del formulario "Datos del grupo": lo de parseGroup más nacimiento, cédula y dirección del líder. */
 function parseLeaderProfile(src, countryCode, today) {
   const { value, errors } = parseGroup(src, countryCode);
   const b1 = parseBirthDate(src.leader_birth_date, today, 'del líder');
   if (b1.error) errors.push(b1.error);
   value.leader_birth_date = b1.value;
+  const ci = parseCedula(src.leader_cedula);
+  if (ci.error) errors.push(ci.error);
+  value.leader_cedula = ci.value;
+  value.leader_address = clean(src.leader_address, 250);
   errors.push(...leaderRequiredErrors(src, value));
   return { value, errors };
 }
 
-/** Obligatorios del formulario del líder: nombre, teléfono, correo y líder asesor (la foto la revisa quien llama). */
+/** Obligatorios del formulario del líder: nombre, cédula, dirección, teléfono, correo y líder asesor (la foto la revisa quien llama). */
 function leaderRequiredErrors(src, value) {
   const e = [];
   if (!value.leader_name) e.push('Escribe el nombre del líder.');
+  if (!clean(src.leader_cedula)) e.push('Escribe la cédula de identidad del líder.');
+  if (!value.leader_address) e.push('Escribe la dirección del líder.');
   if (!clean(src.leader_phone)) e.push('Escribe el teléfono del líder.');
   if (!clean(src.leader_email)) e.push('Escribe el correo del líder.');
   if (!value.advisor_name) e.push('Escribe el nombre del líder asesor.');
@@ -263,4 +278,4 @@ function upcomingBirthdays(groups, today, days = 45) {
   return out.sort((a, b) => a.inDays - b.inDays || a.who.localeCompare(b.who));
 }
 
-module.exports = { parseBirthDate, parseLeaderProfile, leaderRequiredErrors, parsePhoto, savePhoto, upcomingBirthdays, MAX_PHOTO_BYTES, importGroups, STAGES, CONGREGATIONS, DAYS, parseGroup, parseReport, upsertReport, listGroups, daysSince, newToken };
+module.exports = { parseBirthDate, parseCedula, parseLeaderProfile, leaderRequiredErrors, parsePhoto, savePhoto, upcomingBirthdays, MAX_PHOTO_BYTES, importGroups, STAGES, CONGREGATIONS, DAYS, parseGroup, parseReport, upsertReport, listGroups, daysSince, newToken };

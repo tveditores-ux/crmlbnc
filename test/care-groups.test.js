@@ -65,7 +65,7 @@ async function withApp(t, fn) {
 
 // el formulario "Datos del grupo" exige nombre, teléfono, correo, líder asesor y foto
 const JPEG = `data:image/jpeg;base64,${Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(400, 7), Buffer.from([0xff, 0xd9])]).toString('base64')}`;
-const required = { leader_name: 'Líder Obligatorio', leader_phone: '0414-000.00.01', leader_email: 'lider@ejemplo.com', advisor_name: 'Asesor Uno', photo_data: JPEG };
+const required = { leader_name: 'Líder Obligatorio', leader_cedula: 'V-12345678', leader_address: 'Calle de prueba 1', leader_phone: '0414-000.00.01', leader_email: 'lider@ejemplo.com', advisor_name: 'Asesor Uno', photo_data: JPEG };
 
 const newGroup = async (post, db, extra = {}) => {
   const r = await post('/grupos', { name: 'GdC Prueba', leader_name: 'Líder Uno', ...extra });
@@ -251,6 +251,8 @@ test('el líder confirma los datos de su grupo desde su enlace y llegan a la fic
     assert.equal(row.meeting_time, '18:30');
     assert.equal(row.congregation, 'Mujeres');
     assert.equal(row.advisor_name, 'Asesor Uno');
+    assert.equal(row.leader_cedula, 'V-12345678');
+    assert.equal(row.leader_address, 'Calle de prueba 1');
     assert.equal(row.token, g.token);
     assert.ok(row.profile_updated_at);
 
@@ -271,7 +273,7 @@ test('datos del grupo: obligatorios (líder, teléfono, correo, asesor, foto), t
     assert.match(await noLeader.text(), /nombre del líder/);
     const badPhone = await post(T, { ...required, leader_phone: '12' });
     assert.equal(badPhone.status, 400);
-    for (const [field, msg] of [['leader_phone', /teléfono/], ['leader_email', /correo/], ['advisor_name', /líder asesor/], ['photo_data', /Falta la foto/]]) {
+    for (const [field, msg] of [['leader_phone', /teléfono/], ['leader_email', /correo/], ['advisor_name', /líder asesor/], ['leader_cedula', /cédula/], ['leader_address', /dirección del líder/], ['photo_data', /Falta la foto/]]) {
       const r = await post(T, { ...required, [field]: '' });
       assert.equal(r.status, 400, field);
       assert.match(await r.text(), msg);

@@ -244,8 +244,8 @@ function careRemoteRouter(ctx) {
       }
       await db.query(
         `UPDATE care_groups SET leader_name=$2, leader_phone=$3, leader_email=$4, advisor_name=$5, congregation=COALESCE(NULLIF($6, ''), congregation), address=$7, place=$8, meeting_day=$9, meeting_time=$10, stage=$11,
-           leader_birth_date=$12, profile_updated_at=now(), uses = uses + 1, last_used_at = now() WHERE id=$1`,
-        [g.id, value.leader_name, value.leader_phone, value.leader_email, value.advisor_name, value.congregation, value.address, value.place, value.meeting_day, value.meeting_time, value.stage, value.leader_birth_date]
+           leader_birth_date=$12, leader_cedula=$13, leader_address=$14, profile_updated_at=now(), uses = uses + 1, last_used_at = now() WHERE id=$1`,
+        [g.id, value.leader_name, value.leader_phone, value.leader_email, value.advisor_name, value.congregation, value.address, value.place, value.meeting_day, value.meeting_time, value.stage, value.leader_birth_date, value.leader_cedula, value.leader_address]
       );
       if (photo.buffer) await savePhoto(db, g.id, photo.buffer);
       send(res, saved(req.params.token, '/datos', 'Datos del grupo guardados. ¡Gracias!'));

@@ -2,10 +2,10 @@
 const { tx } = require('./db');
 const cg = require('./care-groups');
 
-const FIELDS = ['leader_name', 'leader_phone', 'leader_email', 'advisor_name', 'congregation', 'address', 'place', 'meeting_day', 'meeting_time', 'stage', 'leader_birth_date'];
+const FIELDS = ['leader_name', 'leader_phone', 'leader_email', 'advisor_name', 'congregation', 'address', 'place', 'meeting_day', 'meeting_time', 'stage', 'leader_birth_date', 'leader_cedula', 'leader_address'];
 const LABELS = {
   leader_name: 'Líder', leader_phone: 'Teléfono', leader_email: 'Correo', advisor_name: 'Líder asesor', congregation: 'Congregación',
-  address: 'Dirección', place: 'Lugar', meeting_day: 'Día', meeting_time: 'Hora', stage: 'Etapa', leader_birth_date: 'Nacimiento del líder',
+  address: 'Dirección', place: 'Lugar', meeting_day: 'Día', meeting_time: 'Hora', stage: 'Etapa', leader_birth_date: 'Nacimiento del líder', leader_cedula: 'Cédula (C.I.)', leader_address: 'Dirección del líder',
 };
 const keyOf = (name) => String(name).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
@@ -67,9 +67,9 @@ function parseSubmission(body, groups, countryCode, today) {
 async function submit(pool, sub) {
   const v = sub.value;
   const { rows } = await pool.query(
-    `INSERT INTO care_group_submissions (group_id, new_group_name, leader_name, leader_phone, leader_email, advisor_name, congregation, address, place, meeting_day, meeting_time, stage, leader_birth_date, photo)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
-    [sub.groupId, sub.newGroupName, v.leader_name, v.leader_phone, v.leader_email, v.advisor_name, v.congregation, v.address, v.place, v.meeting_day, v.meeting_time, v.stage, v.leader_birth_date, sub.photo.buffer]
+    `INSERT INTO care_group_submissions (group_id, new_group_name, leader_name, leader_phone, leader_email, advisor_name, congregation, address, place, meeting_day, meeting_time, stage, leader_birth_date, leader_cedula, leader_address, photo)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
+    [sub.groupId, sub.newGroupName, v.leader_name, v.leader_phone, v.leader_email, v.advisor_name, v.congregation, v.address, v.place, v.meeting_day, v.meeting_time, v.stage, v.leader_birth_date, v.leader_cedula, v.leader_address, sub.photo.buffer]
   );
   const id = rows[0].id;
   if (sub.groupId) {
@@ -104,13 +104,13 @@ async function apply(pool, submissionId, { auto = false, groupId: assignTo = nul
     const sql = `UPDATE care_groups SET ${[...set.map((f, i) => `${f} = $${i + 2}`), 'profile_updated_at = now()'].join(', ')} WHERE id = $1`;
     await db.query(sql, [groupId, ...set.map((f) => sub[f])]);
     if (sub.photo) await cg.savePhoto(db, groupId, Buffer.from(sub.photo));
-    await db.query("UPDATE care_group_submissions SET status = 'aplicada', auto_applied = $2, group_id = $3, resolved_at = now(), photo = NULL WHERE id = $1", [submissionId, auto, groupId]);
+    await db.query("UPDATE care_group_submissions SET status = 'aplicada', auto_applied = $2, group_id = $3, resolved_at = now(), photo = NULL, leader_cedula = '', leader_address = '' WHERE id = $1", [submissionId, auto, groupId]);
     return { groupId };
   });
 }
 
 async function discard(db, submissionId) {
-  const { rowCount } = await db.query("UPDATE care_group_submissions SET status = 'descartada', resolved_at = now(), photo = NULL WHERE id = $1 AND status = 'pendiente'", [submissionId]);
+  const { rowCount } = await db.query("UPDATE care_group_submissions SET status = 'descartada', resolved_at = now(), photo = NULL, leader_cedula = '', leader_address = '' WHERE id = $1 AND status = 'pendiente'", [submissionId]);
   return rowCount > 0;
 }
 

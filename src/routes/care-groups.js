@@ -360,10 +360,11 @@ function careGroupsRouter(ctx) {
         `<p><a href="/grupos">← Grupos de cuidado</a></p>
         <h1>${esc(g.name)} ${g.active ? '' : '<span class="badge b-muted">Inactivo</span>'}</h1>
         <p class="sub">${esc([g.stage, g.leader_name && `Líder: ${g.leader_name}`, g.advisor_name && `Asesor: ${g.advisor_name}`, [g.meeting_day, g.meeting_time].filter(Boolean).join(' '), g.place].filter(Boolean).join(' · '))}</p>
-        ${hasPhoto || g.leader_birth_date ? `<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+        ${hasPhoto || g.leader_birth_date || g.leader_cedula || g.leader_address ? `<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
           ${hasPhoto ? `<img src="/grupos/${g.id}/foto" alt="Foto del líder" width="96" height="96" style="border-radius:16px;object-fit:cover">` : ''}
           <div><h3 style="margin:0 0 4px">Datos del líder</h3>
             <div>${esc(g.leader_name)}${g.leader_birth_date ? ` <span class="muted">· nació el ${esc(short(g.leader_birth_date))}</span>` : ''}</div>
+            ${g.leader_cedula ? `<div class="muted">C.I. ${esc(g.leader_cedula)}</div>` : ''}${g.leader_address ? `<div class="muted">${esc(g.leader_address)}</div>` : ''}
           </div></div>` : ''}
         <div class="card"><h3>Enlace del líder</h3>
           <p class="muted" style="font-size:13px">Quien tenga este enlace puede enviar reportes de este grupo. Compártelo solo con el líder; si se pierde, genera uno nuevo y el anterior deja de funcionar.</p>

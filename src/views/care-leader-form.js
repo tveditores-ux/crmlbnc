@@ -17,6 +17,8 @@ function leaderFields(v, { today, photoSrc = '', stages, days, congregations = [
   return `<h2>Líder</h2>
         ${t('leader_name', 'Nombre del líder', 'maxlength="120" required')}
         <label for="leader_birth_date">Fecha de nacimiento del líder</label><input id="leader_birth_date" type="date" name="leader_birth_date" min="1910-01-01" max="${esc(today)}" value="${esc(v.leader_birth_date || '')}">
+        <label for="leader_cedula">Cédula de identidad (C.I.) del líder</label><input id="leader_cedula" type="text" inputmode="text" autocapitalize="characters" name="leader_cedula" required maxlength="14" value="${esc(v.leader_cedula || '')}" placeholder="V-12345678">
+        ${t('leader_address', 'Dirección del líder', 'maxlength="250" required')}
         <label for="leader_phone">Teléfono del líder (WhatsApp)</label><input id="leader_phone" type="tel" inputmode="tel" name="leader_phone" required value="${esc(v.leader_phone_input ?? '')}" placeholder="0414-000.00.00">
         <label for="leader_email">Correo del líder</label><input id="leader_email" type="email" inputmode="email" name="leader_email" required value="${esc(v.leader_email || '')}">
         ${t('advisor_name', 'Líder asesor', 'maxlength="120" required')}
@@ -36,7 +38,7 @@ function leaderFields(v, { today, photoSrc = '', stages, days, congregations = [
         ${sel('meeting_day', 'Día', days)}
         <label for="meeting_time">Hora</label><input id="meeting_time" type="time" name="meeting_time" value="${esc(v.meeting_time || '')}">
         ${t('place', 'Lugar de reunión')}
-        ${t('address', 'Dirección o punto de referencia')}
+        ${t('address', 'Dirección o punto de referencia del lugar de reunión')}
         ${sel('stage', 'Etapa del grupo', stages)}`;
 }
 

@@ -37,8 +37,8 @@ const loc = (r) => decodeURIComponent((r.headers.get('location') || '').replaceA
 const mkGroup = async (db, name, phone = '', leader = 'Líder Registrado', congregation = '') =>
   (await db.query('INSERT INTO care_groups (name, leader_name, leader_phone, congregation, token) VALUES ($1,$2,$3,$4,$5) RETURNING *', [name, leader, phone, congregation, `tok${Math.random().toString(36).slice(2).padEnd(18, 'x')}`])).rows[0];
 const tokenOf = async (db) => (await intake.ensureToken(db)).token;
-// lo obligatorio: congregación, nombre, teléfono, correo, líder asesor y foto
-const base = { leader_name: 'Líder X', leader_phone: '0414-000.00.01', congregation: 'Mujeres', leader_email: 'lider@ejemplo.com', advisor_name: 'Asesor Uno', photo_data: dataUrl(fakeJpeg(5)) };
+// lo obligatorio: congregación, nombre, cédula, dirección, teléfono, correo, líder asesor y foto
+const base = { leader_name: 'Líder X', leader_phone: '0414-000.00.01', congregation: 'Mujeres', leader_email: 'lider@ejemplo.com', advisor_name: 'Asesor Uno', leader_cedula: 'V-12345678', leader_address: 'Calle de prueba 1', photo_data: dataUrl(fakeJpeg(5)) };
 
 test('reconocer el grupo por el teléfono: uno solo, varios (desempata la congregación) o ninguno', () => {
   const groups = [
@@ -66,11 +66,17 @@ test('la congregación es obligatoria y solo vale una de la lista', () => {
   assert.ok(parse({ leader_name: '' }).errors.some((e) => /nombre del líder/.test(e)));
 });
 
-test('correo, líder asesor y foto son obligatorios; el nacimiento no', () => {
+test('correo, líder asesor, cédula, dirección del líder y foto son obligatorios; el nacimiento no', () => {
   const parse = (extra) => intake.parseSubmission({ ...base, ...extra }, [], '58', TODAY);
   assert.ok(parse({ leader_email: '' }).errors.includes('Escribe el correo del líder.'));
   assert.ok(parse({ advisor_name: '' }).errors.includes('Escribe el nombre del líder asesor.'));
   assert.ok(parse({ photo_data: '' }).errors.includes('Falta la foto del líder.'));
+  assert.ok(parse({ leader_cedula: '' }).errors.includes('Escribe la cédula de identidad del líder.'));
+  assert.ok(parse({ leader_address: '' }).errors.includes('Escribe la dirección del líder.'));
+  assert.ok(parse({ leader_cedula: 'abc' }).errors.some((e) => /cédula del líder no es válida/.test(e)));
+  assert.equal(parse({ leader_cedula: 'v 12.345.678' }).value.leader_cedula, 'V-12345678'); // se normaliza
+  assert.equal(parse({ leader_cedula: '81234567' }).value.leader_cedula, 'V-81234567');
+  assert.equal(parse({ leader_cedula: 'E-81234567' }).value.leader_cedula, 'E-81234567');
   assert.ok(parse({ leader_email: 'no-es-correo' }).errors.some((e) => /correo/.test(e)));
   assert.deepEqual(parse({ leader_birth_date: '' }).errors, []); // el nacimiento sigue siendo opcional
 });
@@ -88,7 +94,9 @@ test('el formulario común pide la congregación, no lista grupos ni teléfonos,
     for (const c of CONGREGATIONS) assert.ok(html.includes(`<option >${c}</option>`) || html.includes(`>${c}</option>`), c);
     assert.ok(!html.includes('¿Cuál es tu grupo?'));
     for (const gone of ['Nombre de tu grupo', 'Pareja', 'co-líder', 'Pertenece', 'Pertenencia', 'líderes', '(opcional)']) assert.ok(!html.includes(gone), gone);
-    for (const id of ['leader_email', 'advisor_name', 'leader_phone', 'leader_name']) assert.match(html, new RegExp(`id="${id}"[^>]*required|required[^>]*id="${id}"`), id);
+    assert.match(html, /Cédula de identidad \(C\.I\.\) del líder/);
+    assert.match(html, /Dirección del líder/);
+    for (const id of ['leader_email', 'advisor_name', 'leader_phone', 'leader_name', 'leader_cedula', 'leader_address']) assert.match(html, new RegExp(`id="${id}"[^>]*required|required[^>]*id="${id}"`), id);
     assert.match(html, /Foto del líder/);
     assert.match(html, /La foto es obligatoria/);
     assert.ok(!html.includes('Grupo Secreto')); // ya no se muestran los grupos
@@ -124,6 +132,8 @@ test('con el teléfono del líder, los datos y la foto se aplican solos al grupo
     assert.equal(row.leader_birth_date, '1985-11-05');
     assert.equal(row.leader_email, 'lider@ejemplo.com');
     assert.equal(row.advisor_name, 'Asesor Uno');
+    assert.equal(row.leader_cedula, 'V-12345678');
+    assert.equal(row.leader_address, 'Calle de prueba 1');
     assert.equal(row.meeting_day, 'Lunes');
     assert.equal(row.name, 'Grupo Uno'); // el nombre del grupo no cambia
     assert.equal(row.token, g.token);
@@ -150,6 +160,7 @@ test('con un teléfono desconocido queda pendiente; se aprueba como grupo nuevo 
 
     const list = await (await get('/grupos/respuestas')).text();
     assert.match(list, /Otra Persona/);
+    assert.match(list, /V-12345678/); // la cédula se ve al revisar
     assert.match(list, /Es el grupo: Grupo Dos/);
     assert.match(await (await get('/grupos')).text(), /1 respuesta de líderes por revisar/);
     const id = (await db.query('SELECT id FROM care_group_submissions')).rows[0].id;
@@ -221,7 +232,7 @@ test('envíos malos: 400, nada se guarda y la foto buena se conserva; trampa par
     assert.equal((await post(`/registro/${token}`, { ...base, photo_data: 'data:image/png;base64,AAAA' })).status, 400);
     assert.equal(await count(), 0);
 
-    for (const [field, msg] of [['leader_email', /correo/], ['advisor_name', /líder asesor/], ['photo_data', /Falta la foto/]]) {
+    for (const [field, msg] of [['leader_email', /correo/], ['advisor_name', /líder asesor/], ['leader_cedula', /cédula/], ['leader_address', /dirección del líder/], ['photo_data', /Falta la foto/]]) {
       const r = await post(`/registro/${token}`, { ...base, [field]: '' });
       assert.equal(r.status, 400, field);
       assert.match(await r.text(), msg);
