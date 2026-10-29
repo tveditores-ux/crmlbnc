@@ -3,7 +3,9 @@ const express = require('express');
 const { layout } = require('../views/layout');
 const { esc } = require('../util');
 const { createRateLimiter } = require('../attendance-store');
-const { parseReport, upsertReport } = require('../care-groups');
+const { parseReport, upsertReport, STAGES: cgStages } = require('../care-groups');
+const fmt = require('../care-formats');
+const views = require('../views/care-formats');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -22,6 +24,16 @@ const CSS = `<style>
 .remote .go{width:100%;font-size:20px;padding:16px;margin-top:20px}
 .remote h2{font-size:15px;margin:22px 0 0;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
 .remote .ok{background:var(--ok-bg);color:var(--ok);border-radius:12px;padding:18px;margin-top:14px;font-size:17px}
+.tabs{display:flex;gap:6px;overflow-x:auto;margin:0 0 14px;padding-bottom:4px}
+.tabs a{white-space:nowrap;padding:8px 12px;border-radius:999px;border:1px solid var(--line);background:#fff;text-decoration:none;color:inherit;font-size:14px}
+.tabs a.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.remote .card input,.remote .card textarea{font-size:16px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.remote .chip2{margin:0;font-weight:600}
+.chip2 input{position:absolute;opacity:0;width:0;height:0}
+.chip2 span{display:inline-block;min-width:44px;text-align:center;padding:10px 8px;border-radius:10px;border:1px solid var(--line);background:#fff;font-size:15px}
+.chip2 input:checked+span{background:var(--accent);color:#fff;border-color:var(--accent)}
+.chip2 input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
 .hp{position:absolute;left:-9999px;height:0;overflow:hidden}
 </style>`;
 
@@ -40,19 +52,74 @@ function careRemoteRouter(ctx) {
 
   async function findGroup(token) {
     if (!/^[A-Za-z0-9_-]{16,64}$/.test(String(token))) return null;
-    const { rows } = await db.query('SELECT id, name, leader_name, meeting_day, active, link_active FROM care_groups WHERE token = $1', [token]);
+    const { rows } = await db.query('SELECT id, name, token, leader_name, meeting_day, active, link_active FROM care_groups WHERE token = $1', [token]);
     return rows[0] && rows[0].active && rows[0].link_active ? rows[0] : null;
   }
 
   const invalid = () =>
     shell('Enlace no válido', '<div class="card"><h1>Enlace no válido</h1><p class="muted">Este enlace ya no está activo. Pídele uno nuevo a quien administra el panel.</p></div>', 404);
 
+  const TABS = [['', 'Reporte'], ['/planificador', 'Planificador'], ['/gente', 'Ruta de crecimiento'], ['/foda', 'F.O.D.A.'], ['/trimestral', 'Trimestral']];
+  const tabKey = { '': 'reporte', '/planificador': 'planificador', '/gente': 'gente', '/foda': 'foda', '/trimestral': 'trimestral' };
+  const tabs = (token, on) =>
+    `<div class="tabs">${TABS.map(([p, l]) => `<a href="/g/${esc(token)}${p}" class="${tabKey[p] === on ? 'on' : ''}">${l}</a>`).join('')}</div>`;
+  const tooMany = () => shell('Demasiados envíos', '<div class="card"><h1>Demasiados envíos</h1><p class="muted">Espera un rato antes de enviar otro.</p></div>', 429);
+  const flashErr = (errors) => (errors.length ? `<div class="flash err">${errors.map(esc).join('<br>')}</div>` : '');
+  const honey = '<div class="hp" aria-hidden="true"><label>No llenar<input type="text" name="web" tabindex="-1"></label></div>';
+  const monthLink = (token, m, delta) => {
+    const d = new Date(Date.UTC(+m.slice(0, 4), +m.slice(5) - 1 + delta, 1));
+    return `/g/${esc(token)}/planificador?mes=${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+  };
+
+  function planForm(g, token, v, errors = []) {
+    const month = v.month || monthNow();
+    const wk = (i) => (v.weeks && v.weeks[i]) || {};
+    const block = (i) => `<div class="card"><strong>Semana ${i + 1}</strong>
+      <label for="snack_${i + 1}">Refrigerio</label><input id="snack_${i + 1}" type="text" name="snack_${i + 1}" value="${esc(wk(i).snack || '')}">
+      <label for="dynamics_${i + 1}">Dinámicas</label><textarea id="dynamics_${i + 1}" name="dynamics_${i + 1}">${esc(wk(i).dynamics || '')}</textarea>
+      <label for="key_element_${i + 1}">Elemento clave</label><textarea id="key_element_${i + 1}" name="key_element_${i + 1}">${esc(wk(i).key_element || '')}</textarea>
+      <label for="support_${i + 1}">Apoyo</label><textarea id="support_${i + 1}" name="support_${i + 1}">${esc(wk(i).support || '')}</textarea></div>`;
+    return `${tabs(token, 'planificador')}<h1>Planificador mensual</h1>
+      <p class="sub" style="margin:0">${esc(g.name)} · <strong>${esc(views.monthName(month))}</strong></p>
+      <div class="tabs" style="margin-top:10px"><a href="${monthLink(token, month, -1)}">← Mes anterior</a><a href="${monthLink(token, month, 1)}">Mes siguiente →</a></div>
+      ${flashErr(errors)}
+      <form method="post" autocomplete="off">${honey}<input type="hidden" name="month" value="${esc(month)}">
+        <label for="stage">Etapa</label><select id="stage" name="stage" style="font-size:18px;padding:12px;width:100%;border-radius:10px;border:1px solid var(--line)"><option value="">Sin definir</option>${cgStages.map((s) => `<option ${v.stage === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>
+        ${[0, 1, 2, 3].map(block).join('')}
+        <button class="go">Guardar plan</button></form>`;
+  }
+
+  function peopleForm(g, token, people, errors = []) {
+    const rows = [...people, ...Array.from({ length: Math.max(5, 10 - people.length) }, () => ({ name: '', milestones: [], other: '' }))].slice(0, fmt.MAX_PEOPLE);
+    return `${tabs(token, 'gente')}<h1>Ruta de crecimiento</h1>
+      <p class="sub" style="margin:0">${esc(g.name)} · marca los hitos que cada persona ya completó (${fmt.MILESTONES.join(', ')}).</p>
+      ${flashErr(errors)}
+      <form method="post" autocomplete="off">${honey}
+        ${rows.map((p, i) => `<div class="card person"><label for="n_${i}" style="margin-top:0">Nombre</label><input id="n_${i}" type="text" name="n_${i}" maxlength="120" value="${esc(p.name)}">
+          <div class="chips">${fmt.MILESTONES.map((m) => `<label class="chip2"><input type="checkbox" name="m_${i}" value="${m}" ${p.milestones.includes(m) ? 'checked' : ''}><span>${m}</span></label>`).join('')}</div>
+          <label for="o_${i}">Otros</label><input id="o_${i}" type="text" name="o_${i}" maxlength="160" value="${esc(p.other)}"></div>`).join('')}
+        <p class="muted" style="font-size:13px">Para quitar a alguien, borra su nombre. Hay espacios en blanco para agregar más; al guardar salen otros.</p>
+        <button class="go">Guardar ruta de crecimiento</button></form>`;
+  }
+
+  function fodaForm(g, token, v, errors = []) {
+    const quarter = v.quarter || quarterNow();
+    const area = (k, l) => `<label for="${k}">${l}</label><textarea id="${k}" name="${k}">${esc(v[k] || '')}</textarea>`;
+    const picker = views.quarterOptions(quarterNow()).map((q) => `<a href="/g/${esc(token)}/foda?q=${q}" class="${q === quarter ? 'on' : ''}">${esc(q.replace('-', ' '))}</a>`).join('');
+    return `${tabs(token, 'foda')}<h1>F.O.D.A.</h1>
+      <p class="sub" style="margin:0">${esc(g.name)} · ${esc(fmt.quarterLabel(quarter))}</p><div class="tabs" style="margin-top:10px">${picker}</div>
+      ${flashErr(errors)}
+      <form method="post" autocomplete="off">${honey}<input type="hidden" name="quarter" value="${esc(quarter)}">
+        ${area('strengths', 'Fortalezas')}${area('opportunities', 'Oportunidades')}${area('weaknesses', 'Debilidades')}${area('threats', 'Amenazas')}
+        <button class="go">Guardar F.O.D.A.</button></form>`;
+  }
+
   function form(g, v = {}, errors = []) {
     const num = (key, label) =>
       `<div><label for="${key}">${label}</label><input id="${key}" type="number" min="0" step="1" inputmode="numeric" name="${key}" value="${esc(v[key] ?? '')}"></div>`;
     const area = (key, label, hint = '') =>
       `<label for="${key}">${label}</label><textarea id="${key}" name="${key}" placeholder="${esc(hint)}">${esc(v[key] || '')}</textarea>`;
-    return `<h1>Reporte del grupo</h1>
+    return `${tabs(g.token, 'reporte')}<h1>Reporte del grupo</h1>
       <p class="sub" style="margin:0"><strong>${esc(g.name)}</strong>${g.leader_name ? ` · ${esc(g.leader_name)}` : ''}</p>
       ${errors.length ? `<div class="flash err">${errors.map(esc).join('<br>')}</div>` : ''}
       <form method="post" autocomplete="off">
@@ -112,6 +179,93 @@ function careRemoteRouter(ctx) {
           <a class="btn go" style="display:block;text-align:center;box-sizing:border-box" href="/g/${esc(req.params.token)}">Enviar otro reporte</a>`
         )
       );
+    })
+  );
+
+  /* ---------------- Resto del libro: planificador, ruta, F.O.D.A., trimestral ---------------- */
+  const link = (token, path = '') => `/g/${esc(token)}${path}`;
+  const monthNow = () => today().slice(0, 7);
+  const quarterNow = () => fmt.quarterOf(today());
+  const saved = (token, path, msg) => shell('Guardado', `<h1>¡Listo!</h1><div class="ok">${esc(msg)}</div><a class="btn go" style="display:block;text-align:center;box-sizing:border-box" href="${link(token, path)}">Volver</a>`);
+
+  r.get(
+    '/g/:token/planificador',
+    ah(async (req, res) => {
+      const g = await findGroup(req.params.token);
+      if (!g) return send(res, invalid());
+      const month = fmt.validMonth(req.query.mes) ? req.query.mes : monthNow();
+      const plan = await fmt.getPlan(db, g.id, month);
+      send(res, shell('Planificador', planForm(g, req.params.token, { month, stage: plan && plan.stage, weeks: plan ? plan.weeks : [] })));
+    })
+  );
+  r.post(
+    '/g/:token/planificador',
+    ah(async (req, res) => {
+      const g = await findGroup(req.params.token);
+      if (!g) return send(res, invalid());
+      if (req.body.web) return send(res, shell('Gracias', '<div class="ok">Gracias.</div>'));
+      if (!limiter.take(`${req.ip}|${req.params.token}`)) return send(res, tooMany());
+      const { value, errors } = fmt.parsePlan(req.body);
+      if (errors.length) return send(res, shell('Planificador', planForm(g, req.params.token, value, errors), 400));
+      await fmt.upsertPlan(db, g.id, value);
+      send(res, saved(req.params.token, `/planificador?mes=${value.month}`, 'Plan del mes guardado.'));
+    })
+  );
+
+  r.get(
+    '/g/:token/gente',
+    ah(async (req, res) => {
+      const g = await findGroup(req.params.token);
+      if (!g) return send(res, invalid());
+      send(res, shell('Ruta de crecimiento', peopleForm(g, req.params.token, await fmt.listPeople(db, g.id))));
+    })
+  );
+  r.post(
+    '/g/:token/gente',
+    ah(async (req, res) => {
+      const g = await findGroup(req.params.token);
+      if (!g) return send(res, invalid());
+      if (req.body.web) return send(res, shell('Gracias', '<div class="ok">Gracias.</div>'));
+      if (!limiter.take(`${req.ip}|${req.params.token}`)) return send(res, tooMany());
+      const out = await fmt.savePeople(db, g.id, fmt.parsePeople(req.body));
+      if (out.error) return send(res, shell('Ruta de crecimiento', peopleForm(g, req.params.token, await fmt.listPeople(db, g.id), [out.error]), 400));
+      send(res, saved(req.params.token, '/gente', `Ruta de crecimiento guardada (${out.saved} personas).`));
+    })
+  );
+
+  r.get(
+    '/g/:token/foda',
+    ah(async (req, res) => {
+      const g = await findGroup(req.params.token);
+      if (!g) return send(res, invalid());
+      const quarter = fmt.validQuarter(req.query.q) ? req.query.q : quarterNow();
+      send(res, shell('F.O.D.A.', fodaForm(g, req.params.token, { quarter, ...((await fmt.getFoda(db, g.id, quarter)) || {}) })));
+    })
+  );
+  r.post(
+    '/g/:token/foda',
+    ah(async (req, res) => {
+      const g = await findGroup(req.params.token);
+      if (!g) return send(res, invalid());
+      if (req.body.web) return send(res, shell('Gracias', '<div class="ok">Gracias.</div>'));
+      if (!limiter.take(`${req.ip}|${req.params.token}`)) return send(res, tooMany());
+      const { value, errors } = fmt.parseFoda(req.body);
+      if (errors.length) return send(res, shell('F.O.D.A.', fodaForm(g, req.params.token, value, errors), 400));
+      await fmt.upsertFoda(db, g.id, value);
+      send(res, saved(req.params.token, `/foda?q=${value.quarter}`, 'F.O.D.A. guardado.'));
+    })
+  );
+
+  r.get(
+    '/g/:token/trimestral',
+    ah(async (req, res) => {
+      const g = await findGroup(req.params.token);
+      if (!g) return send(res, invalid());
+      const quarter = fmt.validQuarter(req.query.q) ? req.query.q : quarterNow();
+      const t = await fmt.quarterly(db, g.id, quarter);
+      const picker = views.quarterOptions(quarterNow()).map((q) => `<a href="${link(req.params.token, `/trimestral?q=${q}`)}" class="${q === quarter ? 'on' : ''}">${esc(q.replace('-', ' '))}</a>`).join('');
+      send(res, shell('Reporte trimestral', `${tabs(req.params.token, 'trimestral')}<h1>Reporte trimestral</h1>
+        <p class="sub" style="margin:0">${esc(g.name)} · ${esc(fmt.quarterLabel(quarter))}</p><div class="tabs" style="margin-top:10px">${picker}</div>${views.quarterlyView(t)}`));
     })
   );
 

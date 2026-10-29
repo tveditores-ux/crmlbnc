@@ -6,6 +6,8 @@ const { displayPhone } = require('../phone');
 const { toCsv } = require('../csv');
 const charts = require('../views/charts');
 const cg = require('../care-groups');
+const fmt = require('../care-formats');
+const views = require('../views/care-formats');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const STALE_DAYS = 8; // un grupo que se reúne cada semana y lleva más de esto sin reportar
@@ -65,6 +67,8 @@ function careGroupsRouter(ctx) {
       const totals = (
         await db.query(`SELECT count(*)::int AS n, coalesce(sum(attendance),0)::int AS att, coalesce(sum(guests_count),0)::int AS guests FROM care_group_reports WHERE meeting_date > $1::date - 30`, [t])
       ).rows[0];
+      const everyone = (await db.query('SELECT p.milestones FROM care_group_people p JOIN care_groups g ON g.id = p.group_id WHERE g.active')).rows;
+      const route = views.milestoneCounts(everyone);
       const rows = groups
         .map((g) => {
           const d = cg.daysSince(g.last_report, t);
@@ -91,6 +95,7 @@ function careGroupsRouter(ctx) {
         </div>
         <p class="toolbar"><a class="btn" href="/grupos/nuevo">Agregar grupo</a> <a class="btn sec" href="/grupos/importar">Importar grupos (CSV)</a> <a class="btn sec" href="/grupos/reportes.csv">Descargar reportes</a></p>
         ${weekly.length ? `<div class="card"><h3>Asistencia semanal en todos los grupos</h3>${charts.lineChart(weekly.map((w) => w.lbl), [{ name: 'Asistentes', values: weekly.map((w) => w.att) }, { name: 'Invitados', values: weekly.map((w) => w.guests) }], { title: 'Asistencia semanal en los grupos de cuidado' })}</div>` : ''}
+        ${everyone.length ? `<div class="card"><h3>Ruta de crecimiento: personas por hito (${everyone.length} en total)</h3>${charts.barChart(route, { title: 'Personas por hito de la ruta de crecimiento', color: '#6b5b95' })}</div>` : ''}
         <div class="table-scroll"><table><tr><th>Grupo</th><th>Líder</th><th>Reunión</th><th>Último reporte</th><th>Reportes (30 d)</th></tr>${
           rows || '<tr><td colspan="5" class="muted">Aún no hay grupos. Agrega el primero.</td></tr>'
         }</table></div>`
@@ -191,6 +196,12 @@ function careGroupsRouter(ctx) {
         await db.query(`SELECT *, meeting_date::text AS d FROM care_group_reports WHERE group_id = $1 ORDER BY meeting_date DESC LIMIT 60`, [g.id])
       ).rows;
       const url = `${config.publicUrl}/g/${g.token}`;
+      const people = await fmt.listPeople(db, g.id);
+      const month = today().slice(0, 7);
+      const plan = await fmt.getPlan(db, g.id, month);
+      const quarter = fmt.quarterOf(today());
+      const foda = await fmt.getFoda(db, g.id, quarter);
+      const tri = await fmt.quarterly(db, g.id, quarter);
       const chronological = [...reports].reverse().slice(-16);
       const history = reports
         .map(
@@ -220,11 +231,31 @@ function careGroupsRouter(ctx) {
         ${chronological.length > 1 ? `<div class="card"><h3>Asistencia por reunión</h3>${charts.lineChart(chronological.map((x) => short(x.d).slice(0, 5)), [{ name: 'Asistentes', values: chronological.map((x) => x.attendance) }, { name: 'Invitados', values: chronological.map((x) => x.guests_count) }], { title: `Asistencia de ${g.name}` })}</div>` : ''}
         <h2>Reportes</h2>
         <div class="table-scroll"><table><tr><th>Fecha</th><th>Asistentes</th><th>Ofrenda</th><th>Detalle</th></tr>${history || '<tr><td colspan="4" class="muted">Este grupo todavía no ha reportado.</td></tr>'}</table></div>
+        <h2>Ruta de crecimiento</h2>${views.milestoneMatrix(people)}
+        <h2>Plan de ${esc(views.monthName(month))}</h2>${views.planView(plan)}
+        <h2>F.O.D.A. · ${esc(fmt.quarterLabel(quarter))}</h2>${views.fodaView(foda)}
+        <h2>Reporte trimestral</h2><p class="muted">${tri.reports} reportes en el ${esc(fmt.quarterLabel(quarter))}: ofrendas ${esc(views.money(tri.offeringTotal))}, asistencia promedio ${tri.attendanceAvg ?? '—'}, visitantes promedio ${tri.guestsAvg ?? '—'}. <a href="/grupos/${g.id}/trimestral">Ver el reporte completo</a></p>
+        <p class="muted" style="font-size:13px">El plan, la ruta de crecimiento y el F.O.D.A. los llena el líder desde su enlace. Tú también puedes abrirlo: <a href="/g/${esc(g.token)}" target="_blank" rel="noopener">abrir como líder</a>.</p>
         <h2>Datos del grupo</h2>${groupForm(g, `/grupos/${g.id}/editar`)}
         <form method="post" action="/grupos/${g.id}/${g.active ? 'desactivar' : 'activar'}" style="margin-top:10px"><button class="small ${g.active ? 'danger' : 'sec'}">${g.active ? 'Desactivar grupo' : 'Reactivar grupo'}</button>
           <span class="muted">Un grupo inactivo conserva su historial y deja de aparecer como pendiente.</span></form>
         <script>document.querySelectorAll('[data-copy]').forEach(function(b){b.addEventListener('click',function(){var t=b.getAttribute('data-copy');(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){b.textContent='¡Copiado!';},function(){b.closest('.card').querySelector('input').select();b.textContent='Selecciona y copia';});});});</script>`
       );
+    })
+  );
+
+  r.get(
+    '/grupos/:id(\\d{1,9})/trimestral',
+    ah(async (req, res) => {
+      const g = await loadGroup(+req.params.id);
+      if (!g) return go(res, '/grupos', { err: 'Ese grupo no existe.' });
+      const quarter = fmt.validQuarter(req.query.q) ? req.query.q : fmt.quarterOf(today());
+      const t = await fmt.quarterly(db, g.id, quarter);
+      const picker = views.quarterOptions(fmt.quarterOf(today())).map((q) => `<a class="btn ${q === quarter ? '' : 'sec'}" href="/grupos/${g.id}/trimestral?q=${q}">${esc(q.replace('-', ' '))}</a>`).join(' ');
+      page(req, res, 'Reporte trimestral', `<p><a href="/grupos/${g.id}">← ${esc(g.name)}</a></p><h1>Reporte trimestral</h1>
+        <p class="sub">${esc(g.name)} · ${esc(fmt.quarterLabel(quarter))}</p>
+        <p class="toolbar">${picker} <button type="button" class="sec" onclick="window.print()">Imprimir</button></p>${views.quarterlyView(t)}
+        <h2>F.O.D.A.</h2>${views.fodaView(await fmt.getFoda(db, g.id, quarter))}`);
     })
   );
 
