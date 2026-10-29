@@ -1,0 +1,183 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const express = require('express');
+const cg = require('../src/care-groups');
+const { careRemoteRouter } = require('../src/routes/care-remote');
+const { careGroupsRouter } = require('../src/routes/care-groups');
+const { openTestDb } = require('./helpers/db');
+
+// Todos los datos de estas pruebas son inventados.
+const config = { timezone: 'America/Caracas', defaultCountryCode: '58', churchName: 'Iglesia de Prueba', dryRun: true, publicUrl: 'http://prueba.local' };
+const day = (offset) => new Date(Date.now() + offset * 86400000).toLocaleDateString('en-CA', { timeZone: config.timezone });
+const TODAY = day(0);
+
+test('parseReport: cifras, ofrenda, fecha y total calculado', () => {
+  const ok = cg.parseReport({ meeting_date: TODAY, members_count: '8', guests_count: '3', offering: '25,5', key_element: '  Amor  ' }, TODAY);
+  assert.deepEqual(ok.errors, []);
+  assert.equal(ok.value.attendance, 11);
+  assert.equal(ok.value.offering, 25.5);
+  assert.equal(ok.value.key_element, 'Amor');
+
+  assert.ok(cg.parseReport({ meeting_date: day(5), attendance: '4' }, TODAY).errors.some((e) => /futura/.test(e)));
+  assert.ok(cg.parseReport({ meeting_date: day(-90), attendance: '4' }, TODAY).errors.some((e) => /60 días/.test(e)));
+  assert.ok(cg.parseReport({ meeting_date: TODAY }, TODAY).errors.some((e) => /cuántos asistieron/.test(e)));
+  assert.ok(cg.parseReport({ meeting_date: TODAY, attendance: '-3' }, TODAY).errors.length);
+  assert.ok(cg.parseReport({ meeting_date: TODAY, attendance: '4', offering: 'mucho' }, TODAY).errors.some((e) => /ofrenda/.test(e)));
+  assert.equal(cg.parseReport({ meeting_date: 'ayer', attendance: '4' }, TODAY).errors.length, 1);
+});
+
+test('parseGroup: exige nombre, normaliza el teléfono y descarta valores desconocidos', () => {
+  assert.ok(cg.parseGroup({}).errors.length);
+  const g = cg.parseGroup({ name: ' GdC Norte ', leader_phone: '0414-000.00.01', meeting_day: 'Lunes', stage: 'Inventada', meeting_time: '25:99' });
+  assert.deepEqual(g.errors, []);
+  assert.equal(g.value.name, 'GdC Norte');
+  assert.equal(g.value.leader_phone, '584140000001');
+  assert.equal(g.value.meeting_day, 'Lunes');
+  assert.equal(g.value.stage, '');
+  assert.equal(g.value.meeting_time, '');
+  assert.ok(cg.parseGroup({ name: 'X', leader_phone: '12' }).errors.length);
+});
+
+test('daysSince', () => {
+  assert.equal(cg.daysSince(null, TODAY), null);
+  assert.equal(cg.daysSince(day(-9), TODAY), 9);
+});
+
+async function withApp(t, fn) {
+  const h = await openTestDb();
+  if (!h) return t.skip('sin base de datos de prueba (instala @electric-sql/pglite o define DATABASE_URL_TEST)');
+  const app = express();
+  app.use(express.urlencoded({ extended: true }));
+  app.use(careRemoteRouter({ db: h.db, config }));
+  app.use(careGroupsRouter({ db: h.db, config }));
+  const server = app.listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const get = (p) => fetch(base + p, { redirect: 'manual' });
+  const post = (p, fields = {}) => fetch(base + p, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(fields), redirect: 'manual' });
+  try {
+    await fn({ db: h.db, get, post });
+  } finally {
+    server.close();
+    await h.close();
+  }
+}
+
+const newGroup = async (post, db, extra = {}) => {
+  const r = await post('/grupos', { name: 'GdC Prueba', leader_name: 'Líder Uno', ...extra });
+  assert.equal(r.status, 303);
+  return (await db.query('SELECT * FROM care_groups ORDER BY id DESC LIMIT 1')).rows[0];
+};
+
+test('crear grupo, abrir su enlace, reportar y ver el reporte en el panel', async (t) => {
+  await withApp(t, async ({ db, get, post }) => {
+    const g = await newGroup(post, db, { leader_phone: '0414-000.00.01', meeting_day: 'Martes' });
+    assert.match(g.token, /^[A-Za-z0-9_-]{16,}$/);
+
+    const form = await get(`/g/${g.token}`);
+    assert.equal(form.status, 200);
+    assert.equal(form.headers.get('cache-control'), 'no-store');
+    assert.match(await form.text(), /GdC Prueba/);
+
+    const sent = await post(`/g/${g.token}`, { meeting_date: TODAY, members_count: '7', guests_count: '2', offering: '10', testimonies: 'Dios <b>sanó</b>', followup: 'Llamar a Pedro' });
+    assert.equal(sent.status, 200);
+    assert.match(await sent.text(), /Reporte recibido/);
+
+    // reenviar la misma fecha corrige, no duplica
+    const again = await post(`/g/${g.token}`, { meeting_date: TODAY, members_count: '8', guests_count: '2' });
+    assert.match(await again.text(), /Reporte corregido/);
+    const rows = (await db.query('SELECT * FROM care_group_reports')).rows;
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].attendance, 10);
+    assert.equal(rows[0].source, 'telefono');
+    assert.equal((await db.query('SELECT uses FROM care_groups WHERE id=$1', [g.id])).rows[0].uses, 2);
+
+    const detail = await (await get(`/grupos/${g.id}`)).text();
+    assert.match(detail, /GdC Prueba/);
+    assert.match(detail, new RegExp(`/g/${g.token}`));
+
+    const list = await (await get('/grupos')).text();
+    assert.match(list, /Al día/);
+  });
+});
+
+test('el reporte rechaza datos malos con 400 y no guarda nada; el texto se escapa', async (t) => {
+  await withApp(t, async ({ db, get, post }) => {
+    const g = await newGroup(post, db);
+    const bad = await post(`/g/${g.token}`, { meeting_date: TODAY, notes: '<script>x</script>' });
+    assert.equal(bad.status, 400);
+    const html = await bad.text();
+    assert.ok(!html.includes('<script>x</script>'));
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM care_group_reports')).rows[0].n, 0);
+
+    await post(`/g/${g.token}`, { meeting_date: TODAY, attendance: '5', notes: '<img src=x onerror=alert(1)>' });
+    const detail = await (await get(`/grupos/${g.id}`)).text();
+    assert.ok(!detail.includes('<img src=x'));
+    assert.match(detail, /&lt;img/);
+  });
+});
+
+test('trampa para robots y enlaces inválidos, desactivados, regenerados', async (t) => {
+  await withApp(t, async ({ db, get, post }) => {
+    const g = await newGroup(post, db);
+    assert.equal((await get('/g/zzzzzzzzzzzzzzzzzzzz')).status, 404);
+    assert.equal((await get('/g/corto')).status, 404);
+
+    const bot = await post(`/g/${g.token}`, { meeting_date: TODAY, attendance: '5', web: 'spam' });
+    assert.equal(bot.status, 200);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM care_group_reports')).rows[0].n, 0);
+
+    await post(`/grupos/${g.id}/enlace/desactivar`);
+    assert.equal((await get(`/g/${g.token}`)).status, 404);
+    await post(`/grupos/${g.id}/enlace/activar`);
+    assert.equal((await get(`/g/${g.token}`)).status, 200);
+
+    await post(`/grupos/${g.id}/enlace/nuevo`);
+    assert.equal((await get(`/g/${g.token}`)).status, 404); // el anterior ya no sirve
+    const fresh = (await db.query('SELECT token FROM care_groups WHERE id=$1', [g.id])).rows[0].token;
+    assert.notEqual(fresh, g.token);
+    assert.equal((await get(`/g/${fresh}`)).status, 200);
+
+    await post(`/grupos/${g.id}/desactivar`);
+    assert.equal((await get(`/g/${fresh}`)).status, 404); // grupo inactivo: tampoco recibe reportes
+  });
+});
+
+test('grupo sin reportes aparece pendiente; los inactivos no cuentan; el CSV neutraliza fórmulas', async (t) => {
+  await withApp(t, async ({ db, get, post }) => {
+    const a = await newGroup(post, db, { name: 'Grupo Sin Reportar' });
+    const b = await newGroup(post, db, { name: 'Grupo Inactivo' });
+    await post(`/grupos/${b.id}/desactivar`);
+    const html = await (await get('/grupos')).text();
+    assert.match(html, /Sin reportes/);
+    assert.match(html, /Inactivo/);
+
+    await db.query(`INSERT INTO care_group_reports (group_id, meeting_date, attendance, notes) VALUES ($1, $2, 5, '=1+1')`, [a.id, day(-20)]);
+    const stale = await (await get('/grupos')).text();
+    assert.match(stale, /Hace 20 días/);
+
+    const csv = await (await get('/grupos/reportes.csv')).text();
+    assert.match(csv, /Grupo Sin Reportar/);
+    assert.ok(csv.includes("'=1+1"));
+  });
+});
+
+test('editar y validar el grupo; borrar el grupo borra sus reportes (cascada)', async (t) => {
+  await withApp(t, async ({ db, get, post }) => {
+    const g = await newGroup(post, db);
+    const bad = await post(`/grupos/${g.id}/editar`, { name: '' });
+    assert.equal(bad.status, 200);
+    assert.match(await bad.text(), /Escribe el nombre del grupo/);
+
+    const ok = await post(`/grupos/${g.id}/editar`, { name: 'GdC Renombrado', stage: 'Conquista' });
+    assert.equal(ok.status, 303);
+    const row = (await db.query('SELECT * FROM care_groups WHERE id=$1', [g.id])).rows[0];
+    assert.equal(row.name, 'GdC Renombrado');
+    assert.equal(row.token, g.token); // editar no cambia el enlace
+
+    await db.query(`INSERT INTO care_group_reports (group_id, meeting_date, attendance) VALUES ($1, $2, 3)`, [g.id, TODAY]);
+    await db.query('DELETE FROM care_groups WHERE id=$1', [g.id]);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM care_group_reports')).rows[0].n, 0);
+    assert.equal((await get('/grupos/999999')).status, 303);
+  });
+});

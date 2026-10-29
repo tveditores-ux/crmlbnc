@@ -48,3 +48,9 @@ Recordatorios y confirmaciones por WhatsApp y correo. Node 22, Express, PostgreS
 - Pasan a la conservada: ministerios (y coordinación), participaciones en eventos con sus mensajes, conversaciones, consolidación (unida si las dos la tenían), registros de Nueva Vida, y los campos que le falten (teléfono, correo, notas, rol, tipo, grupo oficial). Los datos únicos distintos quedan anotados en las notas.
 - **El consentimiento (`opt_in`) no se hereda** salvo que se marque expresamente: dos fichas con el mismo nombre pueden ser dos personas distintas. Mantener esta regla.
 - Si agregas una tabla con una columna que apunte a `people`, súmala a `mergePeople`; hay una prueba que busca referencias que quedaron colgando.
+
+## Grupos de cuidado (`src/care-groups.js`, `/grupos`, remoto `/g/<token>`)
+- Tablas `care_groups` y `care_group_reports` (migración 009). Un reporte por grupo y fecha: reenviar la misma fecha lo corrige.
+- Cada grupo tiene su enlace secreto para el líder (`/g/<token>`, sin sesión, como `/a/<token>` de asistencia): limitador, trampa para robots, no se guarda en caché. Se puede desactivar o regenerar desde la ficha del grupo; un grupo inactivo tampoco recibe reportes.
+- El líder se guarda como texto (nombre, teléfono, correo), **sin FK a `people`**, para que unir o borrar personas nunca rompa un grupo. No toca `opt_in` ni crea personas.
+- Pendiente de las otras hojas del libro: planificador mensual, desarrollo de liderazgo (tabla de miembros del grupo) y reporte trimestral.

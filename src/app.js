@@ -11,6 +11,8 @@ const { reportRouter } = require('./routes/report');
 const { consolidationRouter } = require('./routes/consolidation');
 const { nuevaVidaRouter } = require('./routes/nueva-vida');
 const { remoteRouter } = require('./routes/attendance-remote');
+const { careRemoteRouter } = require('./routes/care-remote');
+const { careGroupsRouter } = require('./routes/care-groups');
 const { layout } = require('./views/layout');
 const { esc } = require('./util');
 const auth = require('./auth');
@@ -72,6 +74,7 @@ function createApp(ctx) {
 
   app.use(googleRouter(ctx));
   app.use(remoteRouter(ctx)); // formulario del teléfono: protegido por enlace secreto, sin sesión
+  app.use(careRemoteRouter(ctx)); // reporte del líder de grupo de cuidado: igual, enlace secreto
 
   app.get('/entrar', (req, res) => res.send(loginPage()));
 
@@ -113,6 +116,7 @@ function createApp(ctx) {
   app.use(reportRouter(ctx));
   app.use(consolidationRouter(ctx));
   app.use(nuevaVidaRouter(ctx));
+  app.use(careGroupsRouter(ctx));
   app.use(adminRouter(ctx));
 
   app.use((req, res) => res.status(404).send(layout({ title: 'No encontrado', config, body: '<h1>Página no encontrada</h1>' })));
