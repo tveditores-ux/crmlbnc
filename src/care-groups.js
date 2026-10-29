@@ -1,6 +1,8 @@
 'use strict';
 const crypto = require('crypto');
 const { normalizePhone, normalizeEmail } = require('./phone');
+const { parseCsv, normalizeHeader } = require('./csv');
+const { tx } = require('./db');
 
 const STAGES = ['Equipo', 'Conquista', 'Consolidación', 'Multiplicación'];
 const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
@@ -112,4 +114,70 @@ function daysSince(lastReport, today) {
   return Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${String(lastReport).slice(0, 10)}T00:00:00Z`)) / 86400000);
 }
 
-module.exports = { STAGES, DAYS, parseGroup, parseReport, upsertReport, listGroups, daysSince, newToken };
+const IMPORT_ALIASES = {
+  grupo: 'name', nombre: 'name', nombre_del_grupo: 'name', gdc: 'name',
+  lider: 'leader_name', lider_del_grupo: 'leader_name',
+  telefono: 'leader_phone', telefono_del_lider: 'leader_phone', whatsapp: 'leader_phone', celular: 'leader_phone',
+  correo: 'leader_email', email: 'leader_email', correo_del_lider: 'leader_email',
+  lider_asesor: 'advisor_name', asesor: 'advisor_name',
+  pertenece_a: 'belongs_to', congregacion: 'congregation', direccion: 'address',
+  lugar: 'place', dia: 'meeting_day', hora: 'meeting_time', etapa: 'stage',
+};
+const FIELDS = ['leader_name', 'leader_phone', 'leader_email', 'advisor_name', 'belongs_to', 'congregation', 'address', 'place', 'meeting_day', 'meeting_time', 'stage'];
+const keyOf = (name) => String(name).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+/**
+ * Importa grupos desde un CSV. La clave es el nombre del grupo (sin importar mayúsculas ni acentos):
+ * el que ya existe solo recibe los datos que vengan llenos (nunca se borra nada ni se cambia su enlace);
+ * el nuevo se crea con su enlace. Si una fila falla, no se guarda ninguna.
+ */
+async function importGroups(pool, text, countryCode = '58', { dryRun = false } = {}) {
+  const rows = parseCsv(text);
+  const report = { created: 0, updated: 0, errors: [], unknownHeaders: [] };
+  if (!rows.length) return report;
+  const keys = rows[0].map((h) => IMPORT_ALIASES[normalizeHeader(h)] || null);
+  report.unknownHeaders = rows[0].filter((h, i) => !keys[i] && String(h).trim());
+  if (!keys.includes('name')) {
+    report.errors.push({ line: 1, name: '', errors: ['Falta la columna "Grupo" (o "Nombre").'] });
+    return report;
+  }
+  const { rows: existing } = await pool.query('SELECT id, name FROM care_groups');
+  const byKey = new Map(existing.map((g) => [keyOf(g.name), g.id]));
+  const plan = [];
+  const seen = new Set();
+  rows.slice(1).forEach((cells, i) => {
+    const src = {};
+    keys.forEach((k, j) => { if (k) src[k] = String(cells[j] || '').trim(); });
+    const { value, errors } = parseGroup(src, countryCode);
+    const line = i + 2;
+    // los valores que no se reconocen (día, etapa, hora) se avisan en vez de perderse en silencio
+    if (src.meeting_day && !value.meeting_day) errors.push('El día no es válido (Lunes a Domingo).');
+    if (src.stage && !value.stage) errors.push('La etapa no es válida (' + STAGES.join(', ') + ').');
+    if (src.meeting_time && !value.meeting_time) errors.push('La hora debe ser como 19:00.');
+    const k = keyOf(value.name);
+    if (k && seen.has(k)) errors.push('El grupo está repetido en el archivo.');
+    seen.add(k);
+    if (errors.length) report.errors.push({ line, name: value.name, errors });
+    else plan.push({ value, id: byKey.get(k) });
+  });
+  if (report.errors.length) return report;
+  report.created = plan.filter((p) => !p.id).length;
+  report.updated = plan.length - report.created;
+  if (dryRun) return report;
+  await tx(pool, async (db) => {
+    for (const { value, id } of plan) {
+      if (!id) {
+        await db.query(
+          'INSERT INTO care_groups (name, leader_name, leader_phone, leader_email, advisor_name, belongs_to, congregation, address, place, meeting_day, meeting_time, stage, token) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)',
+          [value.name, value.leader_name, value.leader_phone, value.leader_email, value.advisor_name, value.belongs_to, value.congregation, value.address, value.place, value.meeting_day, value.meeting_time, value.stage, newToken()]
+        );
+      } else {
+        const set = FIELDS.filter((f) => value[f] !== '');
+        if (set.length) await db.query('UPDATE care_groups SET ' + set.map((f, n) => f + ' = $' + (n + 2)).join(', ') + ' WHERE id = $1', [id, ...set.map((f) => value[f])]);
+      }
+    }
+  });
+  return report;
+}
+
+module.exports = { importGroups, STAGES, DAYS, parseGroup, parseReport, upsertReport, listGroups, daysSince, newToken };

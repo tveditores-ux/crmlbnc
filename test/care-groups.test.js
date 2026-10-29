@@ -181,3 +181,47 @@ test('editar y validar el grupo; borrar el grupo borra sus reportes (cascada)', 
     assert.equal((await get('/grupos/999999')).status, 303);
   });
 });
+
+test('importar grupos desde CSV: revisar no guarda, importar crea con enlace, repetir actualiza sin pisar datos ni cambiar el enlace', async (t) => {
+  await withApp(t, async ({ db, get, post }) => {
+    assert.equal((await get('/grupos/importar')).status, 200);
+    const csv = ['Grupo,Líder,Teléfono,Día,Hora,Etapa', 'GdC Uno,Líder A,0414-000.00.01,Lunes,19:00,Conquista', 'gdc dos,Líder B,,Martes,,'].join('\n');
+
+    const dry = await post('/grupos/importar', { csv, accion: 'revisar' });
+    assert.match(await dry.text(), /2 grupos nuevos/);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM care_groups')).rows[0].n, 0);
+
+    const done = await post('/grupos/importar', { csv, accion: 'importar' });
+    assert.equal(done.status, 303);
+    const rows = (await db.query('SELECT * FROM care_groups ORDER BY id')).rows;
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0].leader_phone, '584140000001');
+    assert.ok(rows.every((g) => /^[A-Za-z0-9_-]{16,}$/.test(g.token) && g.link_active));
+
+    // segunda vez: otro orden de columnas, mayúsculas distintas, campos vacíos no borran
+    const again = ['GRUPO,Etapa,Líder', 'GDC UNO,Equipo,', 'Gdc Tres,,Líder C'].join('\n');
+    await post('/grupos/importar', { csv: again, accion: 'importar' });
+    const after = (await db.query('SELECT * FROM care_groups ORDER BY id')).rows;
+    assert.equal(after.length, 3);
+    assert.equal(after[0].stage, 'Equipo');
+    assert.equal(after[0].leader_name, 'Líder A'); // vacío en el archivo: no se borra
+    assert.equal(after[0].meeting_day, 'Lunes');
+    assert.equal(after[0].token, rows[0].token); // el enlace no cambia
+  });
+});
+
+test('importar grupos: una fila mala cancela todo y se explican los problemas', async (t) => {
+  await withApp(t, async ({ db, post }) => {
+    const csv = ['Grupo,Teléfono,Día,Etapa', 'Buen Grupo,,Lunes,', 'Mal Grupo,12,Funday,Inventada', 'Buen Grupo,,,', ',,,'].join('\n');
+    const r = await post('/grupos/importar', { csv, accion: 'importar' });
+    const html = await r.text();
+    assert.match(html, /problemas/);
+    assert.match(html, /teléfono/);
+    assert.match(html, /día no es válido/);
+    assert.match(html, /repetido/);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM care_groups')).rows[0].n, 0);
+
+    const noName = await post('/grupos/importar', { csv: 'Líder,Día\nAlguien,Lunes', accion: 'importar' });
+    assert.match(await noName.text(), /Falta la columna/);
+  });
+});

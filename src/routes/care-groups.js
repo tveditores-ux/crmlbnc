@@ -89,12 +89,59 @@ function careGroupsRouter(ctx) {
           <div class="card"><div class="stat">${totals.att}</div><div class="stat-label">asistentes (30 días)</div></div>
           <div class="card"><div class="stat">${stale.length}</div><div class="stat-label">sin reportar hace más de ${STALE_DAYS} días</div></div>
         </div>
-        <p class="toolbar"><a class="btn" href="/grupos/nuevo">Agregar grupo</a> <a class="btn sec" href="/grupos/reportes.csv">Descargar reportes</a></p>
+        <p class="toolbar"><a class="btn" href="/grupos/nuevo">Agregar grupo</a> <a class="btn sec" href="/grupos/importar">Importar grupos (CSV)</a> <a class="btn sec" href="/grupos/reportes.csv">Descargar reportes</a></p>
         ${weekly.length ? `<div class="card"><h3>Asistencia semanal en todos los grupos</h3>${charts.lineChart(weekly.map((w) => w.lbl), [{ name: 'Asistentes', values: weekly.map((w) => w.att) }, { name: 'Invitados', values: weekly.map((w) => w.guests) }], { title: 'Asistencia semanal en los grupos de cuidado' })}</div>` : ''}
         <div class="table-scroll"><table><tr><th>Grupo</th><th>Líder</th><th>Reunión</th><th>Último reporte</th><th>Reportes (30 d)</th></tr>${
           rows || '<tr><td colspan="5" class="muted">Aún no hay grupos. Agrega el primero.</td></tr>'
         }</table></div>`
       );
+    })
+  );
+
+  /* --------------------------- Importar grupos (CSV) --------------------------- */
+  function importPage(csvText, reportHtml) {
+    return `<h1>Importar grupos de cuidado</h1>
+      <p class="sub">Columnas: <span class="mono">Grupo, Líder, Teléfono, Correo, Líder asesor, Pertenece a, Congregación, Dirección, Lugar, Día, Hora, Etapa</span>. Solo <span class="mono">Grupo</span> es obligatoria.
+        El nombre del grupo es la clave: si ya existe, solo se completan los datos que traigas llenos y su enlace no cambia. Los grupos nuevos reciben su enlace para el líder.</p>
+      <form method="post" class="card" id="imp">
+        <label>Archivo CSV (desde Excel o Google Sheets: Archivo → Descargar → CSV)</label>
+        <input type="file" accept=".csv,text/csv" id="file">
+        <label>O pega el contenido aquí</label>
+        <textarea name="csv" id="csv" style="min-height:180px" class="mono">${esc(csvText || '')}</textarea>
+        <div class="actions"><button name="accion" value="revisar" class="sec">Revisar sin guardar</button>
+        <button name="accion" value="importar">Importar</button><a class="btn sec" href="/grupos">Cancelar</a></div>
+      </form>
+      ${reportHtml || ''}
+      <script>
+        document.getElementById('file').addEventListener('change', function(e){
+          var f = e.target.files[0]; if(!f) return;
+          var rd = new FileReader();
+          rd.onload = function(){ document.getElementById('csv').value = rd.result; };
+          rd.readAsText(f, 'UTF-8');
+        });
+      </script>`;
+  }
+  r.get('/grupos/importar', (req, res) => page(req, res, 'Importar grupos', importPage('')));
+  r.post(
+    '/grupos/importar',
+    ah(async (req, res) => {
+      const text = String(req.body.csv || '');
+      const dryRun = req.body.accion !== 'importar';
+      const report = await cg.importGroups(db, text, config.defaultCountryCode, { dryRun });
+      const unk = report.unknownHeaders.length ? `<p class="muted">Columnas ignoradas: ${report.unknownHeaders.map(esc).join(', ')}</p>` : '';
+      let html;
+      if (report.errors.length) {
+        const rows = report.errors.slice(0, 80).map((e) => `<tr><td>${esc(e.line)}</td><td>${esc(e.name || '')}</td><td>${e.errors.map(esc).join('<br>')}</td></tr>`).join('');
+        html = `<div class="flash err">Hay ${report.errors.length} fila(s) con problemas. No se guardó nada; corrígelas y vuelve a intentar.</div>${unk}
+          <div class="table-scroll"><table><tr><th>Línea</th><th>Grupo</th><th>Problema</th></tr>${rows}</table></div>`;
+      } else if (!report.created && !report.updated) {
+        html = '<div class="flash err">No encontré filas para importar.</div>';
+      } else if (dryRun) {
+        html = `<div class="flash ok">Todo correcto: ${report.created} grupos nuevos y ${report.updated} por actualizar. Pulsa "Importar" para guardar.</div>${unk}`;
+      } else {
+        return go(res, '/grupos', { ok: `Importación lista: ${report.created} grupos nuevos, ${report.updated} actualizados.` });
+      }
+      page(req, res, 'Importar grupos', importPage(text, html));
     })
   );
 
