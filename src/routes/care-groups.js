@@ -106,7 +106,8 @@ function careGroupsRouter(ctx) {
         ${everyone.length ? `<div class="card"><h3>Ruta de crecimiento: personas por hito (${everyone.length} en total)</h3>${charts.barChart(route, { title: 'Personas por hito de la ruta de crecimiento', color: '#6b5b95' })}</div>` : ''}
         <div class="table-scroll"><table><tr><th>Grupo</th><th>Líder</th><th>Reunión</th><th>Último reporte</th><th>Reportes (30 d)</th><th>Datos del grupo</th></tr>${
           rows || '<tr><td colspan="6" class="muted">Aún no hay grupos. Agrega el primero.</td></tr>'
-        }</table></div>`
+        }</table></div>
+        <p class="muted" style="font-size:13px;margin-top:18px"><a href="/grupos/borrar-todo">Borrar todos los datos de grupos de cuidado…</a></p>`
       );
     })
   );
@@ -273,6 +274,35 @@ function careGroupsRouter(ctx) {
       const out = await intake.apply(db, id, { groupId: target });
       if (out.error) return go(res, '/grupos/respuestas', { err: out.error });
       go(res, `/grupos/${out.groupId}`, { ok: 'Datos guardados en el grupo.' });
+    })
+  );
+
+  /* ----------------- Vaciar los datos de grupos de cuidado ----------------- */
+  r.get(
+    '/grupos/borrar-todo',
+    ah(async (req, res) => {
+      const c = await cg.wipeCounts(db);
+      page(
+        req,
+        res,
+        'Borrar datos de grupos',
+        `<p><a href="/grupos">← Grupos de cuidado</a></p><h1>Borrar todos los datos de grupos de cuidado</h1>
+        <div class="flash err">Esto no se puede deshacer. Se borrarán <strong>${c.groups}</strong> grupos, <strong>${c.reports}</strong> reportes semanales, <strong>${c.people}</strong> personas de la ruta de crecimiento, <strong>${c.photos}</strong> fotos y <strong>${c.submissions}</strong> respuestas de líderes, con sus planes y F.O.D.A.</div>
+        <p class="sub">Después, los grupos se irán creando solos con lo que envíen los líderes por el enlace común (los verás en <a href="/grupos/respuestas">Respuestas</a> para aprobarlos). El enlace común no cambia, así que el que ya enviaste sigue sirviendo. No se toca ninguna persona ni ninguna otra pestaña.</p>
+        <form method="post" action="/grupos/borrar-todo" class="card">
+          <label>Para confirmar, escribe BORRAR</label>
+          <input type="text" name="confirmar" autocomplete="off" required style="max-width:240px">
+          <div class="actions"><button class="danger">Borrar todo</button><a class="btn sec" href="/grupos">Cancelar</a></div>
+        </form>`
+      );
+    })
+  );
+  r.post(
+    '/grupos/borrar-todo',
+    ah(async (req, res) => {
+      if (String(req.body.confirmar || '').trim() !== 'BORRAR') return go(res, '/grupos/borrar-todo', { err: 'No se borró nada: tienes que escribir BORRAR.' });
+      const c = await cg.wipeAll(db);
+      go(res, '/grupos', { ok: `Listo: se borraron ${c.groups} grupos y todo lo que tenían. Ahora se llenará con lo que envíen los líderes.` });
     })
   );
 

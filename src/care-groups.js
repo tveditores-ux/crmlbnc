@@ -209,7 +209,14 @@ function parseCedula(raw) {
 /** Datos del formulario "Datos del grupo": lo de parseGroup más nacimiento, cédula y dirección del líder. */
 function parseLeaderProfile(src, countryCode, today) {
   const { value, errors } = parseGroup(src, countryCode);
-  const b1 = parseBirthDate(src.leader_birth_date, today, 'del líder');
+  // el teléfono manda día, mes y año por separado; también vale una fecha ya armada (YYYY-MM-DD)
+  const parts = [src.bd_day, src.bd_month, src.bd_year].map((x) => String(x ?? '').trim());
+  let birth = src.leader_birth_date;
+  if (parts.some(Boolean)) {
+    if (parts.every(Boolean)) birth = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    else errors.push('Completa el día, el mes y el año de nacimiento del líder, o déjalos todos en blanco.');
+  }
+  const b1 = parts.some(Boolean) && !parts.every(Boolean) ? { value: '' } : parseBirthDate(birth, today, 'del líder');
   if (b1.error) errors.push(b1.error);
   value.leader_birth_date = b1.value;
   const ci = parseCedula(src.leader_cedula);
@@ -220,7 +227,7 @@ function parseLeaderProfile(src, countryCode, today) {
   return { value, errors };
 }
 
-/** Obligatorios del formulario del líder: nombre, cédula, dirección, teléfono, correo y líder asesor (la foto la revisa quien llama). */
+/** Obligatorios del formulario del líder: nombre y apellido, cédula, dirección, teléfono y correo (la foto la revisa quien llama). */
 function leaderRequiredErrors(src, value) {
   const e = [];
   if (!value.leader_name) e.push('Escribe el nombre y apellido del líder.');
@@ -229,7 +236,6 @@ function leaderRequiredErrors(src, value) {
   if (!value.leader_address) e.push('Escribe la dirección del líder.');
   if (!clean(src.leader_phone)) e.push('Escribe el teléfono del líder.');
   if (!clean(src.leader_email)) e.push('Escribe el correo del líder.');
-  if (!value.advisor_name) e.push('Escribe el nombre del líder asesor.');
   return e;
 }
 
@@ -279,4 +285,31 @@ function upcomingBirthdays(groups, today, days = 45) {
   return out.sort((a, b) => a.inDays - b.inDays || a.who.localeCompare(b.who));
 }
 
-module.exports = { parseBirthDate, parseCedula, parseLeaderProfile, leaderRequiredErrors, parsePhoto, savePhoto, upcomingBirthdays, MAX_PHOTO_BYTES, importGroups, STAGES, CONGREGATIONS, DAYS, parseGroup, parseReport, upsertReport, listGroups, daysSince, newToken };
+/* ------- Vaciar los datos de grupos de cuidado ------- */
+/** Cuántos registros hay, para mostrar antes de borrar. */
+async function wipeCounts(db) {
+  const n = async (sql) => (await db.query(sql)).rows[0].n;
+  return {
+    groups: await n('SELECT count(*)::int AS n FROM care_groups'),
+    reports: await n('SELECT count(*)::int AS n FROM care_group_reports'),
+    people: await n('SELECT count(*)::int AS n FROM care_group_people'),
+    photos: await n('SELECT count(*)::int AS n FROM care_group_photos'),
+    submissions: await n('SELECT count(*)::int AS n FROM care_group_submissions'),
+  };
+}
+
+/**
+ * Borra todos los grupos con sus reportes, ruta de crecimiento, planes, F.O.D.A., fotos y respuestas, en una transacción.
+ * El enlace común de los líderes (care_settings) se conserva, para que el que ya se envió siga funcionando.
+ * No toca personas ni ninguna otra tabla.
+ */
+async function wipeAll(pool) {
+  return tx(pool, async (db) => {
+    const counts = await wipeCounts(db);
+    await db.query('DELETE FROM care_group_submissions');
+    await db.query('DELETE FROM care_groups'); // el resto se va por ON DELETE CASCADE
+    return counts;
+  });
+}
+
+module.exports = { wipeCounts, wipeAll, parseBirthDate, parseCedula, parseLeaderProfile, leaderRequiredErrors, parsePhoto, savePhoto, upcomingBirthdays, MAX_PHOTO_BYTES, importGroups, STAGES, CONGREGATIONS, DAYS, parseGroup, parseReport, upsertReport, listGroups, daysSince, newToken };

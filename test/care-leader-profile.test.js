@@ -13,7 +13,7 @@ const TODAY = new Date().toLocaleDateString('en-CA', { timeZone: config.timezone
 
 // "JPEG" mínimo para las pruebas: empieza con FFD8FF, termina con FFD9 y pasa el tamaño mínimo.
 // lo obligatorio del formulario por grupo (el nacimiento y la foto se prueban aparte)
-const required = { leader_name: 'Líder Uno', leader_cedula: 'V-12345678', leader_address: 'Calle de prueba 1', leader_phone: '0414-000.00.01', leader_email: 'lider@ejemplo.com', advisor_name: 'Asesor Uno' };
+const required = { leader_name: 'Líder Uno', leader_cedula: 'V-12345678', leader_address: 'Calle de prueba 1', leader_phone: '0414-000.00.01', leader_email: 'lider@ejemplo.com' };
 const fakeJpeg = (fill = 7) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(400, fill), Buffer.from([0xff, 0xd9])]);
 const dataUrl = (buf) => `data:image/jpeg;base64,${buf.toString('base64')}`;
 
@@ -82,7 +82,9 @@ test('el líder envía su nacimiento y su foto; se guardan, se ven en el panel y
     const T = `/g/${g.token}`;
     const html = await (await get(`${T}/datos`)).text();
     assert.match(html, /capture="user"/); // abre la cámara frontal
-    assert.match(html, /type="date" name="leader_birth_date"/);
+    // la fecha de nacimiento se elige con tres selectores (día, mes y año)
+    for (const n of ['bd_day', 'bd_month', 'bd_year']) assert.match(html, new RegExp(`<select name="${n}"`));
+    assert.ok(!html.includes('type="date"'));
     assert.equal((await get(`${T}/foto`)).status, 404); // aún no hay
 
     const photo = fakeJpeg(9);
@@ -147,5 +149,62 @@ test('la lista muestra los cumpleaños próximos y borrar el grupo borra la foto
     await db.query('INSERT INTO care_group_photos (group_id, data) VALUES ($1, $2)', [g.id, fakeJpeg()]);
     await db.query('DELETE FROM care_groups WHERE id = $1', [g.id]);
     assert.equal((await db.query('SELECT count(*)::int AS n FROM care_group_photos')).rows[0].n, 0);
+  });
+});
+
+test('nacimiento con selectores: arma la fecha, exige las tres partes y rechaza fechas imposibles', () => {
+  const parse = (extra) => cg.parseLeaderProfile({ name: 'x', leader_name: 'Ana Uno', ...extra }, '58', TODAY);
+  assert.equal(parse({ bd_day: '5', bd_month: '11', bd_year: '1985' }).value.leader_birth_date, '1985-11-05');
+  assert.equal(parse({ bd_day: '05', bd_month: '07', bd_year: '1990' }).value.leader_birth_date, '1990-07-05');
+  assert.equal(parse({ leader_birth_date: '1985-11-05' }).value.leader_birth_date, '1985-11-05'); // la fecha armada también vale
+  assert.equal(parse({}).value.leader_birth_date, ''); // opcional
+  assert.ok(parse({ bd_day: '5', bd_month: '', bd_year: '1985' }).errors.some((e) => /Completa el día, el mes y el año/.test(e)));
+  assert.ok(parse({ bd_day: '31', bd_month: '02', bd_year: '1985' }).errors.some((e) => /no existe/.test(e)));
+});
+
+test('el formulario muestra la fecha guardada en los tres selectores y años de más reciente a más antiguo', async (t) => {
+  await withApp(t, async ({ db, get }) => {
+    const g = await mkGroup(db);
+    await db.query("UPDATE care_groups SET leader_birth_date = '1985-11-05' WHERE id = $1", [g.id]);
+    const html = await (await get(`/g/${g.token}/datos`)).text();
+    assert.match(html, /<option value="05" selected>5<\/option>/);
+    assert.match(html, /<option value="11" selected>noviembre<\/option>/);
+    assert.match(html, /<option value="1985" selected>1985<\/option>/);
+    const years = [...html.matchAll(/<option value="(\d{4})"/g)].map((m) => +m[1]);
+    assert.ok(years[0] > years[1] && years[years.length - 1] === 1910);
+    assert.ok(years[0] <= Number(TODAY.slice(0, 4)) - 10);
+  });
+});
+
+test('vaciar los datos de grupos: pide escribir BORRAR, borra todo en cascada y deja intacto el enlace común', async (t) => {
+  await withApp(t, async ({ db, get, post }) => {
+    const intake = require('../src/care-intake');
+    const token = (await intake.ensureToken(db)).token;
+    const g = await mkGroup(db);
+    await db.query('INSERT INTO care_group_reports (group_id, meeting_date, attendance) VALUES ($1, $2, 4)', [g.id, TODAY]);
+    await db.query("INSERT INTO care_group_people (group_id, name) VALUES ($1, 'A')", [g.id]);
+    await db.query('INSERT INTO care_group_photos (group_id, data) VALUES ($1, $2)', [g.id, fakeJpeg()]);
+    await db.query("INSERT INTO care_group_submissions (group_id, leader_name) VALUES ($1, 'B'), (NULL, 'C')", [g.id]);
+    await db.query("INSERT INTO people (full_name, phone) VALUES ('Persona Intacta', '584149990000')");
+
+    const page = await (await get('/grupos/borrar-todo')).text();
+    assert.match(page, /<strong>1<\/strong> grupos/);
+    assert.match(page, /BORRAR/);
+
+    for (const confirmar of ['', 'borrar', 'si']) {
+      const r = await post('/grupos/borrar-todo', { confirmar });
+      assert.equal(r.status, 303);
+      assert.match(decodeURIComponent(r.headers.get('location').replaceAll('+', ' ')), /No se borró nada/);
+    }
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM care_groups')).rows[0].n, 1);
+
+    const ok = await post('/grupos/borrar-todo', { confirmar: 'BORRAR' });
+    assert.equal(ok.status, 303);
+    for (const tb of ['care_groups', 'care_group_reports', 'care_group_people', 'care_group_photos', 'care_group_submissions']) {
+      assert.equal((await db.query(`SELECT count(*)::int AS n FROM ${tb}`)).rows[0].n, 0, tb);
+    }
+    assert.equal((await intake.ensureToken(db)).token, token); // el enlace común sigue siendo el mismo
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM people')).rows[0].n, 1); // las personas no se tocan
+    assert.match(await (await get('/grupos')).text(), /Aún no hay grupos/);
   });
 });

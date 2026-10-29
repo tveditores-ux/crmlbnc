@@ -19,6 +19,8 @@ const CSS = `<style>
 .remote textarea{font-size:16px;min-height:80px}
 .remote .pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
 .remote .pair>div{min-width:0}
+.remote .triple{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.5fr) minmax(0,1fr);gap:8px}
+.remote .triple>div{min-width:0}
 .remote input[type=date]{min-width:0;max-width:100%;font-size:18px;-webkit-appearance:none;appearance:none;min-height:54px}
 .remote .pair label{font-size:13px}
 .remote .check{display:flex;gap:10px;align-items:center;font-weight:600;margin-top:18px}
@@ -243,9 +245,9 @@ function careRemoteRouter(ctx) {
         return send(res, shell('Datos del grupo', datosForm(g, req.params.token, { ...req.body, ...keep, leader_phone_input: req.body.leader_phone }, errors), 400));
       }
       await db.query(
-        `UPDATE care_groups SET leader_name=$2, leader_phone=$3, leader_email=$4, advisor_name=$5, congregation=COALESCE(NULLIF($6, ''), congregation), address=$7, place=$8, meeting_day=$9, meeting_time=$10, stage=$11,
-           leader_birth_date=$12, leader_cedula=$13, leader_address=$14, profile_updated_at=now(), uses = uses + 1, last_used_at = now() WHERE id=$1`,
-        [g.id, value.leader_name, value.leader_phone, value.leader_email, value.advisor_name, value.congregation, value.address, value.place, value.meeting_day, value.meeting_time, value.stage, value.leader_birth_date, value.leader_cedula, value.leader_address]
+        `UPDATE care_groups SET leader_name=$2, leader_phone=$3, leader_email=$4, congregation=COALESCE(NULLIF($5, ''), congregation), address=$6, place=$7, meeting_day=$8, meeting_time=$9, stage=$10,
+           leader_birth_date=$11, leader_cedula=$12, leader_address=$13, profile_updated_at=now(), uses = uses + 1, last_used_at = now() WHERE id=$1`,
+        [g.id, value.leader_name, value.leader_phone, value.leader_email, value.congregation, value.address, value.place, value.meeting_day, value.meeting_time, value.stage, value.leader_birth_date, value.leader_cedula, value.leader_address]
       );
       if (photo.buffer) await savePhoto(db, g.id, photo.buffer);
       send(res, saved(req.params.token, '/datos', 'Datos del grupo guardados. ¡Gracias!'));

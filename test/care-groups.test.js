@@ -65,7 +65,7 @@ async function withApp(t, fn) {
 
 // el formulario "Datos del grupo" exige nombre, teléfono, correo, líder asesor y foto
 const JPEG = `data:image/jpeg;base64,${Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(400, 7), Buffer.from([0xff, 0xd9])]).toString('base64')}`;
-const required = { leader_name: 'Líder Obligatorio', leader_cedula: 'V-12345678', leader_address: 'Calle de prueba 1', leader_phone: '0414-000.00.01', leader_email: 'lider@ejemplo.com', advisor_name: 'Asesor Uno', photo_data: JPEG };
+const required = { leader_name: 'Líder Obligatorio', leader_cedula: 'V-12345678', leader_address: 'Calle de prueba 1', leader_phone: '0414-000.00.01', leader_email: 'lider@ejemplo.com', photo_data: JPEG };
 
 const newGroup = async (post, db, extra = {}) => {
   const r = await post('/grupos', { name: 'GdC Prueba', leader_name: 'Líder Uno', ...extra });
@@ -250,7 +250,6 @@ test('el líder confirma los datos de su grupo desde su enlace y llegan a la fic
     assert.equal(row.meeting_day, 'Jueves');
     assert.equal(row.meeting_time, '18:30');
     assert.equal(row.congregation, 'Mujeres');
-    assert.equal(row.advisor_name, 'Asesor Uno');
     assert.equal(row.leader_cedula, 'V-12345678');
     assert.equal(row.leader_address, 'Calle de prueba 1');
     assert.equal(row.token, g.token);
@@ -264,7 +263,7 @@ test('el líder confirma los datos de su grupo desde su enlace y llegan a la fic
   });
 });
 
-test('datos del grupo: obligatorios (líder, teléfono, correo, asesor, foto), teléfono válido, robots, enlace caído; no guarda nada si falla', async (t) => {
+test('datos del grupo: obligatorios (líder, teléfono, correo, cédula, dirección, foto), teléfono válido, robots, enlace caído; no guarda nada si falla', async (t) => {
   await withApp(t, async ({ db, get, post }) => {
     const g = await newGroup(post, db, { name: 'GdC Datos 2', leader_name: 'Líder Original' });
     const T = `/g/${g.token}/datos`;
@@ -276,7 +275,7 @@ test('datos del grupo: obligatorios (líder, teléfono, correo, asesor, foto), t
     assert.match(await oneWord.text(), /nombre y el apellido/);
     const badPhone = await post(T, { ...required, leader_phone: '12' });
     assert.equal(badPhone.status, 400);
-    for (const [field, msg] of [['leader_phone', /teléfono/], ['leader_email', /correo/], ['advisor_name', /líder asesor/], ['leader_cedula', /cédula/], ['leader_address', /dirección del líder/], ['photo_data', /Falta la foto/]]) {
+    for (const [field, msg] of [['leader_phone', /teléfono/], ['leader_email', /correo/], ['leader_cedula', /cédula/], ['leader_address', /dirección del líder/], ['photo_data', /Falta la foto/]]) {
       const r = await post(T, { ...required, [field]: '' });
       assert.equal(r.status, 400, field);
       assert.match(await r.text(), msg);

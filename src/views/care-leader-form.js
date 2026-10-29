@@ -1,6 +1,25 @@
 'use strict';
 const { esc } = require('../util');
 
+const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+/** Fecha de nacimiento como tres selectores (día, mes y año): en el teléfono salen como ruedas. */
+function birthRoll(v, today) {
+  const [y, m, d] = v.bd_year !== undefined ? [v.bd_year, v.bd_month, v.bd_day] : String(v.leader_birth_date || '').split('-');
+  const opt = (value, label, cur) => `<option value="${value}" ${String(cur) === String(value) ? 'selected' : ''}>${label}</option>`;
+  const days = Array.from({ length: 31 }, (_, i) => opt(String(i + 1).padStart(2, '0'), i + 1, d));
+  const months = MONTHS.map((n, i) => opt(String(i + 1).padStart(2, '0'), n, m));
+  const last = Number(String(today).slice(0, 4)) - 10;
+  const years = Array.from({ length: last - 1909 }, (_, i) => opt(last - i, last - i, y));
+  const st = 'font-size:18px;padding:12px 6px;width:100%;border-radius:10px;border:1px solid var(--line)';
+  return `<label>Fecha de nacimiento del líder</label>
+        <div class="triple">
+          <div><select name="bd_day" aria-label="Día" style="${st}"><option value="">Día</option>${days.join('')}</select></div>
+          <div><select name="bd_month" aria-label="Mes" style="${st}"><option value="">Mes</option>${months.join('')}</select></div>
+          <div><select name="bd_year" aria-label="Año" style="${st}"><option value="">Año</option>${years.join('')}</select></div>
+        </div>`;
+}
+
 /**
  * Campos del líder y del grupo (datos, nacimiento, foto, reunión, pertenencia).
  * Los usan el formulario de cada grupo (/g/<token>/datos) y el enlace común (/registro/<token>),
@@ -16,12 +35,12 @@ function leaderFields(v, { today, photoSrc = '', stages, days, congregations = [
   const preview = v.photo_data ? `src="${esc(v.photo_data)}"` : photoSrc ? `src="${esc(photoSrc)}"` : 'style="display:none"';
   return `<h2>Líder</h2>
         ${t('leader_name', 'Nombre y apellido', 'maxlength="120" required placeholder="Nombre y apellido" autocomplete="off"')}
-        <label for="leader_birth_date">Fecha de nacimiento del líder</label><input id="leader_birth_date" type="date" name="leader_birth_date" min="1910-01-01" max="${esc(today)}" value="${esc(v.leader_birth_date || '')}">
+        ${birthRoll(v, today)}
         <label for="leader_cedula">Cédula de identidad (C.I.) del líder</label><input id="leader_cedula" type="text" inputmode="text" autocapitalize="characters" name="leader_cedula" required maxlength="14" value="${esc(v.leader_cedula || '')}" placeholder="V-12345678">
         ${t('leader_address', 'Dirección del líder', 'maxlength="250" required')}
         <label for="leader_phone">Teléfono del líder (WhatsApp)</label><input id="leader_phone" type="tel" inputmode="tel" name="leader_phone" required value="${esc(v.leader_phone_input ?? '')}" placeholder="0414-000.00.00">
         <label for="leader_email">Correo del líder</label><input id="leader_email" type="email" inputmode="email" name="leader_email" required value="${esc(v.leader_email || '')}">
-        ${t('advisor_name', 'Líder asesor', 'maxlength="120" required')}
+
         ${skipCongregation ? '' : sel('congregation', 'Congregación', v.congregation && !congregations.includes(v.congregation) ? [...congregations, v.congregation] : congregations)}
         <h2>Foto del líder</h2>
         <p class="muted" style="font-size:14px;margin:6px 0">Es obligatoria: una foto del líder, de frente y con buena luz.</p>
