@@ -3,7 +3,7 @@ const express = require('express');
 const { layout } = require('../views/layout');
 const { esc } = require('../util');
 const { createRateLimiter } = require('../attendance-store');
-const { STAGES, DAYS } = require('../care-groups');
+const { STAGES, DAYS, CONGREGATIONS } = require('../care-groups');
 const intake = require('../care-intake');
 const { leaderFields, PHOTO_SCRIPT } = require('../views/care-leader-form');
 const { CSS } = require('./care-remote');
@@ -25,39 +25,33 @@ function careIntakeRouter(ctx) {
   const invalid = () =>
     shell('Enlace no válido', '<div class="card"><h1>Enlace no válido</h1><p class="muted">Este enlace ya no está activo. Pídele uno nuevo a quien administra el panel.</p></div>', 404);
 
-  const activeGroups = async () => (await db.query('SELECT id, name FROM care_groups WHERE active ORDER BY lower(name)')).rows;
+  const activeGroups = async () => (await db.query('SELECT id, name, leader_phone, congregation FROM care_groups WHERE active')).rows;
 
-  function form(groups, v = {}, errors = []) {
-    const options = groups.map((g) => `<option value="${g.id}" ${String(v.group_id) === String(g.id) ? 'selected' : ''}>${esc(g.name)}</option>`).join('');
+  function form(v = {}, errors = []) {
+    const options = CONGREGATIONS.map((c) => `<option ${v.congregation === c ? 'selected' : ''}>${esc(c)}</option>`).join('');
     return `<h1>Datos de mi grupo de cuidado</h1>
       <p class="muted" style="font-size:14px">Llena esta planilla una sola vez y envíala. La información llega directo a la iglesia. Toma unos dos minutos.</p>
       ${errors.length ? `<div class="flash err">${errors.map(esc).join('<br>')}</div>` : ''}
       <form method="post" autocomplete="off">
         <div class="hp" aria-hidden="true"><label>No llenar<input type="text" name="web" tabindex="-1"></label></div>
-        <h2>Mi grupo</h2>
-        <label for="group_id">¿Cuál es tu grupo?</label>
-        <select id="group_id" name="group_id" required style="font-size:18px;padding:12px;width:100%;border-radius:10px;border:1px solid var(--line)">
-          <option value="">Elige…</option>${options}<option value="otro" ${v.group_id === 'otro' ? 'selected' : ''}>Mi grupo no está en la lista</option>
+        <h2>Mi congregación</h2>
+        <label for="congregation">¿Cuál es tu congregación?</label>
+        <select id="congregation" name="congregation" required style="font-size:18px;padding:12px;width:100%;border-radius:10px;border:1px solid var(--line)">
+          <option value="">Elige…</option>${options}
         </select>
-        <div id="new_group_box" style="display:${v.group_id === 'otro' ? 'block' : 'none'}">
-          <label for="new_group_name">Nombre de tu grupo</label><input id="new_group_name" type="text" name="new_group_name" maxlength="120" value="${esc(v.new_group_name || '')}">
-        </div>
-        ${leaderFields(v, { today: today(), stages: STAGES, days: DAYS })}
+        <label for="group_name">Nombre de tu grupo (opcional)</label>
+        <input id="group_name" type="text" name="group_name" maxlength="120" value="${esc(v.group_name || '')}">
+        <p class="muted" style="font-size:13px;margin:4px 0 0">Si lideras más de un grupo, escribe aquí a cuál te refieres.</p>
+        ${leaderFields(v, { today: today(), stages: STAGES, days: DAYS, congregations: CONGREGATIONS, skipCongregation: true })}
         <button class="go">Enviar mis datos</button>
-      </form>
-      <script>
-        (function () {
-          var s = document.getElementById('group_id'), b = document.getElementById('new_group_box');
-          s.addEventListener('change', function () { b.style.display = s.value === 'otro' ? 'block' : 'none'; });
-        })();
-      </script>${PHOTO_SCRIPT}`;
+      </form>${PHOTO_SCRIPT}`;
   }
 
   r.get(
     '/registro/:token',
     ah(async (req, res) => {
       if (!(await intake.tokenIsValid(db, req.params.token))) return send(res, invalid());
-      send(res, shell('Datos de mi grupo', form(await activeGroups())));
+      send(res, shell('Datos de mi grupo', form()));
     })
   );
 
@@ -73,7 +67,7 @@ function careIntakeRouter(ctx) {
       const sub = intake.parseSubmission(req.body, groups, config.defaultCountryCode, today());
       if (sub.errors.length) {
         const keep = sub.photo.error ? {} : { photo_data: req.body.photo_data };
-        return send(res, shell('Datos de mi grupo', form(groups, { ...req.body, ...keep, leader_phone_input: req.body.leader_phone }, sub.errors), 400));
+        return send(res, shell('Datos de mi grupo', form({ ...req.body, ...keep, leader_phone_input: req.body.leader_phone }, sub.errors), 400));
       }
       const out = await intake.submit(db, sub);
       send(

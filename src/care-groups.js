@@ -5,6 +5,7 @@ const { parseCsv, normalizeHeader } = require('./csv');
 const { tx } = require('./db');
 
 const STAGES = ['Equipo', 'Conquista', 'Consolidación', 'Multiplicación'];
+const CONGREGATIONS = ['Niños', 'Adolescentes', 'Jóvenes', 'Jóvenes adultos', 'Matrimonios', 'Mujeres', 'Hombres'];
 const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 const COUNTS = ['members_count', 'guests_count', 'attendance'];
 const TEXTS = ['snack', 'dynamics', 'testimonies', 'songs', 'key_element', 'notes', 'followup'];
@@ -256,4 +257,4 @@ function upcomingBirthdays(groups, today, days = 45) {
   return out.sort((a, b) => a.inDays - b.inDays || a.who.localeCompare(b.who));
 }
 
-module.exports = { parseBirthDate, parseLeaderProfile, parsePhoto, savePhoto, upcomingBirthdays, MAX_PHOTO_BYTES, importGroups, STAGES, DAYS, parseGroup, parseReport, upsertReport, listGroups, daysSince, newToken };
+module.exports = { parseBirthDate, parseLeaderProfile, parsePhoto, savePhoto, upcomingBirthdays, MAX_PHOTO_BYTES, importGroups, STAGES, CONGREGATIONS, DAYS, parseGroup, parseReport, upsertReport, listGroups, daysSince, newToken };

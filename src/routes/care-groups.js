@@ -159,7 +159,7 @@ function careGroupsRouter(ctx) {
   );
 
   /* ----------------- Pedir los datos a los líderes: un enlace para todos ----------------- */
-  const DEFAULT_ASK = 'Hola {nombre}, la paz del Señor. Estamos actualizando los datos de los grupos de cuidado de la iglesia. ¿Me ayudas llenando esta planilla desde tu teléfono? Elige tu grupo y envíala, son dos minutos: {enlace}';
+  const DEFAULT_ASK = 'Hola {nombre}, la paz del Señor. Estamos actualizando los datos de los grupos de cuidado de la iglesia. ¿Me ayudas llenando esta planilla desde tu teléfono? Elige tu congregación, llena tus datos y envíala, son dos minutos: {enlace}';
   r.get(
     '/grupos/solicitud',
     ah(async (req, res) => {
@@ -181,7 +181,7 @@ function careGroupsRouter(ctx) {
         res,
         'Pedir datos a los líderes',
         `<p><a href="/grupos">← Grupos de cuidado</a></p><h1>Pedir los datos a los líderes</h1>
-        <p class="sub">Un solo enlace para todos: cada líder lo abre, elige su grupo, llena su planilla (con nacimiento y foto) y la envía. Si su teléfono coincide con el que ya tenemos, sus datos se guardan solos; si no, quedan en <a href="/grupos/respuestas">Respuestas</a> para que tú los apruebes.</p>
+        <p class="sub">Un solo enlace para todos: cada líder lo abre, elige su congregación, llena su planilla (con nacimiento y foto) y la envía. Su grupo se reconoce por su teléfono: si coincide con el que ya tenemos, sus datos se guardan solos; si no, quedan en <a href="/grupos/respuestas">Respuestas</a> para que tú los apruebes.</p>
         ${waiting ? `<div class="flash ok"><a href="/grupos/respuestas">${waiting} respuesta${waiting === 1 ? '' : 's'} por revisar →</a></div>` : ''}
         <div class="card"><h3>Enlace para todos los líderes</h3>
           <input type="text" id="common" readonly value="${esc(commonUrl)}" onclick="this.select()" style="font-size:13px" ${settings.active ? '' : 'disabled'}>
@@ -226,6 +226,7 @@ function careGroupsRouter(ctx) {
     '/grupos/respuestas',
     ah(async (req, res) => {
       const pending = await intake.listPending(db);
+      const activeList = (await db.query('SELECT id, name FROM care_groups WHERE active ORDER BY lower(name)')).rows;
       const cards = pending
         .map((s) => {
           const changes = intake.FIELDS.filter((f) => s[f] !== '' && s[f] !== (s['cur_' + f] ?? ''))
@@ -233,10 +234,10 @@ function careGroupsRouter(ctx) {
             .join('');
           return `<div class="card">
             <h3 style="margin-top:0">${s.group_id ? esc(s.group_name) : `${esc(s.new_group_name)} <span class="badge b-warn">Grupo nuevo</span>`}</h3>
-            <p class="muted" style="font-size:13px">Recibida ${esc(short(new Date(s.created_at).toLocaleDateString('en-CA', { timeZone: config.timezone })))} · el teléfono no coincide con el registrado, por eso espera tu aprobación.</p>
+            <p class="muted" style="font-size:13px">Recibida ${esc(short(new Date(s.created_at).toLocaleDateString('en-CA', { timeZone: config.timezone })))} · no pude reconocer el grupo por su teléfono, por eso espera tu aprobación.</p>
             ${s.has_photo ? `<img src="/grupos/respuestas/${s.id}/foto" alt="Foto enviada" width="96" height="96" style="border-radius:16px;object-fit:cover;float:right;margin:0 0 8px 12px">` : ''}
             <div class="table-scroll"><table><tr><th></th><th>Ahora</th><th>Envió</th></tr>${changes || '<tr><td colspan="3" class="muted">No trae cambios.</td></tr>'}</table></div>
-            <p class="toolbar" style="margin:10px 0 0"><form class="inline" method="post" action="/grupos/respuestas/${s.id}/aplicar"><button class="small">Aprobar y guardar</button></form>
+            <p class="toolbar" style="margin:10px 0 0"><form class="inline" method="post" action="/grupos/respuestas/${s.id}/aplicar"><select name="group_id" style="max-width:260px"><option value="nuevo">Crear grupo nuevo: ${esc(s.new_group_name)}</option>${activeList.map((g) => `<option value="${g.id}">Es el grupo: ${esc(g.name)}</option>`).join('')}</select> <button class="small">Aprobar y guardar</button></form>
               <form class="inline" method="post" action="/grupos/respuestas/${s.id}/descartar"><button class="small danger">Descartar</button></form></p></div>`;
         })
         .join('');
@@ -268,7 +269,8 @@ function careGroupsRouter(ctx) {
         const ok = await intake.discard(db, id);
         return go(res, '/grupos/respuestas', ok ? { ok: 'Respuesta descartada.' } : { err: 'Esa respuesta ya fue atendida.' });
       }
-      const out = await intake.apply(db, id);
+      const target = /^\d{1,9}$/.test(String(req.body.group_id ?? '')) ? +req.body.group_id : null;
+      const out = await intake.apply(db, id, { groupId: target });
       if (out.error) return go(res, '/grupos/respuestas', { err: out.error });
       go(res, `/grupos/${out.groupId}`, { ok: 'Datos guardados en el grupo.' });
     })

@@ -7,7 +7,7 @@ const { esc } = require('../util');
  * para que los dos pidan exactamente lo mismo.
  *  v: valores actuales; today: 'YYYY-MM-DD'; photoSrc: vista previa inicial ('' = sin foto).
  */
-function leaderFields(v, { today, photoSrc = '', stages, days }) {
+function leaderFields(v, { today, photoSrc = '', stages, days, congregations = [], skipCongregation = false }) {
   const t = (name, label, extra = '') => `<label for="${name}">${label}</label><input id="${name}" type="text" name="${name}" value="${esc(v[name] || '')}" ${extra}>`;
   const sel = (name, label, options) =>
     `<label for="${name}">${label}</label><select id="${name}" name="${name}" style="font-size:18px;padding:12px;width:100%;border-radius:10px;border:1px solid var(--line)"><option value="">Sin definir</option>${options
@@ -41,7 +41,7 @@ function leaderFields(v, { today, photoSrc = '', stages, days }) {
         ${sel('stage', 'Etapa del grupo', stages)}
         <h2>Pertenencia</h2>
         ${t('belongs_to', 'Pertenece a (opcional)')}
-        ${t('congregation', 'Congregación (opcional)')}`;
+        ${skipCongregation ? '' : sel('congregation', 'Congregación', v.congregation && !congregations.includes(v.congregation) ? [...congregations, v.congregation] : congregations)}`;
 }
 
 /** La foto se reduce y se reconvierte a JPEG en el teléfono (así no viaja la ubicación). */

@@ -4,7 +4,7 @@ const { layout } = require('../views/layout');
 const { esc } = require('../util');
 const { displayPhone } = require('../phone');
 const { createRateLimiter } = require('../attendance-store');
-const { parseReport, upsertReport, parseLeaderProfile, parsePhoto, savePhoto, STAGES: cgStages, DAYS: cgDays } = require('../care-groups');
+const { parseReport, upsertReport, parseLeaderProfile, parsePhoto, savePhoto, STAGES: cgStages, CONGREGATIONS: cgCongregations, DAYS: cgDays } = require('../care-groups');
 const fmt = require('../care-formats');
 const views = require('../views/care-formats');
 const { leaderFields, PHOTO_SCRIPT } = require('../views/care-leader-form');
@@ -125,7 +125,7 @@ function careRemoteRouter(ctx) {
       <p class="muted" style="font-size:14px">Revisa que todo esté bien y corrige lo que haga falta. Al guardar, la información llega directo a la iglesia.${g.profile_updated_at ? ' <strong>Ya confirmaste estos datos antes; puedes actualizarlos cuando cambien.</strong>' : ''}</p>
       ${flashErr(errors)}
       <form method="post" autocomplete="off">${honey}
-        ${leaderFields(v, { today: today(), photoSrc: v.has_photo ? `/g/${token}/foto?v=${v.photo_v || ''}` : '', stages: cgStages, days: cgDays })}
+        ${leaderFields(v, { today: today(), photoSrc: v.has_photo ? `/g/${token}/foto?v=${v.photo_v || ''}` : '', stages: cgStages, days: cgDays, congregations: cgCongregations })}
         <button class="go">Guardar datos</button>
       </form>
       ${PHOTO_SCRIPT}`;

@@ -36,45 +36,48 @@ async function tokenIsValid(db, token) {
   return s.active && s.token === token;
 }
 
-/** Valida el envío del formulario común. Devuelve { value, photo, groupId, newGroupName, errors }. */
+/**
+ * Valida el envío del formulario común. El grupo no se elige: se reconoce por el teléfono del líder.
+ * Si ese teléfono es de un solo grupo, es ese; si lleva varios, desempatan el nombre que escribió o su congregación;
+ * si no hay coincidencia clara, groupId queda en null y la respuesta espera la revisión del panel.
+ * Devuelve { value, photo, groupId, newGroupName, errors }.
+ */
 function parseSubmission(body, groups, countryCode, today) {
-  const choice = String(body.group_id ?? '');
-  let groupId = null;
-  let newGroupName = '';
   const errors = [];
-  if (choice === 'otro') {
-    newGroupName = String(body.new_group_name ?? '').replace(/\s+/g, ' ').trim().slice(0, 120);
-    if (!newGroupName) errors.push('Escribe el nombre de tu grupo.');
-  } else {
-    const g = groups.find((x) => String(x.id) === choice);
-    if (!g) errors.push('Elige tu grupo de la lista.');
-    else groupId = g.id;
-  }
-  const name = groupId ? groups.find((x) => x.id === groupId).name : newGroupName || 'x';
-  const { value, errors: e2 } = cg.parseLeaderProfile({ ...body, name }, countryCode, today);
+  const congregation = String(body.congregation ?? '').trim();
+  if (!cg.CONGREGATIONS.includes(congregation)) errors.push('Elige tu congregación.');
+  const { value, errors: e2 } = cg.parseLeaderProfile({ ...body, congregation, name: 'x' }, countryCode, today);
   errors.push(...e2);
   if (!value.leader_name) errors.push('Escribe el nombre del líder.');
-  if (!value.leader_phone && !errors.some((e) => /teléfono/.test(e))) errors.push('Escribe tu teléfono: lo usamos para confirmar que eres el líder.');
+  if (!value.leader_phone && !errors.some((e) => /teléfono/.test(e))) errors.push('Escribe tu teléfono: lo usamos para reconocer tu grupo.');
   const photo = cg.parsePhoto(body.photo_data);
   if (photo.error) errors.push(photo.error);
+
+  const typed = String(body.group_name ?? '').replace(/\s+/g, ' ').trim().slice(0, 120);
+  const byPhone = value.leader_phone ? groups.filter((g) => g.leader_phone && g.leader_phone === value.leader_phone) : [];
+  let groupId = null;
+  if (byPhone.length === 1) {
+    groupId = byPhone[0].id;
+  } else if (byPhone.length > 1) {
+    const byName = typed ? byPhone.filter((g) => keyOf(g.name) === keyOf(typed)) : [];
+    const byCong = byPhone.filter((g) => g.congregation === congregation);
+    if (byName.length === 1) groupId = byName[0].id;
+    else if (byCong.length === 1) groupId = byCong[0].id;
+  }
+  const newGroupName = typed || `${congregation} · ${value.leader_name}`.slice(0, 120);
   return { value, photo, groupId, newGroupName, errors: [...new Set(errors)] };
 }
 
-/** Guarda el envío; si el teléfono coincide con el del líder registrado de ese grupo, lo aplica en el acto. */
-async function submit(pool, sub, db = pool) {
-  let match = false;
-  if (sub.groupId) {
-    const g = (await db.query('SELECT leader_phone FROM care_groups WHERE id = $1', [sub.groupId])).rows[0];
-    match = !!(g && g.leader_phone && g.leader_phone === sub.value.leader_phone);
-  }
+/** Guarda el envío; si el teléfono ya identificó su grupo, lo aplica en el acto. */
+async function submit(pool, sub) {
   const v = sub.value;
-  const { rows } = await db.query(
+  const { rows } = await pool.query(
     `INSERT INTO care_group_submissions (group_id, new_group_name, leader_name, leader_phone, leader_email, advisor_name, belongs_to, congregation, address, place, meeting_day, meeting_time, stage, leader_birth_date, co_leader_name, co_leader_birth_date, photo)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id`,
     [sub.groupId, sub.newGroupName, v.leader_name, v.leader_phone, v.leader_email, v.advisor_name, v.belongs_to, v.congregation, v.address, v.place, v.meeting_day, v.meeting_time, v.stage, v.leader_birth_date, v.co_leader_name, v.co_leader_birth_date, sub.photo.buffer]
   );
   const id = rows[0].id;
-  if (match) {
+  if (sub.groupId) {
     await apply(pool, id, { auto: true });
     return { id, applied: true };
   }
@@ -86,11 +89,15 @@ async function submit(pool, sub, db = pool) {
  * y marca los datos como confirmados. Si era de un grupo nuevo, lo crea. Todo en una transacción.
  * Devuelve { error } si no se puede, o { groupId }.
  */
-async function apply(pool, submissionId, { auto = false } = {}) {
+async function apply(pool, submissionId, { auto = false, groupId: assignTo = null } = {}) {
   return tx(pool, async (db) => {
     const sub = (await db.query("SELECT * FROM care_group_submissions WHERE id = $1 AND status = 'pendiente' FOR UPDATE", [submissionId])).rows[0];
     if (!sub) return { error: 'Esa respuesta ya fue atendida.' };
     let groupId = sub.group_id;
+    if (assignTo) {
+      if (!(await db.query('SELECT 1 FROM care_groups WHERE id = $1', [assignTo])).rows.length) return { error: 'Ese grupo ya no existe.' };
+      groupId = assignTo;
+    }
     if (!groupId) {
       const existing = (await db.query('SELECT id, name FROM care_groups')).rows.find((g) => keyOf(g.name) === keyOf(sub.new_group_name));
       if (existing) return { error: `Ya existe un grupo llamado "${existing.name}". Descarta esta respuesta y pídele al líder que lo elija de la lista.` };
