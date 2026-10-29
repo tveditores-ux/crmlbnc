@@ -277,21 +277,21 @@ test('datos del grupo: líder obligatorio, teléfono válido, robots, enlace ca�
   });
 });
 
-test('página de solicitud: un enlace /datos por grupo, estado, y sin grupos inactivos ni con enlace apagado', async (t) => {
+test('página de solicitud: un enlace común para todos, estado por grupo, y sin grupos inactivos', async (t) => {
   await withApp(t, async ({ db, get, post }) => {
-    const a = await newGroup(post, db, { name: 'Grupo A', leader_name: 'Líder A', leader_phone: '0414-000.00.01' });
-    const b = await newGroup(post, db, { name: 'Grupo B', leader_name: 'Líder B' });
+    await newGroup(post, db, { name: 'Grupo A', leader_name: 'Líder A', leader_phone: '0414-000.00.01' });
+    await newGroup(post, db, { name: 'Grupo B', leader_name: 'Líder B' });
     const c = await newGroup(post, db, { name: 'Grupo C' });
-    await post(`/grupos/${c.id}/enlace/desactivar`);
+    await post(`/grupos/${c.id}/desactivar`);
     const html = await (await get('/grupos/solicitud')).text();
     assert.match(html, /Grupo A/);
     assert.match(html, /Grupo B/);
     assert.ok(!html.includes('Grupo C'));
-    assert.match(html, new RegExp(`/g/${a.token}/datos`));
+    assert.match(html, /\/registro\/[A-Za-z0-9_-]{16,}/); // el enlace común
+    assert.ok(!html.includes('/datos')); // ya no se reparte un enlace distinto por grupo
     assert.match(html, /data-phone="584140000001"/);
     assert.match(html, /Sin teléfono/); // el grupo B no tiene
     assert.match(html, /2 de 2 grupos aún no confirman/);
     assert.match(html, /{nombre}/);
-    assert.ok(b.id);
   });
 });

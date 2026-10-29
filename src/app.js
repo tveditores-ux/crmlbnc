@@ -12,6 +12,7 @@ const { consolidationRouter } = require('./routes/consolidation');
 const { nuevaVidaRouter } = require('./routes/nueva-vida');
 const { remoteRouter } = require('./routes/attendance-remote');
 const { careRemoteRouter } = require('./routes/care-remote');
+const { careIntakeRouter } = require('./routes/care-intake');
 const { careGroupsRouter } = require('./routes/care-groups');
 const { layout } = require('./views/layout');
 const { esc } = require('./util');
@@ -74,6 +75,7 @@ function createApp(ctx) {
 
   app.use(googleRouter(ctx));
   app.use(remoteRouter(ctx)); // formulario del teléfono: protegido por enlace secreto, sin sesión
+  app.use(careIntakeRouter(ctx)); // enlace común para todos los líderes: también por enlace secreto
   app.use(careRemoteRouter(ctx)); // reporte del líder de grupo de cuidado: igual, enlace secreto
 
   app.get('/entrar', (req, res) => res.send(loginPage()));

@@ -7,6 +7,7 @@ const { toCsv } = require('../csv');
 const charts = require('../views/charts');
 const cg = require('../care-groups');
 const fmt = require('../care-formats');
+const intake = require('../care-intake');
 const views = require('../views/care-formats');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -70,6 +71,7 @@ function careGroupsRouter(ctx) {
       const everyone = (await db.query('SELECT p.milestones FROM care_group_people p JOIN care_groups g ON g.id = p.group_id WHERE g.active')).rows;
       const route = views.milestoneCounts(everyone);
       const birthdays = cg.upcomingBirthdays(groups, t, 45);
+      const waiting = await intake.countPending(db);
       const rows = groups
         .map((g) => {
           const d = cg.daysSince(g.last_report, t);
@@ -89,6 +91,7 @@ function careGroupsRouter(ctx) {
         'Grupos de cuidado',
         `<h1>Grupos de cuidado</h1>
         <p class="sub">Cada grupo tiene un enlace para que su líder reporte la reunión desde el teléfono, sin contraseña.</p>
+        ${waiting ? `<div class="flash ok"><a href="/grupos/respuestas">${waiting} respuesta${waiting === 1 ? '' : 's'} de líderes por revisar →</a></div>` : ''}
         <div class="grid">
           <div class="card"><div class="stat">${active.length}</div><div class="stat-label">grupos activos</div></div>
           <div class="card"><div class="stat">${totals.n}</div><div class="stat-label">reportes en 30 días</div></div>
@@ -155,44 +158,119 @@ function careGroupsRouter(ctx) {
     })
   );
 
-  /* ----------------- Pedir los datos a los líderes (WhatsApp manual) ----------------- */
-  const DEFAULT_ASK = 'Hola {nombre}, la paz del Señor. Estamos actualizando los datos de los grupos de cuidado de la iglesia. ¿Me ayudas llenando este formulario desde tu teléfono? Son dos minutos: {enlace}';
+  /* ----------------- Pedir los datos a los líderes: un enlace para todos ----------------- */
+  const DEFAULT_ASK = 'Hola {nombre}, la paz del Señor. Estamos actualizando los datos de los grupos de cuidado de la iglesia. ¿Me ayudas llenando esta planilla desde tu teléfono? Elige tu grupo y envíala, son dos minutos: {enlace}';
   r.get(
     '/grupos/solicitud',
     ah(async (req, res) => {
-      const groups = (await cg.listGroups(db, today())).filter((g) => g.active && g.link_active);
+      const settings = await intake.ensureToken(db);
+      const commonUrl = `${config.publicUrl}/registro/${settings.token}`;
+      const groups = (await cg.listGroups(db, today())).filter((g) => g.active);
       const pending = groups.filter((g) => !g.profile_updated_at).length;
+      const waiting = await intake.countPending(db);
       const rows = groups
-        .map((g) => {
-          const url = `${config.publicUrl}/g/${g.token}/datos`;
-          return `<tr data-name="${esc(g.leader_name || g.name)}" data-url="${esc(url)}" data-phone="${esc(g.leader_phone)}">
+        .map(
+          (g) => `<tr data-name="${esc(g.leader_name || g.name)}" data-phone="${esc(g.leader_phone)}">
             <td><strong>${esc(g.name)}</strong><div class="muted">${esc(g.leader_name)}</div></td>
             <td>${g.profile_updated_at ? '<span class="badge b-ok">Confirmados</span>' : '<span class="badge b-warn">Pendientes</span>'}</td>
-            <td style="white-space:nowrap">${g.leader_phone ? '<a class="btn small wa" target="_blank" rel="noopener" href="#">WhatsApp</a>' : '<span class="muted">Sin teléfono</span>'}
-              <button type="button" class="small sec cp">Copiar mensaje</button></td></tr>`;
-        })
+            <td style="white-space:nowrap">${g.leader_phone ? '<a class="btn small wa" target="_blank" rel="noopener" href="#">WhatsApp</a>' : '<span class="muted">Sin teléfono</span>'}</td></tr>`
+        )
         .join('');
       page(
         req,
         res,
         'Pedir datos a los líderes',
         `<p><a href="/grupos">← Grupos de cuidado</a></p><h1>Pedir los datos a los líderes</h1>
-        <p class="sub">Cada líder recibe su propio enlace a un formulario para el teléfono. Lo que llenen llega directo a su ficha. El mensaje lo envías tú desde tu WhatsApp, uno por uno: el sistema no manda nada por su cuenta.</p>
+        <p class="sub">Un solo enlace para todos: cada líder lo abre, elige su grupo, llena su planilla (con nacimiento y foto) y la envía. Si su teléfono coincide con el que ya tenemos, sus datos se guardan solos; si no, quedan en <a href="/grupos/respuestas">Respuestas</a> para que tú los apruebes.</p>
+        ${waiting ? `<div class="flash ok"><a href="/grupos/respuestas">${waiting} respuesta${waiting === 1 ? '' : 's'} por revisar →</a></div>` : ''}
+        <div class="card"><h3>Enlace para todos los líderes</h3>
+          <input type="text" id="common" readonly value="${esc(commonUrl)}" onclick="this.select()" style="font-size:13px" ${settings.active ? '' : 'disabled'}>
+          <p class="toolbar" style="margin-top:8px"><button type="button" class="small sec" id="copyCommon">Copiar enlace</button>
+            <form class="inline" method="post" action="/grupos/enlace-comun/${settings.active ? 'desactivar' : 'activar'}"><button class="small ${settings.active ? 'danger' : 'sec'}">${settings.active ? 'Apagar enlace' : 'Encender enlace'}</button></form>
+            <form class="inline" method="post" action="/grupos/enlace-comun/nuevo"><button class="small sec">Generar enlace nuevo</button></form></p>
+          <p class="muted" style="font-size:13px;margin:0">Quien tenga el enlace puede enviar datos: compártelo solo con los líderes. Si se riega, genera uno nuevo y el anterior deja de funcionar.</p></div>
         <div class="card"><label>Mensaje (puedes cambiarlo; {nombre} y {enlace} se rellenan solos)</label>
           <textarea id="tpl" style="min-height:110px">${esc(DEFAULT_ASK)}</textarea>
-          <p class="muted" style="margin:6px 0 0">${pending} de ${groups.length} grupos aún no confirman sus datos.</p></div>
-        <div class="table-scroll"><table><tr><th>Grupo</th><th>Datos</th><th></th></tr>${rows || '<tr><td colspan="3" class="muted">No hay grupos activos con enlace.</td></tr>'}</table></div>
+          <p class="toolbar" style="margin:8px 0 0"><button type="button" class="small sec" id="copyMsg">Copiar mensaje</button>
+            <span class="muted">${pending} de ${groups.length} grupos aún no confirman sus datos.</span></p></div>
+        <div class="table-scroll"><table><tr><th>Grupo</th><th>Datos</th><th>Enviar a su líder</th></tr>${rows || '<tr><td colspan="3" class="muted">No hay grupos activos.</td></tr>'}</table></div>
         <script>
-          var tpl = document.getElementById('tpl');
-          function msg(tr){ return tpl.value.split('{nombre}').join(tr.dataset.name).split('{enlace}').join(tr.dataset.url); }
-          function refresh(){ document.querySelectorAll('tr[data-url]').forEach(function(tr){
-            var a = tr.querySelector('a.wa'); if (a) a.href = 'https://wa.me/' + tr.dataset.phone + '?text=' + encodeURIComponent(msg(tr)); }); }
+          var tpl = document.getElementById('tpl'), url = document.getElementById('common').value;
+          function msg(name){ return tpl.value.split('{nombre}').join(name).split('{enlace}').join(url); }
+          function refresh(){ document.querySelectorAll('tr[data-phone]').forEach(function(tr){
+            var a = tr.querySelector('a.wa'); if (a) a.href = 'https://wa.me/' + tr.dataset.phone + '?text=' + encodeURIComponent(msg(tr.dataset.name)); }); }
           tpl.addEventListener('input', refresh); refresh();
-          document.querySelectorAll('button.cp').forEach(function(b){ b.addEventListener('click', function(){
-            var t = msg(b.closest('tr'));
-            (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function(){ b.textContent = '¡Copiado!'; }, function(){ tpl.select(); b.textContent = 'Copia desde arriba'; }); }); });
+          function copy(btn, text, field){ (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function(){ var o = btn.textContent; btn.textContent = '¡Copiado!'; setTimeout(function(){ btn.textContent = o; }, 1500); }, function(){ field.select(); btn.textContent = 'Selecciona y copia'; }); }
+          document.getElementById('copyCommon').addEventListener('click', function(){ copy(this, url, document.getElementById('common')); });
+          document.getElementById('copyMsg').addEventListener('click', function(){ copy(this, msg('líder'), tpl); });
         </script>`
       );
+    })
+  );
+
+  r.post(
+    '/grupos/enlace-comun/:accion(activar|desactivar|nuevo)',
+    ah(async (req, res) => {
+      if (req.params.accion === 'nuevo') {
+        await intake.regenerateToken(db);
+        return go(res, '/grupos/solicitud', { ok: 'Enlace nuevo generado. El anterior ya no funciona; vuelve a enviarlo.' });
+      }
+      await intake.setActive(db, req.params.accion === 'activar');
+      go(res, '/grupos/solicitud', { ok: req.params.accion === 'activar' ? 'Enlace encendido.' : 'Enlace apagado.' });
+    })
+  );
+
+  /* ---------------------- Respuestas del enlace común ---------------------- */
+  const showVal = (f, v) => (f.endsWith('birth_date') && v ? short(v) : f === 'leader_phone' ? displayPhone(v) : v);
+  r.get(
+    '/grupos/respuestas',
+    ah(async (req, res) => {
+      const pending = await intake.listPending(db);
+      const cards = pending
+        .map((s) => {
+          const changes = intake.FIELDS.filter((f) => s[f] !== '' && s[f] !== (s['cur_' + f] ?? ''))
+            .map((f) => `<tr><td class="muted">${esc(intake.LABELS[f])}</td><td>${s['cur_' + f] ? esc(showVal(f, s['cur_' + f])) : '<span class="muted">—</span>'}</td><td><strong>${esc(showVal(f, s[f]))}</strong></td></tr>`)
+            .join('');
+          return `<div class="card">
+            <h3 style="margin-top:0">${s.group_id ? esc(s.group_name) : `${esc(s.new_group_name)} <span class="badge b-warn">Grupo nuevo</span>`}</h3>
+            <p class="muted" style="font-size:13px">Recibida ${esc(short(new Date(s.created_at).toLocaleDateString('en-CA', { timeZone: config.timezone })))} · el teléfono no coincide con el registrado, por eso espera tu aprobación.</p>
+            ${s.has_photo ? `<img src="/grupos/respuestas/${s.id}/foto" alt="Foto enviada" width="96" height="96" style="border-radius:16px;object-fit:cover;float:right;margin:0 0 8px 12px">` : ''}
+            <div class="table-scroll"><table><tr><th></th><th>Ahora</th><th>Envió</th></tr>${changes || '<tr><td colspan="3" class="muted">No trae cambios.</td></tr>'}</table></div>
+            <p class="toolbar" style="margin:10px 0 0"><form class="inline" method="post" action="/grupos/respuestas/${s.id}/aplicar"><button class="small">Aprobar y guardar</button></form>
+              <form class="inline" method="post" action="/grupos/respuestas/${s.id}/descartar"><button class="small danger">Descartar</button></form></p></div>`;
+        })
+        .join('');
+      page(
+        req,
+        res,
+        'Respuestas de los líderes',
+        `<p><a href="/grupos/solicitud">← Pedir datos a los líderes</a></p><h1>Respuestas por revisar</h1>
+        <p class="sub">Los envíos cuyo teléfono coincide con el del líder se guardan solos y no pasan por aquí.</p>
+        ${cards || '<p class="muted">No hay respuestas pendientes.</p>'}`
+      );
+    })
+  );
+  r.get(
+    '/grupos/respuestas/:id(\\d{1,9})/foto',
+    ah(async (req, res) => {
+      const p = (await db.query("SELECT photo FROM care_group_submissions WHERE id = $1 AND status = 'pendiente'", [+req.params.id])).rows[0];
+      if (!p || !p.photo) return res.status(404).end();
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.send(Buffer.from(p.photo));
+    })
+  );
+  r.post(
+    '/grupos/respuestas/:id(\\d{1,9})/:accion(aplicar|descartar)',
+    ah(async (req, res) => {
+      const id = +req.params.id;
+      if (req.params.accion === 'descartar') {
+        const ok = await intake.discard(db, id);
+        return go(res, '/grupos/respuestas', ok ? { ok: 'Respuesta descartada.' } : { err: 'Esa respuesta ya fue atendida.' });
+      }
+      const out = await intake.apply(db, id);
+      if (out.error) return go(res, '/grupos/respuestas', { err: out.error });
+      go(res, `/grupos/${out.groupId}`, { ok: 'Datos guardados en el grupo.' });
     })
   );
 
