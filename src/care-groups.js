@@ -223,7 +223,8 @@ function parseLeaderProfile(src, countryCode, today) {
 /** Obligatorios del formulario del líder: nombre, cédula, dirección, teléfono, correo y líder asesor (la foto la revisa quien llama). */
 function leaderRequiredErrors(src, value) {
   const e = [];
-  if (!value.leader_name) e.push('Escribe el nombre del líder.');
+  if (!value.leader_name) e.push('Escribe el nombre y apellido del líder.');
+  else if (value.leader_name.split(' ').filter(Boolean).length < 2) e.push('Escribe el nombre y el apellido del líder.');
   if (!clean(src.leader_cedula)) e.push('Escribe la cédula de identidad del líder.');
   if (!value.leader_address) e.push('Escribe la dirección del líder.');
   if (!clean(src.leader_phone)) e.push('Escribe el teléfono del líder.');

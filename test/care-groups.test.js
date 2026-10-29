@@ -270,7 +270,10 @@ test('datos del grupo: obligatorios (líder, teléfono, correo, asesor, foto), t
     const T = `/g/${g.token}/datos`;
     const noLeader = await post(T, { leader_name: '' });
     assert.equal(noLeader.status, 400);
-    assert.match(await noLeader.text(), /nombre del líder/);
+    assert.match(await noLeader.text(), /nombre y apellido/);
+    const oneWord = await post(T, { ...required, leader_name: 'Solonombre' });
+    assert.equal(oneWord.status, 400);
+    assert.match(await oneWord.text(), /nombre y el apellido/);
     const badPhone = await post(T, { ...required, leader_phone: '12' });
     assert.equal(badPhone.status, 400);
     for (const [field, msg] of [['leader_phone', /teléfono/], ['leader_email', /correo/], ['advisor_name', /líder asesor/], ['leader_cedula', /cédula/], ['leader_address', /dirección del líder/], ['photo_data', /Falta la foto/]]) {

@@ -15,7 +15,7 @@ function leaderFields(v, { today, photoSrc = '', stages, days, congregations = [
       .join('')}</select>`;
   const preview = v.photo_data ? `src="${esc(v.photo_data)}"` : photoSrc ? `src="${esc(photoSrc)}"` : 'style="display:none"';
   return `<h2>Líder</h2>
-        ${t('leader_name', 'Nombre del líder', 'maxlength="120" required')}
+        ${t('leader_name', 'Nombre y apellido', 'maxlength="120" required placeholder="Nombre y apellido" autocomplete="off"')}
         <label for="leader_birth_date">Fecha de nacimiento del líder</label><input id="leader_birth_date" type="date" name="leader_birth_date" min="1910-01-01" max="${esc(today)}" value="${esc(v.leader_birth_date || '')}">
         <label for="leader_cedula">Cédula de identidad (C.I.) del líder</label><input id="leader_cedula" type="text" inputmode="text" autocapitalize="characters" name="leader_cedula" required maxlength="14" value="${esc(v.leader_cedula || '')}" placeholder="V-12345678">
         ${t('leader_address', 'Dirección del líder', 'maxlength="250" required')}

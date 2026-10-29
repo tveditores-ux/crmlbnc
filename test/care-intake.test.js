@@ -63,7 +63,9 @@ test('la congregación es obligatoria y solo vale una de la lista', () => {
   assert.ok(parse({ congregation: '' }).errors.includes('Elige tu congregación.'));
   assert.ok(parse({ congregation: 'Inventada' }).errors.includes('Elige tu congregación.'));
   assert.ok(parse({ leader_phone: '' }).errors.some((e) => /teléfono/.test(e)));
-  assert.ok(parse({ leader_name: '' }).errors.some((e) => /nombre del líder/.test(e)));
+  assert.ok(parse({ leader_name: '' }).errors.some((e) => /nombre y apellido/.test(e)));
+  assert.ok(parse({ leader_name: 'Solonombre' }).errors.some((e) => /nombre y el apellido/.test(e)));
+  assert.deepEqual(parse({ leader_name: 'Ana  Pérez' }).errors, []);
 });
 
 test('correo, líder asesor, cédula, dirección del líder y foto son obligatorios; el nacimiento no', () => {
@@ -94,6 +96,7 @@ test('el formulario común pide la congregación, no lista grupos ni teléfonos,
     for (const c of CONGREGATIONS) assert.ok(html.includes(`<option >${c}</option>`) || html.includes(`>${c}</option>`), c);
     assert.ok(!html.includes('¿Cuál es tu grupo?'));
     for (const gone of ['Nombre de tu grupo', 'Pareja', 'co-líder', 'Pertenece', 'Pertenencia', 'líderes', '(opcional)']) assert.ok(!html.includes(gone), gone);
+    assert.match(html, /<label for="leader_name">Nombre y apellido<\/label>/);
     assert.match(html, /Cédula de identidad \(C\.I\.\) del líder/);
     assert.match(html, /Dirección del líder/);
     for (const id of ['leader_email', 'advisor_name', 'leader_phone', 'leader_name', 'leader_cedula', 'leader_address']) assert.match(html, new RegExp(`id="${id}"[^>]*required|required[^>]*id="${id}"`), id);
