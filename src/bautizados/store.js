@@ -129,6 +129,17 @@ function filterSql(f) {
     where.push(`EXTRACT(YEAR FROM baptism_date) = $${params.length}`);
   }
   if (f.fecha === 'sin') where.push('baptism_date IS NULL');
+  for (const [key, op] of [['desde', '>='], ['hasta', '<=']]) {
+    const d = parseDate(f[key]);
+    if (d) {
+      params.push(d);
+      where.push(`baptism_date ${op} $${params.length}`);
+    }
+  }
+  if (f.sede) {
+    params.push(String(f.sede).slice(0, 80));
+    where.push(`sede = $${params.length}`);
+  }
   const q = String(f.q || '').trim().slice(0, 80);
   if (q) {
     params.push(`%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`);
@@ -163,6 +174,10 @@ async function years(db) {
   return (await db.query('SELECT DISTINCT EXTRACT(YEAR FROM baptism_date)::int AS y FROM bautizados WHERE baptism_date IS NOT NULL ORDER BY y DESC')).rows.map((r) => String(r.y));
 }
 
+async function sedes(db) {
+  return (await db.query("SELECT DISTINCT sede FROM bautizados WHERE sede <> '' ORDER BY sede")).rows.map((r) => r.sede);
+}
+
 async function get(db, id) {
   return (await db.query('SELECT *, baptism_date::text AS d FROM bautizados WHERE id = $1', [id])).rows[0] || null;
 }
@@ -194,4 +209,4 @@ async function remove(db, id) {
   await db.query('DELETE FROM bautizados WHERE id = $1', [id]);
 }
 
-module.exports = { TEMPLATE_HEADERS, HEADERS, parseDate, validateRow, prepareImport, applyImport, list, stats, years, get, save, remove };
+module.exports = { TEMPLATE_HEADERS, HEADERS, parseDate, validateRow, prepareImport, applyImport, list, stats, years, sedes, get, save, remove };

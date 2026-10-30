@@ -41,6 +41,7 @@ Recordatorios y confirmaciones por WhatsApp y correo. Node 22, Express, PostgreS
 - Se agrega **uno por uno** (formulario en la misma pestaña) o se **carga una lista** (`/bautizados/importar`): lista simple (un nombre por línea, con teléfono opcional después de una coma) o CSV con columnas `nombre, telefono, fecha_bautismo, sede, ministro, nota`. Fecha, sede, ministro y nombre de la lista se pueden poner para toda la carga; la fila manda si trae el dato.
 - La carga primero se revisa y luego se guarda en una transacción (todo o nada). Si alguien ya estaba (mismo teléfono, o mismo nombre y fecha) no se duplica, tampoco al agregarlo uno por uno.
 - Las fechas aceptan listas viejas (desde 1940) y no pueden ser futuras.
+- **Reporte para imprimir** (`/bautizados/reporte`, vínculo "Imprimir reporte" con ícono de impresora en la lista, que lleva los filtros puestos): filtra por fechas desde/hasta, año y sede; muestra totales, conteo por sede y por fecha, y la lista numerada. No incluye notas. Al imprimir se ocultan menú y filtros (`.no-print`).
 
 ## Miembros y amigos (`src/members.js`, dentro de Personas)
 - **No es una pestaña aparte**: es la misma tabla `people`. `/personas` tiene columnas Tipo y Grupo oficial, filtros (tipo, grupo oficial, ministerio, búsqueda por nombre o teléfono), clasificación rápida y el importador de la lista del grupo (`/personas/importar-grupo`). `/miembros*` solo redirige a `/personas` para no romper enlaces guardados.

@@ -111,3 +111,27 @@ test('bautizados: agregar uno por uno, sin duplicar, corregir, escapar y borrar'
     assert.equal((await db.query('SELECT count(*)::int AS n FROM bautizados')).rows[0].n, 0);
   });
 });
+
+test('bautizados: reporte para imprimir con filtros, vínculo desde la lista y sin notas', async (t) => {
+  await withApp(t, async ({ get, post }) => {
+    await post('/bautizados/importar', { csv: 'Ana Torres, 0414-111.22.33\nLuis Mora', baptism_date: day(-10), sede: 'Las Mercedes', minister: 'Pastor Prueba', accion: 'guardar' });
+    await post('/bautizados/importar', { csv: 'Carmen <i>Díaz</i>', baptism_date: day(-40), sede: 'Nuarito', accion: 'guardar' });
+    await post('/bautizados', { name: 'Pedro Gil', baptism_date: day(-10), sede: 'Nuarito', note: 'nota privada' });
+    const list = await (await get('/bautizados?sede=Nuarito')).text();
+    assert.match(list, /href="\/bautizados\/reporte\?sede=Nuarito"/);
+    assert.match(list, /Imprimir reporte/);
+    const all = await (await get('/bautizados/reporte')).text();
+    assert.match(all, /Reporte de bautizados/);
+    assert.match(all, /window\.print\(\)/);
+    assert.match(all, /<div class="stat">4<\/div>/);
+    assert.match(all, /Pastor Prueba/);
+    assert.ok(!all.includes('<i>Díaz</i>'));
+    assert.ok(!all.includes('nota privada'));
+    const sede = await (await get('/bautizados/reporte?sede=Nuarito')).text();
+    assert.match(sede, /<div class="stat">2<\/div>/);
+    assert.match(sede, /Sede: Nuarito/);
+    const rango = await (await get(`/bautizados/reporte?desde=${day(-15)}&hasta=${day(0)}`)).text();
+    assert.match(rango, /<div class="stat">3<\/div>/);
+    assert.ok(!rango.includes('Carmen'));
+  });
+});

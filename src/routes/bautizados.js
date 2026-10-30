@@ -19,6 +19,13 @@ function bautizadosRouter(ctx) {
   const page = (req, res, title, body) => res.send(layout({ title, active: '/bautizados', body, config, query: req.query }));
   const go = (res, path, flash) => res.redirect(303, flash ? `${path}?${new URLSearchParams(flash).toString()}` : path);
   const dmy = (iso) => (iso ? iso.split('-').reverse().join('/') : '—');
+  const PRINTER = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-3px;margin-right:6px"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>';
+  const filters = (q) => ({
+    q: String(q.q || '').slice(0, 80), anio: String(q.anio || ''), fecha: String(q.fecha || ''),
+    sede: String(q.sede || '').slice(0, 80), desde: String(q.desde || ''), hasta: String(q.hasta || ''),
+  });
+  const qs = (f) => new URLSearchParams(Object.entries(f).filter(([, v]) => v)).toString();
+  const opt = (items, cur, empty) => `<option value="">${esc(empty)}</option>${items.map(([v, l]) => `<option value="${esc(v)}" ${cur === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}`;
 
   /** Formulario de una persona (el mismo para registrar y para corregir). */
   function form(v, action, errors = [], { submit = 'Guardar', cancel = '/bautizados' } = {}) {
@@ -36,10 +43,9 @@ function bautizadosRouter(ctx) {
   r.get(
     '/bautizados',
     ah(async (req, res) => {
-      const f = { q: String(req.query.q || ''), anio: String(req.query.anio || ''), fecha: String(req.query.fecha || '') };
+      const f = filters(req.query);
       const year = +today().slice(0, 4);
-      const [rows, st, ys] = await Promise.all([bz.list(db, f), bz.stats(db, year), bz.years(db)]);
-      const opt = (items, cur, empty) => `<option value="">${esc(empty)}</option>${items.map(([v, l]) => `<option value="${esc(v)}" ${cur === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}`;
+      const [rows, st, ys, ss] = await Promise.all([bz.list(db, f), bz.stats(db, year), bz.years(db), bz.sedes(db)]);
       const list = rows
         .map(
           (x) => `<tr>
@@ -57,7 +63,8 @@ function bautizadosRouter(ctx) {
         'Bautizados',
         `<h1>Bautizados</h1>
         <p class="sub">Registro de las personas bautizadas. Puedes agregarlas una por una aquí abajo o cargar una lista completa. Si alguien ya estaba (mismo teléfono, o mismo nombre y fecha), no se duplica. Registrar aquí no crea personas ni las suscribe a mensajes.</p>
-        <div class="actions"><a class="btn" href="/bautizados/importar">Cargar una lista</a></div>
+        <div class="actions"><a class="btn" href="/bautizados/importar">Cargar una lista</a>
+          <a class="btn sec" href="/bautizados/reporte${qs(f) ? `?${esc(qs(f))}` : ''}">${PRINTER}Imprimir reporte</a></div>
         <div class="grid">
           <div class="card"><div class="stat">${st.total}</div><div class="stat-label">bautizados registrados</div></div>
           <div class="card"><div class="stat" style="color:var(--ok)">${st.this_year}</div><div class="stat-label">bautizados en ${year}</div></div>
@@ -69,6 +76,7 @@ function bautizadosRouter(ctx) {
         <form class="toolbar" method="get">
           <div><label>Buscar</label><input type="search" name="q" value="${esc(f.q)}" placeholder="Nombre o teléfono"></div>
           <div><label>Año</label><select name="anio">${opt(ys.map((y) => [y, y]), f.anio, 'Todos')}</select></div>
+          <div><label>Sede</label><select name="sede">${opt(ss.map((s) => [s, s]), f.sede, 'Todas')}</select></div>
           <div><label>Fecha</label><select name="fecha">${opt([['sin', 'Sin fecha']], f.fecha, 'Todas')}</select></div>
           <button class="sec">Filtrar</button></form>
         <h2>Personas (${rows.length})</h2>
@@ -146,6 +154,52 @@ function bautizadosRouter(ctx) {
         : `${summary}${nuevos.length ? `<div class="table-scroll"><table><tr><th>Nombre</th><th>Teléfono</th><th>Bautismo</th><th>Sede</th></tr>${preview}</table></div>${nuevos.length > 300 ? `<p class="muted">… y ${nuevos.length - 300} más.</p>` : ''}
            <form method="post">${hidden}<div class="actions"><button name="accion" value="guardar">Guardar ${nuevos.length} bautizados</button></div></form>` : '<div class="flash ok">No hay nadie nuevo para guardar.</div>'}`;
       page(req, res, 'Cargar una lista', importPage(b, body));
+    })
+  );
+
+  /* ------------------------------ Reporte para imprimir ------------------------------ */
+  r.get(
+    '/bautizados/reporte',
+    ah(async (req, res) => {
+      const f = filters(req.query);
+      const [rows, ys, ss] = await Promise.all([bz.list(db, f, 3000), bz.years(db), bz.sedes(db)]);
+      rows.sort((a, b) => (a.d || '') === (b.d || '') ? a.full_name.localeCompare(b.full_name, 'es') : (a.d || '') < (b.d || '') ? 1 : -1);
+      const period = f.desde || f.hasta
+        ? `Del ${f.desde ? dmy(bz.parseDate(f.desde) || '') : 'inicio'} al ${f.hasta ? dmy(bz.parseDate(f.hasta) || '') : dmy(today())}`
+        : f.anio ? `Año ${f.anio}` : f.fecha === 'sin' ? 'Sin fecha de bautismo' : 'Todos los registros';
+      const scope = [period, f.sede && `Sede: ${f.sede}`, f.q && `Búsqueda: "${f.q}"`].filter(Boolean).join(' · ');
+      const count = (key) => Object.entries(rows.reduce((m, x) => ((m[key(x)] = (m[key(x)] || 0) + 1), m), {}));
+      const bySede = count((x) => x.sede || 'Sin sede').sort((a, b) => b[1] - a[1]);
+      const byDate = count((x) => x.d || '').sort((a, b) => (a[0] < b[0] ? 1 : -1));
+      const summary = (title, items, label) => `<div class="card"><h3 style="margin:0 0 6px;font-size:14px">${title}</h3>
+          <table>${items.map(([k, n]) => `<tr><td>${esc(label(k))}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${n}</td></tr>`).join('')}</table></div>`;
+      const list = rows
+        .map((x, i) => `<tr><td style="font-variant-numeric:tabular-nums">${i + 1}</td><td>${esc(x.full_name)}</td><td style="white-space:nowrap">${esc(displayPhone(x.phone) || '—')}</td><td style="white-space:nowrap">${esc(dmy(x.d))}</td><td>${esc(x.sede || '—')}</td><td>${esc(x.minister || '—')}</td></tr>`)
+        .join('');
+      page(
+        req,
+        res,
+        'Reporte de bautizados',
+        `<style>@media print{.flash{display:none}main .wrap{max-width:none}table{font-size:12px}tr{break-inside:avoid}a{color:inherit;text-decoration:none}.print-head{margin-top:0}}</style>
+        <p class="no-print"><a href="/bautizados${qs(f) ? `?${esc(qs(f))}` : ''}">← Bautizados</a></p>
+        <form class="toolbar no-print" method="get">
+          <div><label>Desde</label><input type="date" name="desde" value="${esc(bz.parseDate(f.desde) || '')}"></div>
+          <div><label>Hasta</label><input type="date" name="hasta" value="${esc(bz.parseDate(f.hasta) || '')}"></div>
+          <div><label>Año</label><select name="anio">${opt(ys.map((y) => [y, y]), f.anio, 'Todos')}</select></div>
+          <div><label>Sede</label><select name="sede">${opt(ss.map((s) => [s, s]), f.sede, 'Todas')}</select></div>
+          <button class="sec">Ver</button>
+          <button type="button" onclick="window.print()">${PRINTER}Imprimir</button></form>
+        <h1 class="print-head">Reporte de bautizados</h1>
+        <p class="sub">${esc(config.churchName)} · ${esc(scope)} · Impreso el ${esc(dmy(today()))}</p>
+        <div class="grid">
+          <div class="card"><div class="stat">${rows.length}</div><div class="stat-label">bautizados</div></div>
+          <div class="card"><div class="stat">${rows.filter((x) => x.phone).length}</div><div class="stat-label">con teléfono</div></div>
+        </div>
+        ${rows.length ? `<div class="grid">${summary('Por sede', bySede, (k) => k)}${summary('Por fecha de bautismo', byDate, (k) => (k ? dmy(k) : 'Sin fecha'))}</div>` : ''}
+        <div class="table-scroll"><table><tr><th>#</th><th>Nombre</th><th>Teléfono</th><th>Bautismo</th><th>Sede</th><th>Bautizado por</th></tr>${
+          list || '<tr><td colspan="6" class="muted">No hay bautizados con esos filtros.</td></tr>'
+        }</table></div>`
+      );
     })
   );
 
