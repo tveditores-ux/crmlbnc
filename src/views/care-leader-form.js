@@ -43,7 +43,7 @@ function leaderFields(v, { today, photoSrc = '', stages, days, congregations = [
 
         ${skipCongregation ? '' : sel('congregation', 'Congregación', v.congregation && !congregations.includes(v.congregation) ? [...congregations, v.congregation] : congregations)}
         <h2>Foto del líder</h2>
-        <p class="muted" style="font-size:14px;margin:6px 0">Es obligatoria: una foto del líder, de frente y con buena luz.</p>
+        <p class="muted" style="font-size:14px;margin:6px 0"><strong>Cargar tu fotografía es necesario para completar el registro de tu ficha de liderazgo.</strong> Una foto del líder, de frente y con buena luz.</p>
         <div class="photo-box">
           <img id="photo_prev" alt="Vista previa de la foto" ${preview}>
           <div class="quick">
@@ -84,7 +84,7 @@ const PHOTO_SCRIPT = `<script>
           ['photo_cam', 'photo_gal'].forEach(function (id) { document.getElementById(id).addEventListener('change', function (e) { take(e.target.files[0]); }); });
           var form = data.closest('form');
           if (form) form.addEventListener('submit', function (e) {
-            if (!data.value && !prev.getAttribute('src')) { e.preventDefault(); msg.textContent = 'La foto es obligatoria.'; msg.style.color = 'var(--bad)'; prev.scrollIntoView({ block: 'center' }); }
+            if (!data.value && !prev.getAttribute('src')) { e.preventDefault(); msg.textContent = 'Cargar tu fotografía es necesario para completar el registro de tu ficha de liderazgo.'; msg.style.color = 'var(--bad)'; prev.scrollIntoView({ block: 'center' }); }
           });
         })();
       </script>`;

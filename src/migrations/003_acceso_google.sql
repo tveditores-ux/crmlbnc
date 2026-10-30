@@ -4,7 +4,7 @@ ALTER TABLE people ADD COLUMN IF NOT EXISTS google_email TEXT;
 ALTER TABLE people ADD COLUMN IF NOT EXISTS access_level TEXT NOT NULL DEFAULT 'ninguno';
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'people_access_level_chk') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'people_access_level_chk' AND conrelid = 'people'::regclass) THEN
     ALTER TABLE people ADD CONSTRAINT people_access_level_chk CHECK (access_level IN ('ninguno', 'admin', 'coordinador'));
   END IF;
 END $$;
