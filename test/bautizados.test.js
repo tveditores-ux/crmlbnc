@@ -193,3 +193,48 @@ test('bautizados: completar teléfonos desde Personas y Nueva Vida, solo lo que 
     assert.match(loc(none), /No elegiste/);
   });
 });
+
+test('bautizados: foto individual y por lote (JSON), validada, servida con sesión y borrada con el registro', async (t) => {
+  await withApp(t, async ({ db, get, post, loc }) => {
+    const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(400, 7), Buffer.from([0xff, 0xd9])]);
+    const dataUrl = `data:image/jpeg;base64,${jpeg.toString('base64')}`;
+    await post('/bautizados/importar', { csv: 'Ana Torres\nLuis Mora', baptism_date: day(-3), accion: 'guardar' });
+    const id = async (name) => (await db.query('SELECT id FROM bautizados WHERE full_name = $1', [name])).rows[0].id;
+    const ana = await id('Ana Torres');
+    const luis = await id('Luis Mora');
+    assert.equal((await get(`/bautizados/${ana}/foto`)).status, 404);
+    // Individual (formulario de la ficha)
+    const r1 = await post(`/bautizados/${ana}/foto`, { photo_data: dataUrl });
+    assert.match(loc(r1), new RegExp(`/bautizados/${ana}\\?ok=Foto guardada`));
+    const img = await get(`/bautizados/${ana}/foto`);
+    assert.equal(img.headers.get('content-type'), 'image/jpeg');
+    assert.equal(img.headers.get('cache-control'), 'private, no-store');
+    assert.deepEqual(Buffer.from(await img.arrayBuffer()), jpeg);
+    // Por lote: la página pide JSON
+    const json = (p, fields) => fetch(p, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' }, body: new URLSearchParams(fields) });
+    const base = (await get('/bautizados')).url.replace(/\/bautizados$/, '');
+    const ok = await json(`${base}/bautizados/${luis}/foto`, { photo_data: dataUrl });
+    assert.equal(ok.status, 200);
+    assert.deepEqual(await ok.json(), { ok: 'Foto guardada.' });
+    const bad = await json(`${base}/bautizados/${luis}/foto`, { photo_data: 'data:image/png;base64,AAAA' });
+    assert.equal(bad.status, 400);
+    assert.match((await bad.json()).error, /No pude leer la foto/);
+    const notJpeg = await json(`${base}/bautizados/${luis}/foto`, { photo_data: `data:image/jpeg;base64,${Buffer.alloc(400, 1).toString('base64')}` });
+    assert.equal(notJpeg.status, 400);
+    const missing = await json(`${base}/bautizados/999999/foto`, { photo_data: dataUrl });
+    assert.equal(missing.status, 404);
+    // La lista muestra la miniatura y cuenta las fotos; la página de lote trae la lista para emparejar
+    const list = await (await get('/bautizados')).text();
+    assert.match(list, new RegExp(`src="/bautizados/${ana}/foto\\?v=\\d+"`));
+    assert.match(list, /<div class="stat">2<\/div><div class="stat-label">con foto/);
+    const lote = await (await get('/bautizados/fotos')).text();
+    assert.match(lote, /"name":"Ana Torres","key":"ana torres"/);
+    assert.match(lote, /\(ya tiene foto\)/);
+    // Quitar la foto y borrar el registro (la foto se va con él)
+    const q = await post(`/bautizados/${ana}/foto/eliminar`, {});
+    assert.match(loc(q), /Foto quitada/);
+    assert.equal((await get(`/bautizados/${ana}/foto`)).status, 404);
+    await post(`/bautizados/${luis}/eliminar`, {});
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM bautizados_fotos')).rows[0].n, 0);
+  });
+});

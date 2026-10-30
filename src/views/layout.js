@@ -29,6 +29,7 @@ h2{font-size:17px;margin:28px 0 10px}
 .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
 .stat{font-size:28px;font-weight:700}
 .stat-label{color:var(--muted);font-size:13px}
+[hidden]{display:none!important}
 table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
 th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top;font-size:14px}
 th{background:#efe9dc;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
