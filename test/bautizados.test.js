@@ -135,3 +135,26 @@ test('bautizados: reporte para imprimir con filtros, vínculo desde la lista y s
     assert.ok(!rango.includes('Carmen'));
   });
 });
+
+test('bautizados: gráficas por mes, por sede y por año en la lista y en el reporte', async (t) => {
+  await withApp(t, async ({ get, post }) => {
+    const empty = await (await get('/bautizados')).text();
+    assert.ok(!empty.includes('Bautizados por mes'));
+    await post('/bautizados/importar', { csv: 'Ana Torres\nLuis Mora', baptism_date: '2026-10-24', sede: 'Las Mercedes', accion: 'guardar' });
+    await post('/bautizados/importar', { csv: 'Carmen Díaz', baptism_date: '2026-07-10', sede: 'Nuarito', accion: 'guardar' });
+    const list = await (await get('/bautizados')).text();
+    assert.match(list, /Bautizados por mes/);
+    assert.match(list, /aria-label="Bautizados por sede"/);
+    assert.match(list, /<title>jul 26: 1<\/title>/);
+    assert.match(list, /<title>ago 26: 0<\/title>/); // los meses sin bautizos salen en cero
+    assert.match(list, /<title>oct 26: 2<\/title>/);
+    assert.ok(!list.includes('Bautizados por año')); // un solo año: no hace falta
+    await post('/bautizados', { name: 'Rosa Peña', baptism_date: '15/08/1998', sede: 'Nuarito' });
+    const rep = await (await get('/bautizados/reporte')).text();
+    assert.match(rep, /aria-label="Bautizados por año"/);
+    assert.match(rep, /<title>Nuarito: 2<\/title>/);
+    const nuarito = await (await get('/bautizados/reporte?sede=Nuarito&anio=2026')).text();
+    assert.match(nuarito, /<title>jul 26: 1<\/title>/);
+    assert.ok(!nuarito.includes('oct 26'));
+  });
+});
