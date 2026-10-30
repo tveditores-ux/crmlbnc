@@ -8,7 +8,7 @@ ALTER TABLE people ADD COLUMN IF NOT EXISTS in_official_group BOOLEAN NOT NULL D
 -- '' significa "Por clasificar".
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'people_membership_chk') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'people_membership_chk' AND conrelid = 'people'::regclass) THEN
     ALTER TABLE people ADD CONSTRAINT people_membership_chk CHECK (membership IN ('', 'miembro', 'amigo'));
   END IF;
 END $$;
