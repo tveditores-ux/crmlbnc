@@ -1,7 +1,7 @@
 'use strict';
 const { parseCsv, normalizeHeader } = require('../csv');
 const { normalizePhone } = require('../phone');
-const { normName } = require('../consolidation/match');
+const { normName, nameScore, THRESHOLD } = require('../consolidation/match');
 const { tx } = require('../db');
 
 const MAX_ROWS = 2000;
@@ -205,8 +205,69 @@ async function save(db, id, raw, countryCode = '58', today) {
   return { id: rows[0].id };
 }
 
+/**
+ * Teléfonos para los bautizados que no lo tienen, tomados de Personas y de Nueva Vida.
+ * Solo sugiere: nombre igual o muy parecido (la misma regla que para unir personas; un apellido
+ * suelto no basta, y los dos nombres deben tener nombre y apellido). Nunca sugiere un teléfono que ya tenga otro bautizado.
+ * Devuelve [{ id, full_name, d, candidates: [{ key, source, name, phone, score }] }], solo los que tienen alguna.
+ */
+async function phoneSuggestions(db) {
+  const missing = (await db.query('SELECT id, full_name, baptism_date::text AS d FROM bautizados WHERE phone IS NULL ORDER BY baptism_date DESC NULLS LAST, full_name')).rows;
+  if (!missing.length) return [];
+  const used = new Set((await db.query('SELECT phone FROM bautizados WHERE phone IS NOT NULL')).rows.map((r) => r.phone));
+  const pool = [
+    ...(await db.query('SELECT id, full_name, phone FROM people WHERE phone IS NOT NULL')).rows.map((r) => ({ key: `p:${r.id}`, source: 'Personas', ...r })),
+    ...(await db.query('SELECT id, full_name, phone FROM nueva_vida WHERE phone IS NOT NULL')).rows.map((r) => ({ key: `n:${r.id}`, source: 'Nueva Vida', ...r })),
+  ].filter((r) => !used.has(r.phone));
+  const words = (name) => normName(name).split(' ').filter(Boolean).length;
+  const out = [];
+  for (const b of missing) {
+    if (words(b.full_name) < 2) continue; // un nombre suelto ("Diego") no alcanza para saber quién es
+    const seen = new Set();
+    const candidates = pool
+      .map((r) => ({ key: r.key, source: r.source, name: r.full_name, phone: r.phone, score: nameScore(b.full_name, r.full_name) }))
+      .filter((c) => c.score >= THRESHOLD && words(c.name) >= 2)
+      .sort((a, c) => c.score - a.score)
+      .filter((c) => (seen.has(c.phone) ? false : seen.add(c.phone))) // el mismo teléfono en las dos listas sale una vez
+      .slice(0, 4);
+    if (candidates.length) out.push({ ...b, candidates });
+  }
+  return out;
+}
+
+/**
+ * Guarda los teléfonos elegidos a mano. choices = { [bautizadoId]: candidateKey }.
+ * Vuelve a calcular las sugerencias y solo acepta una que siga siendo válida. Deja anotado de dónde salió.
+ */
+async function applyPhones(pool, choices) {
+  const sugg = new Map((await phoneSuggestions(pool)).map((b) => [String(b.id), b]));
+  const picks = [];
+  for (const [id, key] of Object.entries(choices || {})) {
+    const c = sugg.get(String(id))?.candidates.find((x) => x.key === key);
+    if (c) picks.push({ id: +id, c });
+  }
+  const taken = new Set();
+  let saved = 0;
+  await tx(pool, async (db) => {
+    for (const { id, c } of picks) {
+      if (taken.has(c.phone)) continue; // dos bautizados no pueden quedar con el mismo teléfono
+      const { rowCount } = await db.query(
+        `UPDATE bautizados SET phone = $2, updated_at = now(),
+                note = trim(both ' ' FROM note || CASE WHEN note = '' THEN '' ELSE ' · ' END || $3)
+          WHERE id = $1 AND phone IS NULL`,
+        [id, c.phone, `Teléfono tomado de ${c.source} (${c.name}).`]
+      );
+      if (rowCount) {
+        taken.add(c.phone);
+        saved++;
+      }
+    }
+  });
+  return { saved, ignored: Object.keys(choices || {}).length - saved };
+}
+
 async function remove(db, id) {
   await db.query('DELETE FROM bautizados WHERE id = $1', [id]);
 }
 
-module.exports = { TEMPLATE_HEADERS, HEADERS, parseDate, validateRow, prepareImport, applyImport, list, stats, years, sedes, get, save, remove };
+module.exports = { TEMPLATE_HEADERS, HEADERS, parseDate, validateRow, prepareImport, applyImport, list, stats, years, sedes, get, save, remove, phoneSuggestions, applyPhones };

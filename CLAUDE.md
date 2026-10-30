@@ -42,6 +42,7 @@ Recordatorios y confirmaciones por WhatsApp y correo. Node 22, Express, PostgreS
 - La carga primero se revisa y luego se guarda en una transacción (todo o nada). Si alguien ya estaba (mismo teléfono, o mismo nombre y fecha) no se duplica, tampoco al agregarlo uno por uno.
 - Las fechas aceptan listas viejas (desde 1940) y no pueden ser futuras.
 - **Reporte para imprimir** (`/bautizados/reporte`, vínculo "Imprimir reporte" con ícono de impresora en la lista, que lleva los filtros puestos): filtra por fechas desde/hasta, año y sede; muestra totales, conteo por sede y por fecha, y la lista numerada. No incluye notas. Al imprimir se ocultan menú y filtros (`.no-print`).
+- **Completar teléfonos** (`/bautizados/telefonos`, `phoneSuggestions`/`applyPhones`): para los bautizados sin teléfono sugiere el de alguien de **Personas** o **Nueva Vida** con el mismo nombre o uno muy parecido (`nameScore` de consolidación; un apellido suelto no basta y los dos nombres deben tener nombre y apellido). Nunca ofrece un teléfono que ya tenga otro bautizado. **Nada se guarda solo**: por defecto queda "Ninguno" y el servidor vuelve a validar cada elección. Al guardar, la nota dice de dónde salió el teléfono. No toca `people` ni `opt_in`.
 - **Gráficas** (SVG de `src/views/charts.js`, en la lista y en el reporte, con los filtros puestos): bautizados por mes (todos los meses entre el primero y el último, los vacíos en cero, hasta 24), por sede y, si hay más de un año, por año.
 
 ## Miembros y amigos (`src/members.js`, dentro de Personas)

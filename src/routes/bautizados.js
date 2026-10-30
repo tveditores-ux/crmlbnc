@@ -91,7 +91,8 @@ function bautizadosRouter(ctx) {
         `<h1>Bautizados</h1>
         <p class="sub">Registro de las personas bautizadas. Puedes agregarlas una por una aquí abajo o cargar una lista completa. Si alguien ya estaba (mismo teléfono, o mismo nombre y fecha), no se duplica. Registrar aquí no crea personas ni las suscribe a mensajes.</p>
         <div class="actions"><a class="btn" href="/bautizados/importar">Cargar una lista</a>
-          <a class="btn sec" href="/bautizados/reporte${qs(f) ? `?${esc(qs(f))}` : ''}">${PRINTER}Imprimir reporte</a></div>
+          <a class="btn sec" href="/bautizados/reporte${qs(f) ? `?${esc(qs(f))}` : ''}">${PRINTER}Imprimir reporte</a>
+          ${st.total > st.with_phone ? `<a class="btn sec" href="/bautizados/telefonos">Completar teléfonos (${st.total - st.with_phone} sin teléfono)</a>` : ''}</div>
         <div class="grid">
           <div class="card"><div class="stat">${st.total}</div><div class="stat-label">bautizados registrados</div></div>
           <div class="card"><div class="stat" style="color:var(--ok)">${st.this_year}</div><div class="stat-label">bautizados en ${year}</div></div>
@@ -228,6 +229,56 @@ function bautizadosRouter(ctx) {
           list || '<tr><td colspan="6" class="muted">No hay bautizados con esos filtros.</td></tr>'
         }</table></div>`
       );
+    })
+  );
+
+  /* ------------------------------ Completar teléfonos ------------------------------ */
+  r.get(
+    '/bautizados/telefonos',
+    ah(async (req, res) => {
+      const [sugg, missing] = await Promise.all([bz.phoneSuggestions(db), db.query('SELECT count(*)::int AS n FROM bautizados WHERE phone IS NULL')]);
+      const n = missing.rows[0].n;
+      const label = (sc) => (sc === 1 ? 'mismo nombre' : 'nombre parecido');
+      const blocks = sugg
+        .map(
+          (b) => `<fieldset class="card" style="margin:0 0 12px">
+            <legend style="font-weight:600;padding:0 4px">${esc(b.full_name)} <span class="muted" style="font-weight:400">· bautismo ${esc(dmy(b.d))}</span></legend>
+            ${b.candidates
+              .map(
+                (c) => `<label class="check"><input type="radio" name="b_${b.id}" value="${esc(c.key)}">
+                  <span><strong>${esc(c.name)}</strong> · <span style="white-space:nowrap">${esc(displayPhone(c.phone))}</span><br><span class="muted">${esc(c.source)}, ${label(c.score)}</span></span></label>`
+              )
+              .join('')}
+            <label class="check"><input type="radio" name="b_${b.id}" value="" checked> <span>Ninguno: no es la misma persona o no estoy seguro</span></label>
+          </fieldset>`
+        )
+        .join('');
+      page(
+        req,
+        res,
+        'Completar teléfonos',
+        `<p><a href="/bautizados">← Bautizados</a></p><h1>Completar teléfonos</h1>
+        <p class="sub">Hay ${n} bautizado${n === 1 ? '' : 's'} sin teléfono. Aquí salen solo los que tienen a alguien con el mismo nombre, o uno muy parecido, en <a href="/personas">Personas</a> o en <a href="/nueva-vida">Nueva Vida</a> (un apellido suelto no cuenta). Nada se guarda solo: elige el teléfono únicamente si estás seguro de que es la misma persona. Por defecto queda en "Ninguno".</p>
+        ${
+          sugg.length
+            ? `<form method="post" action="/bautizados/telefonos">${blocks}<div class="actions"><button>Guardar los teléfonos elegidos</button><a class="btn sec" href="/bautizados">Cancelar</a></div></form>`
+            : `<div class="flash ok">No hay sugerencias: nadie en Personas ni en Nueva Vida tiene el mismo nombre que los bautizados sin teléfono. Puedes agregarlos a mano desde la ficha de cada uno.</div>`
+        }`
+      );
+    })
+  );
+
+  r.post(
+    '/bautizados/telefonos',
+    ah(async (req, res) => {
+      const choices = {};
+      for (const [k, v] of Object.entries(req.body)) {
+        const m = /^b_(\d{1,9})$/.exec(k);
+        if (m && /^[pn]:\d{1,9}$/.test(String(v))) choices[m[1]] = String(v);
+      }
+      if (!Object.keys(choices).length) return go(res, '/bautizados/telefonos', { err: 'No elegiste ningún teléfono.' });
+      const out = await bz.applyPhones(db, choices);
+      go(res, '/bautizados', { ok: `Teléfonos guardados: ${out.saved}.${out.ignored ? ` ${out.ignored} no se guardaron porque la sugerencia ya no era válida.` : ''}` });
     })
   );
 

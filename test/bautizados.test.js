@@ -158,3 +158,38 @@ test('bautizados: gráficas por mes, por sede y por año en la lista y en el rep
     assert.ok(!nuarito.includes('oct 26'));
   });
 });
+
+test('bautizados: completar teléfonos desde Personas y Nueva Vida, solo lo que se elige a mano', async (t) => {
+  await withApp(t, async ({ db, get, post, loc }) => {
+    await db.query(`INSERT INTO people (full_name, phone, opt_in) VALUES ('Ana María Torres', '584141112233', FALSE), ('Ariana Lucena', '584125550000', FALSE), ('Diego', '584125551111', FALSE), ('Rosa Peña', '584125552222', FALSE)`);
+    await db.query(`INSERT INTO nueva_vida (full_name, phone) VALUES ('Luis Mora', '584245553333')`);
+    await post('/bautizados/importar', { csv: 'Ana Torres\nEsteban Lucena\nDiego\nLuis Mora\nRosa Peña, 0412-555.22.22\nCarlos Gil', baptism_date: day(-5), accion: 'guardar' });
+    const list = await (await get('/bautizados')).text();
+    assert.match(list, /Completar teléfonos \(5 sin teléfono\)/);
+    const page = await (await get('/bautizados/telefonos')).text();
+    assert.match(page, /Ana María Torres/); // nombre parecido
+    assert.match(page, /Luis Mora/); // desde Nueva Vida
+    assert.ok(!page.includes('Ariana Lucena')); // solo el apellido: no es sugerencia
+    assert.ok(!page.includes('0412-555.11.11')); // "Diego" solo, sin apellido: no alcanza
+    assert.ok(!page.includes('Rosa Peña')); // Rosa ya tiene teléfono, y su número no se ofrece a nadie más
+    assert.ok(!page.includes('Carlos Gil'));
+    const id = async (name) => (await db.query('SELECT id FROM bautizados WHERE full_name = $1', [name])).rows[0].id;
+    const ana = await id('Ana Torres');
+    const luis = await id('Luis Mora');
+    const p = (await db.query("SELECT id FROM people WHERE full_name = 'Ana María Torres'")).rows[0].id;
+    const nvId = (await db.query("SELECT id FROM nueva_vida WHERE full_name = 'Luis Mora'")).rows[0].id;
+    // Una elección inventada (otra persona que no era sugerencia) no se guarda.
+    const fake = (await db.query("SELECT id FROM people WHERE full_name = 'Ariana Lucena'")).rows[0].id;
+    const esteban = await id('Esteban Lucena');
+    const r = await post('/bautizados/telefonos', { [`b_${ana}`]: `p:${p}`, [`b_${luis}`]: `n:${nvId}`, [`b_${esteban}`]: `p:${fake}` });
+    assert.match(loc(r), /Teléfonos guardados: 2\. 1 no se guardaron/);
+    const rows = Object.fromEntries((await db.query('SELECT full_name, phone, note FROM bautizados')).rows.map((x) => [x.full_name, x]));
+    assert.equal(rows['Ana Torres'].phone, '584141112233');
+    assert.match(rows['Ana Torres'].note, /Teléfono tomado de Personas \(Ana María Torres\)/);
+    assert.equal(rows['Luis Mora'].phone, '584245553333');
+    assert.equal(rows['Esteban Lucena'].phone, null);
+    assert.equal(rows['Carlos Gil'].phone, null);
+    const none = await post('/bautizados/telefonos', {});
+    assert.match(loc(none), /No elegiste/);
+  });
+});
