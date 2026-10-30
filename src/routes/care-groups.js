@@ -160,7 +160,7 @@ function careGroupsRouter(ctx) {
   );
 
   /* ----------------- Pedir los datos a los líderes: un enlace para todos ----------------- */
-  const DEFAULT_ASK = 'Hola {nombre}, la paz del Señor. Estamos actualizando los datos de los grupos de cuidado de la iglesia. ¿Me ayudas llenando esta planilla desde tu teléfono? Elige tu congregación, llena tus datos y envíala, son dos minutos: {enlace}';
+  const DEFAULT_ASK = 'Hola {nombre}, esperamos que estés disfrutando tu vida en Cristo. Estamos actualizando los datos de los grupos de cuidado de la iglesia. ¿Me ayudas llenando esta planilla desde tu teléfono? Elige tu congregación, llena tus datos y envíala, son dos minutos: {enlace}';
   r.get(
     '/grupos/solicitud',
     ah(async (req, res) => {
