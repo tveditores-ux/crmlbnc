@@ -21,7 +21,7 @@ const count = async (db, where = 'TRUE') => (await db.query(`SELECT count(*)::in
 test('la migración agrega las tres columnas con sus valores por defecto y respeta la restricción', async (t) => {
   await withDb(t, async (db) => {
     const cols = (
-      await db.query(`SELECT column_name, column_default, is_nullable FROM information_schema.columns WHERE table_name = 'people' AND column_name IN ('membership','whatsapp_name','in_official_group') ORDER BY column_name`)
+      await db.query(`SELECT column_name, column_default, is_nullable FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'people' AND column_name IN ('membership','whatsapp_name','in_official_group') ORDER BY column_name`)
     ).rows;
     assert.deepEqual(cols.map((c) => c.column_name), ['in_official_group', 'membership', 'whatsapp_name']);
     assert.ok(cols.every((c) => c.is_nullable === 'NO'));
