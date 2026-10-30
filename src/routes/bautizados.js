@@ -9,11 +9,11 @@ const { parsePhoto } = require('../care-groups');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
-/** Reduce una imagen a JPEG de 900 px como máximo en el navegador (así no viaja la ubicación ni pesa de más). */
-const REDUCE_JS = `function reduceImage(file, done) {
+/** Reduce una imagen a JPEG de 900 px como máximo (o `max`) en el navegador (así no viaja la ubicación ni pesa de más). */
+const REDUCE_JS = `function reduceImage(file, done, max) {
   var url = URL.createObjectURL(file), img = new Image();
   img.onload = function () {
-    var s = Math.min(1, 900 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+    var s = Math.min(1, (max || 900) / Math.max(img.width, img.height)), c = document.createElement('canvas');
     c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
     c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
     URL.revokeObjectURL(url);
@@ -108,6 +108,7 @@ function bautizadosRouter(ctx) {
         <div class="actions"><a class="btn" href="/bautizados/importar">Cargar una lista</a>
           <a class="btn sec" href="/bautizados/reporte${qs(f) ? `?${esc(qs(f))}` : ''}">${PRINTER}Imprimir reporte</a>
           <a class="btn sec" href="/bautizados/fotos">Subir fotos</a>
+          <a class="btn sec" href="/bautizados/generales">Fotos generales</a>
           ${st.total > st.with_phone ? `<a class="btn sec" href="/bautizados/telefonos">Completar teléfonos (${st.total - st.with_phone} sin teléfono)</a>` : ''}</div>
         <div class="grid">
           <div class="card"><div class="stat">${st.total}</div><div class="stat-label">bautizados registrados</div></div>
@@ -381,6 +382,7 @@ function bautizadosRouter(ctx) {
         res,
         'Subir fotos',
         `<p><a href="/bautizados">← Bautizados</a></p><h1>Subir fotos de bautizados</h1>
+        <p class="muted">¿Es una foto del grupo o del momento, no de una persona? Súbela en <a href="/bautizados/generales">Fotos generales</a>.</p>
         <p class="sub">Elige varias fotos a la vez. Si cada archivo tiene el nombre de la persona (por ejemplo <span class="mono">Ana Torres.jpg</span>), se emparejan solos; si no, elige a quién corresponde cada una. Revisa la lista y pulsa "Subir". Las fotos se reducen en tu equipo antes de subir y solo se ven dentro del panel.</p>
         ${targets.length ? '' : '<div class="flash err">Primero registra a los bautizados: todavía no hay nadie a quien ponerle foto.</div>'}
         <div class="card">
@@ -451,6 +453,132 @@ function bautizadosRouter(ctx) {
           })();
         </script>`
       );
+    })
+  );
+
+  /* -------------------- Fotos generales del bautizo -------------------- */
+  r.get(
+    '/bautizados/generales',
+    ah(async (req, res) => {
+      const [photos, dates, ss] = await Promise.all([bz.listGeneralPhotos(db), bz.baptismDates(db), bz.sedes(db)]);
+      const groups = [];
+      for (const ph of photos) {
+        const last = groups[groups.length - 1];
+        if (last && last.d === ph.d) last.items.push(ph);
+        else groups.push({ d: ph.d, items: [ph] });
+      }
+      const gallery = groups
+        .map(
+          (g) => `<h2>Bautizo del ${esc(dmy(g.d))} <span class="muted" style="font-weight:400;font-size:14px">(${g.items.length} foto${g.items.length === 1 ? '' : 's'})</span></h2>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(220px,100%),1fr));gap:12px">${g.items
+            .map(
+              (ph) => `<figure class="card" style="margin:0;padding:10px">
+                <a href="/bautizados/generales/${ph.id}/foto?v=${ph.v}" target="_blank" rel="noopener"><img src="/bautizados/generales/${ph.id}/foto?v=${ph.v}" alt="Foto del bautizo del ${esc(dmy(g.d))}" loading="lazy" style="display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:8px"></a>
+                <figcaption style="font-size:13px;margin-top:6px">${[ph.sede, ph.note].filter(Boolean).map(esc).join(' · ') || '<span class="muted">Sin nota</span>'}</figcaption>
+                <form method="post" action="/bautizados/generales/${ph.id}/eliminar" onsubmit="return confirm('¿Borrar esta foto general?')" style="margin-top:6px"><button class="danger small">Borrar</button></form>
+              </figure>`
+            )
+            .join('')}</div>`
+        )
+        .join('');
+      const opt = (items, cur) => items.map(([v, l]) => `<option value="${esc(v)}" ${cur === v ? 'selected' : ''}>${esc(l)}</option>`).join('');
+      page(
+        req,
+        res,
+        'Fotos generales',
+        `<p><a href="/bautizados">← Bautizados</a></p><h1>Fotos generales de los bautizos</h1>
+        <p class="sub">Fotos del grupo o del momento, que no son de una sola persona. Se guardan por fecha del bautismo y puedes subir varias. Se reducen en tu equipo antes de subir y solo se ven dentro del panel.</p>
+        <div class="card">
+          <div class="row">
+            <div><label for="g_date">Fecha del bautismo</label>${
+              dates.length
+                ? `<select id="g_date">${opt(dates.map((x) => [x.d, `${dmy(x.d)} (${x.n} bautizado${x.n === 1 ? '' : 's'})`]), dates[0].d)}<option value="otra">Otra fecha…</option></select>
+                   <input id="g_other" type="date" max="${esc(today())}" hidden style="margin-top:6px">`
+                : `<input id="g_other" type="date" max="${esc(today())}" value="${esc(today())}">`
+            }</div>
+            <div><label for="g_sede">Sede (opcional)</label><input id="g_sede" type="text" list="g_sedes" maxlength="80"><datalist id="g_sedes">${ss.map((x) => `<option value="${esc(x)}">`).join('')}</datalist></div>
+            <div><label for="g_note">Nota (opcional)</label><input id="g_note" type="text" maxlength="300" placeholder="Ej.: todos los bautizados con los pastores"></div>
+          </div>
+          <label for="g_files">Fotos</label><input id="g_files" type="file" accept="image/*" multiple>
+          <div id="g_prev" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px"></div>
+          <div class="actions"><button id="g_up" hidden>Subir</button></div>
+          <p id="g_msg" class="muted" style="margin:6px 0 0"></p>
+        </div>
+        ${gallery || '<p class="muted">Todavía no hay fotos generales.</p>'}
+        <script>
+          ${REDUCE_JS}
+          (function () {
+            var sel = document.getElementById('g_date'), other = document.getElementById('g_other'), prev = document.getElementById('g_prev'), up = document.getElementById('g_up'), msg = document.getElementById('g_msg'), items = [];
+            if (sel) sel.addEventListener('change', function () { other.hidden = sel.value !== 'otra'; });
+            function refresh() {
+              var ready = items.filter(function (x) { return x.data && !x.done; }).length;
+              up.hidden = !ready; up.textContent = 'Subir ' + ready + ' foto' + (ready === 1 ? '' : 's');
+            }
+            document.getElementById('g_files').addEventListener('change', function (e) {
+              Array.prototype.forEach.call(e.target.files, function (f) {
+                var it = { data: null, done: false }, img = document.createElement('img');
+                img.alt = ''; img.width = 96; img.height = 72; img.style.cssText = 'object-fit:cover;border-radius:6px;background:var(--line)';
+                prev.appendChild(img); items.push(it);
+                reduceImage(f, function (err, url) {
+                  if (err) { msg.textContent = f.name + ': ' + err.message; return; }
+                  it.data = url; it.img = img; img.src = url; refresh();
+                }, 1600);
+              });
+              e.target.value = '';
+            });
+            up.addEventListener('click', async function () {
+              var date = sel && sel.value !== 'otra' ? sel.value : other.value;
+              if (!date) { msg.textContent = 'Elige la fecha del bautismo.'; return; }
+              up.disabled = true; var ok = 0, bad = 0;
+              for (var i = 0; i < items.length; i++) {
+                var it = items[i]; if (!it.data || it.done) continue;
+                msg.textContent = 'Subiendo ' + (ok + bad + 1) + '…';
+                try {
+                  var resp = await fetch('/bautizados/generales', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+                    body: new URLSearchParams({ photo_data: it.data, baptism_date: date, sede: document.getElementById('g_sede').value, note: document.getElementById('g_note').value }) });
+                  var out = await resp.json().catch(function () { return {}; });
+                  if (resp.ok) { it.done = true; it.img.style.opacity = '.4'; ok++; } else { bad++; msg.textContent = out.error || 'No se pudo subir una foto.'; }
+                } catch (err) { bad++; }
+              }
+              up.disabled = false; refresh();
+              if (!bad) location.reload(); else msg.textContent = ok + ' subida(s), ' + bad + ' con error: vuelve a pulsar para reintentar.';
+            });
+          })();
+        </script>`
+      );
+    })
+  );
+
+  r.post(
+    '/bautizados/generales',
+    ah(async (req, res) => {
+      const date = bz.parseDate(req.body.baptism_date);
+      if (!date) return res.status(400).json({ error: 'Elige la fecha del bautismo.' });
+      if (date > today()) return res.status(400).json({ error: 'La fecha del bautismo no puede ser futura.' });
+      const photo = parsePhoto(req.body.photo_data);
+      if (photo.error) return res.status(400).json({ error: photo.error });
+      if (!photo.buffer) return res.status(400).json({ error: 'No llegó ninguna foto.' });
+      const id = await bz.addGeneralPhoto(db, { baptism_date: date, sede: req.body.sede, note: req.body.note }, photo.buffer);
+      res.json({ ok: 'Foto guardada.', id });
+    })
+  );
+
+  r.get(
+    '/bautizados/generales/:id(\\d{1,9})/foto',
+    ah(async (req, res) => {
+      const buf = await bz.getGeneralPhoto(db, +req.params.id);
+      if (!buf) return res.status(404).end();
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.send(buf);
+    })
+  );
+
+  r.post(
+    '/bautizados/generales/:id(\\d{1,9})/eliminar',
+    ah(async (req, res) => {
+      await bz.deleteGeneralPhoto(db, +req.params.id);
+      go(res, '/bautizados/generales', { ok: 'Foto borrada.' });
     })
   );
 
