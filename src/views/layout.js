@@ -93,7 +93,7 @@ function layout({ title, active, body, config, query, bare = false }) {
        <form class="inline" method="post" action="/salir"><button class="small sec" style="margin-left:6px">Salir</button></form></nav>`;
   const dryBanner =
     !bare && config && config.dryRun
-      ? `<div style="background:#d9b56a;color:#1f2a2e;font-size:13px;text-align:center;padding:5px">Modo de prueba (DRY_RUN): los mensajes se registran pero no se envían.</div>`
+      ? `<div class="no-print" style="background:#d9b56a;color:#1f2a2e;font-size:13px;text-align:center;padding:5px">Modo de prueba (DRY_RUN): los mensajes se registran pero no se envían.</div>`
       : '';
   return `<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
