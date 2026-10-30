@@ -308,8 +308,43 @@ async function photoTargets(db) {
   return rows.map((r) => ({ id: r.id, name: r.full_name, key: normName(r.full_name), d: r.d, has: r.has_photo }));
 }
 
+/* -------------------- Fotos generales del bautizo (por fecha, no por persona) -------------------- */
+
+/** Guarda una foto general. v = { baptism_date, sede, note } ya revisados; buffer = JPEG validado. */
+async function addGeneralPhoto(db, v, buffer) {
+  const { rows } = await db.query(
+    'INSERT INTO bautizos_fotos_generales (baptism_date, sede, note, data) VALUES ($1, $2, $3, $4) RETURNING id',
+    [v.baptism_date, clip(v.sede, 80), clip(v.note, 300), buffer]
+  );
+  return rows[0].id;
+}
+
+/** Fotos generales sin los bytes, de la más reciente a la más vieja. */
+async function listGeneralPhotos(db, limit = 300) {
+  return (
+    await db.query(
+      `SELECT id, baptism_date::text AS d, sede, note, floor(extract(epoch FROM created_at))::bigint AS v
+         FROM bautizos_fotos_generales ORDER BY baptism_date DESC, id DESC LIMIT ${Math.min(+limit || 300, 1000)}`
+    )
+  ).rows;
+}
+
+async function getGeneralPhoto(db, id) {
+  const r = (await db.query('SELECT data FROM bautizos_fotos_generales WHERE id = $1', [id])).rows[0];
+  return r ? Buffer.from(r.data) : null;
+}
+
+async function deleteGeneralPhoto(db, id) {
+  await db.query('DELETE FROM bautizos_fotos_generales WHERE id = $1', [id]);
+}
+
+/** Fechas de bautismo registradas (la más reciente primero), para elegir a qué bautizo pertenece la foto. */
+async function baptismDates(db) {
+  return (await db.query('SELECT baptism_date::text AS d, count(*)::int AS n FROM bautizados WHERE baptism_date IS NOT NULL GROUP BY 1 ORDER BY 1 DESC LIMIT 200')).rows;
+}
+
 async function remove(db, id) {
   await db.query('DELETE FROM bautizados WHERE id = $1', [id]);
 }
 
-module.exports = { TEMPLATE_HEADERS, HEADERS, parseDate, validateRow, prepareImport, applyImport, list, stats, years, sedes, get, save, remove, phoneSuggestions, applyPhones, savePhoto, getPhoto, deletePhoto, photoTargets };
+module.exports = { TEMPLATE_HEADERS, HEADERS, parseDate, validateRow, prepareImport, applyImport, list, stats, years, sedes, get, save, remove, phoneSuggestions, applyPhones, savePhoto, getPhoto, deletePhoto, photoTargets, addGeneralPhoto, listGeneralPhotos, getGeneralPhoto, deleteGeneralPhoto, baptismDates };

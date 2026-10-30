@@ -238,3 +238,35 @@ test('bautizados: foto individual y por lote (JSON), validada, servida con sesi�
     assert.equal((await db.query('SELECT count(*)::int AS n FROM bautizados_fotos')).rows[0].n, 0);
   });
 });
+
+test('bautizados: fotos generales del bautizo por fecha, validadas, servidas con sesión y borrables', async (t) => {
+  await withApp(t, async ({ db, get, post, loc }) => {
+    const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(400, 9), Buffer.from([0xff, 0xd9])]);
+    const dataUrl = `data:image/jpeg;base64,${jpeg.toString('base64')}`;
+    await post('/bautizados/importar', { csv: 'Ana Torres\nLuis Mora', baptism_date: day(-6), sede: 'Las Mercedes', accion: 'guardar' });
+    const empty = await (await get('/bautizados/generales')).text();
+    assert.match(empty, /Todavía no hay fotos generales/);
+    assert.match(empty, new RegExp(`<option value="${day(-6)}" selected>`)); // propone la fecha del último bautizo
+    const base = (await get('/bautizados')).url.replace(/\/bautizados$/, '');
+    const send = (fields) => fetch(`${base}/bautizados/generales`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' }, body: new URLSearchParams(fields) });
+    const ok = await send({ photo_data: dataUrl, baptism_date: day(-6), sede: 'Las Mercedes', note: 'Todos con los <b>pastores</b>' });
+    assert.equal(ok.status, 200);
+    const { id } = await ok.json();
+    await send({ photo_data: dataUrl, baptism_date: day(-6) });
+    assert.equal((await send({ photo_data: dataUrl, baptism_date: '' })).status, 400);
+    assert.equal((await send({ photo_data: dataUrl, baptism_date: day(3) })).status, 400);
+    assert.equal((await send({ photo_data: 'data:image/png;base64,AAAA', baptism_date: day(-6) })).status, 400);
+    const page = await (await get('/bautizados/generales')).text();
+    assert.match(page, new RegExp(`Bautizo del ${day(-6).split('-').reverse().join('/')}`));
+    assert.match(page, /\(2 fotos\)/);
+    assert.match(page, /Todos con los &lt;b&gt;pastores/);
+    assert.match(await (await get('/bautizados')).text(), /href="\/bautizados\/generales"/);
+    const img = await get(`/bautizados/generales/${id}/foto`);
+    assert.equal(img.headers.get('cache-control'), 'private, no-store');
+    assert.deepEqual(Buffer.from(await img.arrayBuffer()), jpeg);
+    const del = await post(`/bautizados/generales/${id}/eliminar`, {});
+    assert.match(loc(del), /Foto borrada/);
+    assert.equal((await get(`/bautizados/generales/${id}/foto`)).status, 404);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM bautizos_fotos_generales')).rows[0].n, 1);
+  });
+});
