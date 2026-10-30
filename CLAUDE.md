@@ -36,6 +36,12 @@ Recordatorios y confirmaciones por WhatsApp y correo. Node 22, Express, PostgreS
 - Los archivos con datos reales de personas **nunca** se suben al repo (es público). Las pruebas usan datos inventados.
 - Pruebas con base real: `npm install --no-save @electric-sql/pglite` y `npm test` (o `DATABASE_URL_TEST` en CI). Sin ellas, esas pruebas se omiten.
 
+## Bautizados (`src/bautizados/store.js`, `/bautizados`, migración 015)
+- Pestaña propia en el menú. Tabla `bautizados` (nombre, teléfono, fecha del bautismo, sede, bautizado por, nota, fuente), **sin FK a `people`**, como `nueva_vida`: no crea personas ni toca `opt_in`.
+- Se agrega **uno por uno** (formulario en la misma pestaña) o se **carga una lista** (`/bautizados/importar`): lista simple (un nombre por línea, con teléfono opcional después de una coma) o CSV con columnas `nombre, telefono, fecha_bautismo, sede, ministro, nota`. Fecha, sede, ministro y nombre de la lista se pueden poner para toda la carga; la fila manda si trae el dato.
+- La carga primero se revisa y luego se guarda en una transacción (todo o nada). Si alguien ya estaba (mismo teléfono, o mismo nombre y fecha) no se duplica, tampoco al agregarlo uno por uno.
+- Las fechas aceptan listas viejas (desde 1940) y no pueden ser futuras.
+
 ## Miembros y amigos (`src/members.js`, dentro de Personas)
 - **No es una pestaña aparte**: es la misma tabla `people`. `/personas` tiene columnas Tipo y Grupo oficial, filtros (tipo, grupo oficial, ministerio, búsqueda por nombre o teléfono), clasificación rápida y el importador de la lista del grupo (`/personas/importar-grupo`). `/miembros*` solo redirige a `/personas` para no romper enlaces guardados.
 - `people.membership`: '' (por clasificar), 'miembro' o 'amigo'. `whatsapp_name` es el nombre de perfil de WhatsApp. `in_official_group` marca a quien está en el grupo oficial.
