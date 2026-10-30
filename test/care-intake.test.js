@@ -102,7 +102,7 @@ test('el formulario común pide la congregación, no lista grupos ni teléfonos,
     assert.ok(!html.includes('Líder asesor') && !html.includes('advisor_name'));
     for (const id of ['leader_email', 'leader_phone', 'leader_name', 'leader_cedula', 'leader_address']) assert.match(html, new RegExp(`id="${id}"[^>]*required|required[^>]*id="${id}"`), id);
     assert.match(html, /Foto del líder/);
-    assert.match(html, /La foto es obligatoria/);
+    assert.match(html, /Cargar tu fotografía es necesario para completar el registro de tu ficha de liderazgo/);
     assert.ok(!html.includes('Grupo Secreto')); // ya no se muestran los grupos
     assert.ok(!html.includes('584140000001') && !html.includes('0414-000.00.01'));
     assert.match(html, /capture="user"/);
