@@ -4,6 +4,7 @@ const { layout } = require('../views/layout');
 const { esc } = require('../util');
 const { displayPhone } = require('../phone');
 const bz = require('../bautizados/store');
+const charts = require('../views/charts');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -26,6 +27,32 @@ function bautizadosRouter(ctx) {
   });
   const qs = (f) => new URLSearchParams(Object.entries(f).filter(([, v]) => v)).toString();
   const opt = (items, cur, empty) => `<option value="">${esc(empty)}</option>${items.map(([v, l]) => `<option value="${esc(v)}" ${cur === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}`;
+
+  /** Gráficas de los bautizados que se están viendo: por mes, por sede y (si hay varios) por año. */
+  function chartsBlock(rows) {
+    const dated = rows.filter((x) => x.d);
+    const tally = (key, list) => list.reduce((m, x) => m.set(key(x), (m.get(key(x)) || 0) + 1), new Map());
+    let months = [];
+    if (dated.length) {
+      const byMonth = tally((x) => x.d.slice(0, 7), dated);
+      const keys = [...byMonth.keys()].sort();
+      // Todos los meses entre el primero y el último (los vacíos en cero), hasta 24 meses.
+      let [y, m] = keys[keys.length - 1].split('-').map(Number);
+      for (let i = 0; i < 24; i++) {
+        const ym = `${y}-${String(m).padStart(2, '0')}`;
+        months.unshift({ label: charts.monthLabel(ym), value: byMonth.get(ym) || 0 });
+        if (ym <= keys[0]) break;
+        if (--m === 0) [y, m] = [y - 1, 12];
+      }
+    }
+    const sedes = [...tally((x) => x.sede || 'Sin sede', rows)].sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value }));
+    const years = [...tally((x) => x.d.slice(0, 4), dated)].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([label, value]) => ({ label, value }));
+    return `<div class="charts">
+        <div class="card wide"><h3>Bautizados por mes</h3>${charts.barChart(months, { title: 'Bautizados por mes', height: 220 })}</div>
+        <div class="card"><h3>Por sede</h3>${charts.hBarChart(sedes, { title: 'Bautizados por sede', color: charts.PALETTE[1] })}</div>
+        ${years.length > 1 ? `<div class="card"><h3>Por año</h3>${charts.barChart(years, { title: 'Bautizados por año', color: charts.PALETTE[3], height: 200 })}</div>` : ''}
+      </div>`;
+  }
 
   /** Formulario de una persona (el mismo para registrar y para corregir). */
   function form(v, action, errors = [], { submit = 'Guardar', cancel = '/bautizados' } = {}) {
@@ -71,6 +98,7 @@ function bautizadosRouter(ctx) {
           <div class="card"><div class="stat">${st.with_phone}</div><div class="stat-label">con teléfono</div></div>
           <div class="card"><div class="stat" style="color:var(--warn)">${st.no_date}</div><div class="stat-label">sin fecha</div></div>
         </div>
+        ${rows.length ? chartsBlock(rows) : ''}
         <h2>Agregar un bautizado</h2>
         ${form({ baptism_date: today() }, '/bautizados', [], { submit: 'Agregar', cancel: '' })}
         <form class="toolbar" method="get">
@@ -169,7 +197,6 @@ function bautizadosRouter(ctx) {
         : f.anio ? `Año ${f.anio}` : f.fecha === 'sin' ? 'Sin fecha de bautismo' : 'Todos los registros';
       const scope = [period, f.sede && `Sede: ${f.sede}`, f.q && `Búsqueda: "${f.q}"`].filter(Boolean).join(' · ');
       const count = (key) => Object.entries(rows.reduce((m, x) => ((m[key(x)] = (m[key(x)] || 0) + 1), m), {}));
-      const bySede = count((x) => x.sede || 'Sin sede').sort((a, b) => b[1] - a[1]);
       const byDate = count((x) => x.d || '').sort((a, b) => (a[0] < b[0] ? 1 : -1));
       const summary = (title, items, label) => `<div class="card"><h3 style="margin:0 0 6px;font-size:14px">${title}</h3>
           <table>${items.map(([k, n]) => `<tr><td>${esc(label(k))}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${n}</td></tr>`).join('')}</table></div>`;
@@ -195,7 +222,8 @@ function bautizadosRouter(ctx) {
           <div class="card"><div class="stat">${rows.length}</div><div class="stat-label">bautizados</div></div>
           <div class="card"><div class="stat">${rows.filter((x) => x.phone).length}</div><div class="stat-label">con teléfono</div></div>
         </div>
-        ${rows.length ? `<div class="grid">${summary('Por sede', bySede, (k) => k)}${summary('Por fecha de bautismo', byDate, (k) => (k ? dmy(k) : 'Sin fecha'))}</div>` : ''}
+        ${rows.length ? chartsBlock(rows) : ''}
+        ${rows.length ? `<div class="grid">${summary('Por fecha de bautismo', byDate, (k) => (k ? dmy(k) : 'Sin fecha'))}</div>` : ''}
         <div class="table-scroll"><table><tr><th>#</th><th>Nombre</th><th>Teléfono</th><th>Bautismo</th><th>Sede</th><th>Bautizado por</th></tr>${
           list || '<tr><td colspan="6" class="muted">No hay bautizados con esos filtros.</td></tr>'
         }</table></div>`

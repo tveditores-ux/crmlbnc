@@ -17,6 +17,7 @@ header.top{background:var(--ink);color:#f5f2eb}
 header.top .wrap{display:flex;align-items:center;gap:20px;flex-wrap:wrap;padding-top:12px;padding-bottom:12px}
 .brand{font-weight:700;letter-spacing:.01em;margin-right:auto}
 .brand small{display:block;font-weight:400;opacity:.7;font-size:12px}
+nav{display:flex;flex-wrap:wrap;align-items:center;row-gap:2px;min-width:0}
 nav a{color:#f5f2eb;text-decoration:none;opacity:.8;padding:6px 2px;margin-right:12px;font-size:14px}
 nav a.on,nav a:hover{opacity:1;border-bottom:2px solid #d9b56a}
 .wrap{max-width:1080px;margin:0 auto;padding:0 16px}

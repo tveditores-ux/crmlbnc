@@ -187,7 +187,7 @@ function monthLabel(ym) {
 }
 
 const CSS = `.chart{width:100%;height:auto;display:block}
-.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:16px;margin-bottom:16px}
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(380px,100%),1fr));gap:16px;margin-bottom:16px}
 .charts .card{margin:0}.charts h3{margin:0 0 8px;font-size:15px}
 .legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:12px;color:#6b665c}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px}
