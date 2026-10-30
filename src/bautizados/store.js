@@ -151,7 +151,9 @@ function filterSql(f) {
 async function list(db, f = {}, limit = 1000) {
   const fl = filterSql(f);
   const { rows } = await db.query(
-    `SELECT id, full_name, phone, baptism_date::text AS d, sede, minister, source FROM bautizados${fl.sql}
+    `SELECT id, full_name, phone, baptism_date::text AS d, sede, minister, source,
+            (SELECT floor(extract(epoch FROM f.updated_at))::bigint FROM bautizados_fotos f WHERE f.bautizado_id = bautizados.id) AS photo_v
+       FROM bautizados${fl.sql}
       ORDER BY baptism_date DESC NULLS LAST, id DESC LIMIT ${Math.min(+limit || 1000, 3000)}`,
     fl.params
   );
@@ -163,7 +165,8 @@ async function stats(db, year) {
     await db.query(
       `SELECT count(*)::int AS total, count(phone)::int AS with_phone,
               count(*) FILTER (WHERE EXTRACT(YEAR FROM baptism_date) = $1)::int AS this_year,
-              count(*) FILTER (WHERE baptism_date IS NULL)::int AS no_date
+              count(*) FILTER (WHERE baptism_date IS NULL)::int AS no_date,
+              (SELECT count(*)::int FROM bautizados_fotos) AS with_photo
          FROM bautizados`,
       [year]
     )
@@ -179,7 +182,15 @@ async function sedes(db) {
 }
 
 async function get(db, id) {
-  return (await db.query('SELECT *, baptism_date::text AS d FROM bautizados WHERE id = $1', [id])).rows[0] || null;
+  return (
+    (
+      await db.query(
+        `SELECT b.*, b.baptism_date::text AS d, floor(extract(epoch FROM f.updated_at))::bigint AS photo_v
+           FROM bautizados b LEFT JOIN bautizados_fotos f ON f.bautizado_id = b.id WHERE b.id = $1`,
+        [id]
+      )
+    ).rows[0] || null
+  );
 }
 
 /** Crea o corrige un registro a mano. Devuelve { id, duplicate } o { errors }. */
@@ -266,8 +277,39 @@ async function applyPhones(pool, choices) {
   return { saved, ignored: Object.keys(choices || {}).length - saved };
 }
 
+/* ------------------------------ Fotos ------------------------------ */
+
+/** Guarda (o reemplaza) la foto de un bautizado. buffer = JPEG ya validado con parsePhoto. Devuelve false si no existe. */
+async function savePhoto(db, id, buffer) {
+  const { rowCount } = await db.query(
+    `INSERT INTO bautizados_fotos (bautizado_id, data) SELECT id, $2 FROM bautizados WHERE id = $1
+     ON CONFLICT (bautizado_id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`,
+    [id, buffer]
+  );
+  return rowCount > 0;
+}
+
+async function getPhoto(db, id) {
+  const r = (await db.query('SELECT data FROM bautizados_fotos WHERE bautizado_id = $1', [id])).rows[0];
+  return r ? Buffer.from(r.data) : null;
+}
+
+async function deletePhoto(db, id) {
+  await db.query('DELETE FROM bautizados_fotos WHERE bautizado_id = $1', [id]);
+}
+
+/** Lista corta para emparejar fotos por nombre de archivo: id, nombre, nombre normalizado, fecha y si ya tiene foto. */
+async function photoTargets(db) {
+  const { rows } = await db.query(
+    `SELECT b.id, b.full_name, b.baptism_date::text AS d, (f.bautizado_id IS NOT NULL) AS has_photo
+       FROM bautizados b LEFT JOIN bautizados_fotos f ON f.bautizado_id = b.id
+      ORDER BY b.baptism_date DESC NULLS LAST, b.full_name LIMIT 3000`
+  );
+  return rows.map((r) => ({ id: r.id, name: r.full_name, key: normName(r.full_name), d: r.d, has: r.has_photo }));
+}
+
 async function remove(db, id) {
   await db.query('DELETE FROM bautizados WHERE id = $1', [id]);
 }
 
-module.exports = { TEMPLATE_HEADERS, HEADERS, parseDate, validateRow, prepareImport, applyImport, list, stats, years, sedes, get, save, remove, phoneSuggestions, applyPhones };
+module.exports = { TEMPLATE_HEADERS, HEADERS, parseDate, validateRow, prepareImport, applyImport, list, stats, years, sedes, get, save, remove, phoneSuggestions, applyPhones, savePhoto, getPhoto, deletePhoto, photoTargets };
