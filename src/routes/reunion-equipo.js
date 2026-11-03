@@ -2,6 +2,7 @@
 const express = require('express');
 const { layout } = require('../views/layout');
 const { esc } = require('../util');
+const { createRateLimiter } = require('../attendance-store');
 const re = require('../reunion-equipo');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -37,6 +38,76 @@ function squig(seed) {
   for (let i = 1; i <= 12; i++) p += ` L${(300 * i) / 12} ${(5 + Math.sin(i * 1.3) * 1.8 + (rnd() - 0.5) * 1.4).toFixed(1)}`;
   return `<svg viewBox="0 0 300 10" preserveAspectRatio="none" aria-hidden="true"><path d="${p}" fill="none" stroke="#2b2b2b" stroke-width="2.2" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>`;
 }
+
+
+/** Las secciones de la hoja (entrevista, 4 temas, acuerdos). `d` trae los valores guardados (vacío en la libreta del teléfono). */
+function sheet(d = {}) {
+  const ta = (k, val) => `<textarea data-k="${k}" rows="3" spellcheck="false" autocomplete="off" aria-label="${esc(k)}">${esc(val || '')}</textarea>`;
+  let h = '';
+  let seed = 5;
+  const title = (t) => `<h2>${esc(t)}${squig((seed += 7))}</h2>`;
+  h += `<section>${title('Entrevista cruzada')}`;
+  for (const [k, q] of re.ENTREVISTA) h += `<p class="q">${esc(q)}</p>${ta(k, d[k])}<div style="height:22px"></div>`;
+  h += '</section>';
+  for (const t of re.TEMAS) {
+    h += `<section>${title(t.title)}<p class="q">${esc(t.q)}</p>`;
+    for (const [c, l] of re.CAMPOS_TEMA) h += `<p class="lbl">${esc(l)}</p>${ta(t.k + c, d[t.k + c])}`;
+    h += '</section>';
+  }
+  h += `<section>${title('Lo que decidimos juntos')}`;
+  for (const n of re.ACUERDOS) {
+    h += `<div class="ac"><span class="n">${n}.</span><div class="body">${ta('ac' + n, d['ac' + n])}
+      <div class="row"><label>Responsable<input data-k="ac${n}r" value="${esc(d['ac' + n + 'r'] || '')}" maxlength="${re.MAX_LEN}" autocomplete="off"></label>
+      <label class="f">Fecha<input data-k="ac${n}f" value="${esc(d['ac' + n + 'f'] || '')}" maxlength="${re.MAX_LEN}" autocomplete="off"></label></div></div></div>`;
+  }
+  return h + '</section>';
+}
+
+/** Libreta del teléfono: guarda en el propio aparato de cada persona (no en el CRM). */
+const REMOTE_SCRIPT = `
+(function(){
+  var KEY='lbnc-reunion-equipo-v1',data={};
+  try{data=JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){data={}}
+  function persist(){try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){}}
+  function grow(e){e.style.height='auto';e.style.height=Math.max(108,e.scrollHeight)+'px'}
+  var msg=document.getElementById('msg');
+  function say(t){msg.textContent=t;setTimeout(function(){msg.textContent=''},2500)}
+  document.querySelectorAll('.re textarea,.re input').forEach(function(e){
+    var k=e.getAttribute('data-k');if(data[k])e.value=data[k];
+    if(e.tagName==='TEXTAREA')grow(e);
+    e.addEventListener('input',function(){data[k]=e.value;persist();if(e.tagName==='TEXTAREA')grow(e)});
+  });
+  function compile(){
+    var o=[],q=function(e){return (e.value||'').trim()||'—'};
+    document.querySelectorAll('.re section').forEach(function(sec){
+      o.push(sec.querySelector('h2').textContent.toUpperCase());
+      sec.querySelectorAll('.q,.lbl,.ac,textarea').forEach(function(n){
+        if(n.tagName==='TEXTAREA'){if(!n.closest('.ac'))o.push(q(n))}
+        else if(n.classList.contains('ac')){o.push(n.querySelector('.n').textContent+' '+q(n.querySelector('textarea')));var i=n.querySelectorAll('input');o.push('   Responsable: '+q(i[0])+'  Fecha: '+q(i[1]))}
+        else o.push(n.textContent)
+      });o.push('');
+    });
+    return o.join('\\n');
+  }
+  function fb(t){var x=document.createElement('textarea');x.value=t;document.body.appendChild(x);x.select();try{document.execCommand('copy');say('Copiado')}catch(e){say('No se pudo copiar')}document.body.removeChild(x)}
+  document.getElementById('copy').onclick=function(){var t=compile();try{navigator.clipboard.writeText(t).then(function(){say('Copiado')},function(){fb(t)})}catch(e){fb(t)}};
+  document.getElementById('wa').onclick=function(){window.location.href='https://wa.me/?text='+encodeURIComponent(compile())};
+  var armed=false;
+  document.getElementById('clear').onclick=function(){
+    if(!armed){armed=true;say('Toca otra vez para borrar');setTimeout(function(){armed=false},3000);return}
+    data={};persist();document.querySelectorAll('.re textarea,.re input').forEach(function(e){e.value='';if(e.tagName==='TEXTAREA')grow(e)});armed=false;say('Borrado')
+  };
+})();`;
+
+const REMOTE_CSS = `
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:#faf8f3}
+.wrapr{max-width:680px;margin:0 auto;padding:26px 20px 80px}
+.tools{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.tools button{font:inherit;font-size:24px;text-transform:uppercase;background:none;border:1.5px solid #2b2b2b;border-radius:3px 10px 4px 9px;padding:8px 16px;color:#2b2b2b;cursor:pointer}
+.tools button:active{background:#2b2b2b;color:#faf8f3}
+#msg{font-size:22px;color:#777}
+`;
 
 const SCRIPT = `
 (function(){
@@ -89,33 +160,26 @@ function reunionEquipoRouter(ctx) {
     next();
   });
 
-  const ta = (k, val) => `<textarea data-k="${k}" rows="3" spellcheck="false" autocomplete="off" aria-label="${esc(k)}">${esc(val || '')}</textarea>`;
-
   r.get(
     '/reunion-equipo',
     ah(async (req, res) => {
       const d = await re.loadAll(db);
-      let h = '';
-      let seed = 5;
-      const title = (t) => `<h2>${esc(t)}${squig((seed += 7))}</h2>`;
-      h += `<section>${title('Entrevista cruzada')}`;
-      for (const [k, q] of re.ENTREVISTA) h += `<p class="q">${esc(q)}</p>${ta(k, d[k])}<div style="height:22px"></div>`;
-      h += '</section>';
-      for (const t of re.TEMAS) {
-        h += `<section>${title(t.title)}<p class="q">${esc(t.q)}</p>`;
-        for (const [c, l] of re.CAMPOS_TEMA) h += `<p class="lbl">${esc(l)}</p>${ta(t.k + c, d[t.k + c])}`;
-        h += '</section>';
-      }
-      h += `<section>${title('Lo que decidimos juntos')}`;
-      for (const n of re.ACUERDOS) {
-        h += `<div class="ac"><span class="n">${n}.</span><div class="body">${ta('ac' + n, d['ac' + n])}
-          <div class="row"><label>Responsable<input data-k="ac${n}r" value="${esc(d['ac' + n + 'r'] || '')}" maxlength="${re.MAX_LEN}" autocomplete="off"></label>
-          <label class="f">Fecha<input data-k="ac${n}f" value="${esc(d['ac' + n + 'f'] || '')}" maxlength="${re.MAX_LEN}" autocomplete="off"></label></div></div></div>`;
-      }
-      h += '</section>';
+      const h = sheet(d);
+      const link = await re.ensureLink(db);
+      const url = `${String(config.publicUrl || '').replace(/\/$/, '')}/reunion/${link.token}`;
       const body = `<style>${CSS}</style>
         <h1>Reunión de equipo</h1>
         <p class="sub">Lo que se escribe aquí se guarda solo y lo ve cualquiera que entre al panel.</p>
+        <div class="card">
+          <h2 style="margin-top:0">Libreta para el equipo</h2>
+          <p class="muted" style="margin:0 0 10px">Envía este enlace por WhatsApp: cada persona abre su libreta en el teléfono, sin entrar al CRM. Lo que escribe se queda en su propio teléfono y no llega aquí.</p>
+          ${link.active ? `<input type="text" readonly value="${esc(url)}" onclick="this.select()" class="mono">` : '<p><span class="badge b-warn">Enlace apagado</span></p>'}
+          <div class="actions">
+            ${link.active ? `<a class="btn small" href="https://wa.me/?text=${encodeURIComponent('Libreta para la reunión de equipo: ' + url)}" target="_blank" rel="noopener">Enviar por WhatsApp</a>` : ''}
+            <form class="inline" method="post" action="/reunion-equipo/enlace/${link.active ? 'apagar' : 'encender'}"><button class="sec small">${link.active ? 'Apagar enlace' : 'Encender enlace'}</button></form>
+            <form class="inline" method="post" action="/reunion-equipo/enlace/regenerar" onsubmit="return confirm('El enlace anterior dejará de funcionar. ¿Generar uno nuevo?')"><button class="sec small">Generar enlace nuevo</button></form>
+          </div>
+        </div>
         <div class="re-state"><span id="re-state"></span></div>
         <div class="re">${h}</div>
         <div class="actions"><button type="button" class="sec" id="re-copy">Copiar todo</button>
@@ -142,7 +206,62 @@ function reunionEquipoRouter(ctx) {
     })
   );
 
+  r.post(
+    '/reunion-equipo/enlace/:accion',
+    ah(async (req, res) => {
+      const a = req.params.accion;
+      const go = (ok) => res.redirect(303, '/reunion-equipo?ok=' + encodeURIComponent(ok));
+      if (a === 'regenerar') {
+        await re.regenerateLink(db);
+        return go('Enlace nuevo generado. El anterior ya no funciona; vuelve a enviarlo.');
+      }
+      if (a !== 'apagar' && a !== 'encender') return res.sendStatus(404);
+      await re.ensureLink(db);
+      await re.setLinkActive(db, a === 'encender');
+      go(a === 'encender' ? 'Enlace encendido.' : 'Enlace apagado.');
+    })
+  );
+
   return r;
 }
 
-module.exports = { reunionEquipoRouter };
+/** Libreta del equipo: sin sesión, protegida por el enlace secreto. No lee ni escribe en la base de datos. */
+function reunionRemotaRouter(ctx) {
+  const { db, config } = ctx;
+  const r = express.Router();
+  const limiter = createRateLimiter({ max: 120 });
+  const page = (status, body, extra = '') => ({
+    status,
+    html: `<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#faf8f3">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<title>Reunión de equipo</title><style>${REMOTE_CSS}${CSS}</style></head><body><div class="wrapr">${body}</div>${extra}</body></html>`,
+  });
+  const send = (res, o) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(o.status).send(o.html);
+  };
+
+  r.get(
+    '/reunion/:token',
+    ah(async (req, res) => {
+      if (!limiter.take(`${req.ip}|get`)) return res.sendStatus(429);
+      if (!(await re.linkIsValid(db, req.params.token))) {
+        return send(res, page(404, '<div class="re"><h2>Enlace no válido</h2><p class="q">Pídele uno nuevo a quien administra el panel.</p></div>'));
+      }
+      send(
+        res,
+        page(
+          200,
+          `<div class="re">${sheet()}<div class="tools"><button type="button" id="copy">Copiar todo</button><button type="button" id="wa">Enviar por WhatsApp</button><button type="button" id="clear">Borrar</button><span id="msg"></span></div></div>`,
+          `<script>${REMOTE_SCRIPT}</script>`
+        )
+      );
+    })
+  );
+
+  return r;
+}
+
+module.exports = { reunionEquipoRouter, reunionRemotaRouter };

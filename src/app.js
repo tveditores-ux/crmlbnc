@@ -12,7 +12,7 @@ const { reportRouter } = require('./routes/report');
 const { consolidationRouter } = require('./routes/consolidation');
 const { nuevaVidaRouter } = require('./routes/nueva-vida');
 const { bautizadosRouter } = require('./routes/bautizados');
-const { reunionEquipoRouter } = require('./routes/reunion-equipo');
+const { reunionEquipoRouter, reunionRemotaRouter } = require('./routes/reunion-equipo');
 const { remoteRouter } = require('./routes/attendance-remote');
 const { careRemoteRouter } = require('./routes/care-remote');
 const { careIntakeRouter } = require('./routes/care-intake');
@@ -82,6 +82,7 @@ function createApp(ctx) {
   app.use(googleRouter(ctx));
   app.use(remoteRouter(ctx)); // formulario del teléfono: protegido por enlace secreto, sin sesión
   app.use(careIntakeRouter(ctx)); // enlace común para todos los líderes: también por enlace secreto
+  app.use(reunionRemotaRouter(ctx)); // libreta de la reunión de equipo: enlace secreto, sin sesión
   app.use(careRemoteRouter(ctx)); // reporte del líder de grupo de cuidado: igual, enlace secreto
 
   app.get('/entrar', (req, res) => res.send(loginPage()));

@@ -1,4 +1,5 @@
 'use strict';
+const crypto = require('crypto');
 
 /** Hoja de la reunión extendida de equipo: casillas de texto que se guardan solas. */
 
@@ -55,4 +56,33 @@ async function clearAll(db) {
   await db.query('DELETE FROM reunion_equipo');
 }
 
-module.exports = { ENTREVISTA, TEMAS, CAMPOS_TEMA, ACUERDOS, KEYS, MAX_LEN, loadAll, saveField, clearAll };
+/* ---------- Enlace remoto (libreta personal, sin sesión del panel) ----------
+ * El token vive en care_settings (misma tabla de ajustes que el enlace común de líderes). */
+const newToken = () => crypto.randomBytes(16).toString('base64url');
+
+async function getLink(db) {
+  const { rows } = await db.query("SELECT key, value FROM care_settings WHERE key IN ('reunion_token', 'reunion_active')");
+  const m = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  return { token: m.reunion_token || '', active: m.reunion_active !== 'no' };
+}
+async function ensureLink(db) {
+  const cur = await getLink(db);
+  if (cur.token) return cur;
+  await db.query("INSERT INTO care_settings (key, value) VALUES ('reunion_token', $1) ON CONFLICT (key) DO NOTHING", [newToken()]);
+  return getLink(db);
+}
+async function regenerateLink(db) {
+  await db.query("INSERT INTO care_settings (key, value) VALUES ('reunion_token', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", [newToken()]);
+  await db.query("INSERT INTO care_settings (key, value) VALUES ('reunion_active', 'si') ON CONFLICT (key) DO UPDATE SET value = 'si'");
+}
+async function setLinkActive(db, on) {
+  await db.query("INSERT INTO care_settings (key, value) VALUES ('reunion_active', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", [on ? 'si' : 'no']);
+}
+/** Solo el enlace vigente y encendido abre la libreta. */
+async function linkIsValid(db, token) {
+  if (!/^[A-Za-z0-9_-]{16,64}$/.test(String(token))) return false;
+  const l = await getLink(db);
+  return l.active && l.token === token;
+}
+
+module.exports = { getLink, ensureLink, regenerateLink, setLinkActive, linkIsValid, ENTREVISTA, TEMAS, CAMPOS_TEMA, ACUERDOS, KEYS, MAX_LEN, loadAll, saveField, clearAll };
