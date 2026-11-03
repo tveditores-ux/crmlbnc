@@ -12,6 +12,7 @@ const { reportRouter } = require('./routes/report');
 const { consolidationRouter } = require('./routes/consolidation');
 const { nuevaVidaRouter } = require('./routes/nueva-vida');
 const { bautizadosRouter } = require('./routes/bautizados');
+const { reunionEquipoRouter } = require('./routes/reunion-equipo');
 const { remoteRouter } = require('./routes/attendance-remote');
 const { careRemoteRouter } = require('./routes/care-remote');
 const { careIntakeRouter } = require('./routes/care-intake');
@@ -124,6 +125,7 @@ function createApp(ctx) {
   app.use(consolidationRouter(ctx));
   app.use(nuevaVidaRouter(ctx));
   app.use(bautizadosRouter(ctx));
+  app.use(reunionEquipoRouter(ctx));
   app.use(careGroupsRouter(ctx));
   app.use(adminRouter(ctx));
 
