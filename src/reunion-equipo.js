@@ -10,7 +10,7 @@ const ENTREVISTA = [
 const TEMAS = [
   { k: 't1', title: 'Recibir y acompañar', q: 'Cómo recibimos y acompañamos a una persona nueva' },
   { k: 't2', title: 'Comunicarnos', q: 'Cómo nos comunicamos' },
-  { k: 't3', title: 'Servicios y casa', q: 'Nuestros servicios y la casa' },
+  { k: 't3', title: 'Servicios y GdeC', q: 'Nuestros servicios y los grupos de cuidado' },
   { k: 't4', title: 'Cuidarnos', q: 'Cómo nos cuidamos y trabajamos entre nosotros' },
 ];
 const CAMPOS_TEMA = [
