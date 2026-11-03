@@ -93,3 +93,53 @@ test('enlace remoto: token inválido, apagado y regenerado dejan de abrir', asyn
     assert.equal((await post('otra')).status, 404);
   });
 });
+
+const DEV = 'dispositivo-prueba-0001';
+const sendTo = (base, token, body) => fetch(`${base}/reunion/${token}/enviar`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+test('respuestas: se guardan por aparato, reenviar corrige y el panel las muestra escapadas', async (t) => {
+  await withApp(t, async ({ db, get, base }) => {
+    const token = tokenOf(await (await get('/reunion-equipo')).text());
+    const r1 = await sendTo(base, token, { device: DEV, name: 'Silmar', answers: { t2a: 'Anuncios <i>claros</i>', ac1: 'Acuerdo uno', ac1r: 'Laura', inventada: 'x' } });
+    assert.equal(r1.status, 204);
+    const r2 = await sendTo(base, token, { device: DEV, name: 'Silmar A.', answers: { t2a: 'Versión corregida' } });
+    assert.equal(r2.status, 204);
+    const { rows } = await db.query('SELECT name, answers FROM reunion_respuestas');
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].name, 'Silmar A.');
+    assert.deepEqual(rows[0].answers, { t2a: 'Versión corregida' });
+    await sendTo(base, token, { device: 'otro-aparato-00000002', name: 'Laura', answers: { t2a: 'Tarde <script>x</script>' } });
+    const tema = await (await get('/reunion-equipo/respuestas')).text();
+    assert.ok(tema.includes('Versión corregida') && tema.includes('Laura'));
+    assert.ok(!tema.includes('<script>x'));
+    const per = await (await get('/reunion-equipo/respuestas?ver=persona')).text();
+    assert.ok(per.includes('Silmar A.'));
+    const panel = await (await get('/reunion-equipo')).text();
+    assert.ok(panel.includes('Respuestas del equipo (2)'));
+  });
+});
+
+test('respuestas: rechaza sin nombre, vacías, aparato inválido, token malo o enlace apagado; no toca people', async (t) => {
+  await withApp(t, async ({ db, get, base }) => {
+    const token = tokenOf(await (await get('/reunion-equipo')).text());
+    assert.equal((await sendTo(base, token, { device: DEV, name: '', answers: { e1: 'x' } })).status, 400);
+    assert.equal((await sendTo(base, token, { device: DEV, name: 'Ana', answers: {} })).status, 400);
+    assert.equal((await sendTo(base, token, { device: 'corto', name: 'Ana', answers: { e1: 'x' } })).status, 400);
+    assert.equal((await sendTo(base, 'token-que-no-existe-123456', { device: DEV, name: 'Ana', answers: { e1: 'x' } })).status, 404);
+    await fetch(`${base}/reunion-equipo/enlace/apagar`, { method: 'POST', redirect: 'manual' });
+    assert.equal((await sendTo(base, token, { device: DEV, name: 'Ana', answers: { e1: 'x' } })).status, 404);
+    assert.equal((await db.query('SELECT 1 FROM reunion_respuestas')).rows.length, 0);
+    assert.equal((await db.query('SELECT 1 FROM people')).rows.length, 0);
+  });
+});
+
+test('respuestas: borrar una respuesta desde el panel', async (t) => {
+  await withApp(t, async ({ db, base, get }) => {
+    const token = tokenOf(await (await get('/reunion-equipo')).text());
+    await sendTo(base, token, { device: DEV, name: 'Ana', answers: { e1: 'hola' } });
+    const { rows } = await db.query('SELECT id FROM reunion_respuestas');
+    const r = await fetch(`${base}/reunion-equipo/respuestas/${rows[0].id}/borrar`, { method: 'POST', redirect: 'manual' });
+    assert.equal(r.status, 303);
+    assert.equal((await db.query('SELECT 1 FROM reunion_respuestas')).rows.length, 0);
+  });
+});

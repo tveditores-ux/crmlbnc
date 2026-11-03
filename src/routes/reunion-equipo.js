@@ -70,6 +70,9 @@ const REMOTE_SCRIPT = `
   try{data=JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){data={}}
   function persist(){try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){}}
   function grow(e){e.style.height='auto';e.style.height=Math.max(108,e.scrollHeight)+'px'}
+  var dev=null;
+  try{dev=localStorage.getItem('lbnc-reunion-device')}catch(e){}
+  if(!dev){dev=(window.crypto&&crypto.randomUUID?crypto.randomUUID():String(Math.random()).slice(2)+String(Date.now())).replace(/[^A-Za-z0-9_-]/g,'');while(dev.length<16)dev+='x';try{localStorage.setItem('lbnc-reunion-device',dev)}catch(e){}}
   var msg=document.getElementById('msg');
   function say(t){msg.textContent=t;setTimeout(function(){msg.textContent=''},2500)}
   document.querySelectorAll('.re textarea,.re input').forEach(function(e){
@@ -90,6 +93,15 @@ const REMOTE_SCRIPT = `
     return o.join('\\n');
   }
   function fb(t){var x=document.createElement('textarea');x.value=t;document.body.appendChild(x);x.select();try{document.execCommand('copy');say('Copiado')}catch(e){say('No se pudo copiar')}document.body.removeChild(x)}
+  document.getElementById('send').onclick=function(){
+    var ans={},name='';
+    document.querySelectorAll('.re textarea,.re input').forEach(function(e){var k=e.getAttribute('data-k');if(k==='nombre')name=e.value;else ans[k]=e.value});
+    if(name.trim().length<2){say('Escribe tu nombre arriba');return}
+    say('Enviando…');
+    fetch(location.pathname+'/enviar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({device:dev,name:name,answers:ans})})
+      .then(function(r){if(r.ok)say('Enviado. Gracias');else if(r.status===400)return r.json().then(function(j){say((j.errors||['No se pudo enviar'])[0])});else throw 0})
+      .catch(function(){say('No se pudo enviar. Intenta de nuevo')});
+  };
   document.getElementById('copy').onclick=function(){var t=compile();try{navigator.clipboard.writeText(t).then(function(){say('Copiado')},function(){fb(t)})}catch(e){fb(t)}};
   document.getElementById('wa').onclick=function(){window.location.href='https://wa.me/?text='+encodeURIComponent(compile())};
   var armed=false;
@@ -166,13 +178,14 @@ function reunionEquipoRouter(ctx) {
       const d = await re.loadAll(db);
       const h = sheet(d);
       const link = await re.ensureLink(db);
+      const nResp = await re.countSubmissions(db);
       const url = `${String(config.publicUrl || '').replace(/\/$/, '')}/reunion/${link.token}`;
       const body = `<style>${CSS}</style>
         <h1>Reunión de equipo</h1>
         <p class="sub">Lo que se escribe aquí se guarda solo y lo ve cualquiera que entre al panel.</p>
         <div class="card">
           <h2 style="margin-top:0">Libreta para el equipo</h2>
-          <p class="muted" style="margin:0 0 10px">Envía este enlace por WhatsApp: cada persona abre su libreta en el teléfono, sin entrar al CRM. Lo que escribe se queda en su propio teléfono y no llega aquí.</p>
+          <p class="muted" style="margin:0 0 10px">Envía este enlace por WhatsApp: cada persona abre su libreta en el teléfono, sin entrar al CRM. Lo que escribe se queda en su teléfono hasta que toque «Enviar a la iglesia»; entonces llega a <a href="/reunion-equipo/respuestas">Respuestas del equipo (${nResp})</a>.</p>
           ${link.active ? `<input type="text" readonly value="${esc(url)}" onclick="this.select()" class="mono">` : '<p><span class="badge b-warn">Enlace apagado</span></p>'}
           <div class="actions">
             ${link.active ? `<a class="btn small" href="https://wa.me/?text=${encodeURIComponent('Libreta para la reunión de equipo: ' + url)}" target="_blank" rel="noopener">Enviar por WhatsApp</a>` : ''}
@@ -206,6 +219,60 @@ function reunionEquipoRouter(ctx) {
     })
   );
 
+  r.get(
+    '/reunion-equipo/respuestas',
+    ah(async (req, res) => {
+      const rows = await re.listSubmissions(db);
+      const porPersona = req.query.ver === 'persona';
+      const fecha = (d) => new Date(d).toLocaleString('es-VE', { timeZone: config.timezone, dateStyle: 'short', timeStyle: 'short' });
+      const bloque = (nombre, texto) => `<p style="margin:4px 0 10px"><strong>${esc(nombre)}:</strong> <span style="white-space:pre-wrap">${esc(texto)}</span></p>`;
+      let h = '';
+      if (porPersona) {
+        for (const x of rows) {
+          let inner = '';
+          const campo = (k, etiqueta) => (x.answers[k] ? `<p class="muted" style="margin:10px 0 0;font-size:13px">${esc(etiqueta)}</p><p style="margin:2px 0;white-space:pre-wrap">${esc(x.answers[k])}</p>` : '');
+          for (const [k, q] of re.ENTREVISTA) inner += campo(k, q);
+          for (const t of re.TEMAS) for (const [c, l] of re.CAMPOS_TEMA) inner += campo(t.k + c, `${t.title} · ${l}`);
+          for (const n of re.ACUERDOS) {
+            const resp = x.answers[`ac${n}r`] ? ` — Responsable: ${x.answers[`ac${n}r`]}` : '';
+            const fch = x.answers[`ac${n}f`] ? ` — Fecha: ${x.answers[`ac${n}f`]}` : '';
+            if (x.answers[`ac${n}`]) inner += campo(`ac${n}`, `Acuerdo ${n}${resp}${fch}`);
+          }
+          h += `<div class="card"><div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><h2 style="margin:0">${esc(x.name)}</h2><span class="muted" style="font-size:12px">${esc(fecha(x.updated_at))}</span></div>${inner}
+            <form method="post" action="/reunion-equipo/respuestas/${x.id}/borrar" onsubmit="return confirm('¿Borrar la respuesta de ${esc(x.name).replace(/'/g, '')}?')" style="margin-top:12px"><button class="danger small">Borrar</button></form></div>`;
+        }
+      } else {
+        const seccion = (titulo, items) => {
+          const parts = items
+            .map(([k, etiqueta]) => {
+              const con = rows.filter((x) => x.answers[k]);
+              return con.length ? `<p class="muted" style="margin:14px 0 2px;font-size:13px">${esc(etiqueta)}</p>${con.map((x) => bloque(x.name, x.answers[k])).join('')}` : '';
+            })
+            .join('');
+          return parts ? `<div class="card"><h2 style="margin-top:0">${esc(titulo)}</h2>${parts}</div>` : '';
+        };
+        h += seccion('Entrevista cruzada', re.ENTREVISTA);
+        for (const t of re.TEMAS) h += seccion(`${t.title} — ${t.q}`, re.CAMPOS_TEMA.map(([c, l]) => [t.k + c, l]));
+        const acu = re.ACUERDOS.map((n) => [`ac${n}`, `Acuerdo ${n}`]);
+        h += seccion('Lo que decidimos juntos', acu);
+      }
+      const body = `<p><a href="/reunion-equipo">← Reunión de equipo</a></p><h1>Respuestas del equipo</h1>
+        <p class="sub">${rows.length} ${rows.length === 1 ? 'persona ha enviado' : 'personas han enviado'} su libreta.</p>
+        <div class="actions"><a class="btn ${porPersona ? 'sec' : ''} small" href="/reunion-equipo/respuestas">Por tema</a><a class="btn ${porPersona ? '' : 'sec'} small" href="/reunion-equipo/respuestas?ver=persona">Por persona</a></div>
+        ${h || '<div class="card muted">Aún no ha llegado ninguna respuesta.</div>'}`;
+      res.send(layout({ title: 'Respuestas del equipo', active: '/reunion-equipo', body, config, query: req.query }));
+    })
+  );
+
+  r.post(
+    '/reunion-equipo/respuestas/:id/borrar',
+    ah(async (req, res) => {
+      const id = /^\d{1,9}$/.test(req.params.id) ? Number(req.params.id) : 0;
+      const ok = id && (await re.deleteSubmission(db, id));
+      res.redirect(303, '/reunion-equipo/respuestas?' + (ok ? 'ok=' + encodeURIComponent('Respuesta borrada.') : 'err=' + encodeURIComponent('No se encontró esa respuesta.')));
+    })
+  );
+
   r.post(
     '/reunion-equipo/enlace/:accion',
     ah(async (req, res) => {
@@ -230,6 +297,7 @@ function reunionRemotaRouter(ctx) {
   const { db, config } = ctx;
   const r = express.Router();
   const limiter = createRateLimiter({ max: 120 });
+  const sendLimiter = createRateLimiter({ max: 60 });
   const page = (status, body, extra = '') => ({
     status,
     html: `<!doctype html><html lang="es"><head><meta charset="utf-8">
@@ -254,10 +322,22 @@ function reunionRemotaRouter(ctx) {
         res,
         page(
           200,
-          `<div class="re">${sheet()}<div class="tools"><button type="button" id="copy">Copiar todo</button><button type="button" id="wa">Enviar por WhatsApp</button><button type="button" id="clear">Borrar</button><span id="msg"></span></div></div>`,
+          `<div class="re"><p class="lbl" style="margin-top:0">Mi nombre</p><input data-k="nombre" maxlength="80" autocomplete="name" style="border-bottom:1px solid #b9b6ae;height:36px;margin-bottom:40px">${sheet()}<div class="tools"><button type="button" id="send">Enviar a la iglesia</button><button type="button" id="copy">Copiar todo</button><button type="button" id="wa">Enviar por WhatsApp</button><button type="button" id="clear">Borrar</button><span id="msg"></span></div></div>`,
           `<script>${REMOTE_SCRIPT}</script>`
         )
       );
+    })
+  );
+
+  r.post(
+    '/reunion/:token/enviar',
+    ah(async (req, res) => {
+      if (!(await re.linkIsValid(db, req.params.token))) return res.sendStatus(404);
+      if (!sendLimiter.take(`${req.ip}|${req.params.token}`)) return res.sendStatus(429);
+      const sub = re.parseSubmission(req.body);
+      if (sub.errors.length) return res.status(400).json({ errors: sub.errors });
+      await re.saveSubmission(db, sub.value);
+      res.sendStatus(204);
     })
   );
 

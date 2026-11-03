@@ -85,4 +85,46 @@ async function linkIsValid(db, token) {
   return l.active && l.token === token;
 }
 
-module.exports = { getLink, ensureLink, regenerateLink, setLinkActive, linkIsValid, ENTREVISTA, TEMAS, CAMPOS_TEMA, ACUERDOS, KEYS, MAX_LEN, loadAll, saveField, clearAll };
+/* ---------- Respuestas enviadas por el equipo ---------- */
+const DEVICE_RE = /^[A-Za-z0-9_-]{16,64}$/;
+
+/** Valida lo que llega del teléfono. Devuelve { value, errors }. Solo pasan las casillas conocidas. */
+function parseSubmission(body) {
+  const b = body || {};
+  const errors = [];
+  const name = String(b.name ?? '').trim().replace(/\s+/g, ' ').slice(0, 80);
+  if (name.length < 2) errors.push('Escribe tu nombre.');
+  const device = String(b.device ?? '');
+  if (!DEVICE_RE.test(device)) errors.push('Aparato no válido.');
+  const answers = {};
+  const raw = b.answers && typeof b.answers === 'object' && !Array.isArray(b.answers) ? b.answers : {};
+  for (const k of Object.keys(raw)) {
+    if (!KEYS.has(k)) continue;
+    const v = String(raw[k] ?? '').replace(/\r\n/g, '\n').trim().slice(0, MAX_LEN);
+    if (v) answers[k] = v;
+  }
+  if (!Object.keys(answers).length) errors.push('Escribe al menos una respuesta antes de enviar.');
+  return { value: { device, name, answers }, errors };
+}
+
+async function saveSubmission(db, { device, name, answers }) {
+  await db.query(
+    `INSERT INTO reunion_respuestas (device_id, name, answers) VALUES ($1, $2, $3::jsonb)
+     ON CONFLICT (device_id) DO UPDATE SET name = EXCLUDED.name, answers = EXCLUDED.answers, updated_at = now()`,
+    [device, name, JSON.stringify(answers)]
+  );
+}
+async function listSubmissions(db) {
+  const { rows } = await db.query('SELECT id, name, answers, updated_at FROM reunion_respuestas ORDER BY lower(name), id');
+  return rows;
+}
+async function countSubmissions(db) {
+  const { rows } = await db.query('SELECT count(*)::int AS n FROM reunion_respuestas');
+  return rows[0].n;
+}
+async function deleteSubmission(db, id) {
+  const { rowCount } = await db.query('DELETE FROM reunion_respuestas WHERE id = $1', [id]);
+  return rowCount > 0;
+}
+
+module.exports = { parseSubmission, saveSubmission, listSubmissions, countSubmissions, deleteSubmission, getLink, ensureLink, regenerateLink, setLinkActive, linkIsValid, ENTREVISTA, TEMAS, CAMPOS_TEMA, ACUERDOS, KEYS, MAX_LEN, loadAll, saveField, clearAll };
