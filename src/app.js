@@ -1,5 +1,6 @@
 'use strict';
 const express = require('express');
+const path = require('path');
 const { adminRouter } = require('./routes/admin');
 const { publicRouter } = require('./routes/public');
 const { conversationsRouter } = require('./routes/conversations');
@@ -57,6 +58,9 @@ function createApp(ctx) {
       res.status(503).json({ ok: false, error: 'db' });
     }
   });
+
+  // Favicon e íconos: públicos (la página de entrada también los necesita) y con caché.
+  app.use(express.static(path.join(__dirname, 'public'), { maxAge: '7d', index: false }));
 
   app.use(publicRouter(ctx));
 

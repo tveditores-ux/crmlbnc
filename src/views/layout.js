@@ -99,6 +99,10 @@ function layout({ title, active, body, config, query, bare = false }) {
       : '';
   return `<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#1e3a8a">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <title>${esc(title)} · ${esc(church)}</title><style>${CSS}</style></head><body>
 ${dryBanner}
 <header class="top"><div class="wrap"><div class="brand">Comunicación<small>${esc(church)}</small></div>${nav}</div></header>
