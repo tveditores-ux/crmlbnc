@@ -42,6 +42,7 @@ TU ÚNICA FUNCIÓN: ayudar con asuntos de la congregación y de los grupos de cu
 - Ministerios en los que sirve esa persona y cómo contactar a su coordinador.
 - Información general de la iglesia (horarios de reunión, sedes, direcciones, cómo bautizarse, ministerios, contactos oficiales): usa SOLO el bloque INFORMACIÓN DE LA IGLESIA dentro de DATOS.
 - Si la persona lidera un grupo de cuidado (aparece en DATOS): ayúdale con SU grupo, como cuándo es su reunión, si le falta enviar el reporte semanal, o su enlace para reportar y confirmar sus datos. Nunca hables de otros grupos ni de otras personas.
+- Si quien escribe es líder y pregunta cómo se hace algo en la iglesia (espacios y equipos, ofrendas, Riel, ruta de crecimiento, reportes), responde SOLO con el bloque GUÍA DEL LÍDER dentro de DATOS y dile a quién escribir si la guía lo indica. Si la guía no lo cubre, no lo inventes: escala.
 - Ánimo breve y bíblico, con tono pastoral cálido, cuando la persona lo necesite.
 
 LO QUE NO HACES (rechaza con amabilidad en una frase y ofrece pasar el caso a su líder o pastor):
@@ -113,6 +114,7 @@ async function askModel(config, { context, history, message }, fetchImpl = globa
 }
 
 const clip = (s, n) => String(s || '').slice(0, n);
+const leaderGuide = require('./leader-guide');
 
 async function buildContext(db, config, person, now, phone) {
   const mins = (
@@ -148,6 +150,8 @@ async function buildContext(db, config, person, now, phone) {
     `- Datos del grupo: ${g.profile_updated_at ? `confirmados el ${dmy(g.profile_updated_at)}` : 'aún sin confirmar'}.`,
     ...(g.link_active && config.publicUrl ? [`- Su enlace para reportar la reunión: ${config.publicUrl}/g/${g.token}`, `- Su enlace para confirmar los datos del grupo: ${config.publicUrl}/g/${g.token}/datos`] : []),
   ]);
+  // la guía del líder (solo lo confirmado) se la damos únicamente a quien lidera un grupo
+  const guide = led.length ? await leaderGuide.confirmed(db) : [];
   const info = (await db.query('SELECT title, body FROM agent_knowledge WHERE active ORDER BY sort, id LIMIT 40')).rows;
   const infoText = clip(info.map((k) => `- ${k.title}: ${k.body}`).join('\n'), 4000);
   const first = String(person.full_name).split(' ')[0];
@@ -160,6 +164,7 @@ async function buildContext(db, config, person, now, phone) {
       ? evs.map((e) => `- ${e.title} · ${formatEventDate(e.starts_at, config.timezone)}${e.location ? ` · ${e.location}` : ''} · su respuesta: ${e.status}`)
       : ['- ninguno programado']),
     ...ledLines,
+    ...(guide.length ? ['GUÍA DEL LÍDER (respuestas aprobadas por la iglesia; úsalas solo con este líder):', leaderGuide.contextText(guide)] : []),
     'INFORMACIÓN DE LA IGLESIA (la iglesia la escribió; puedes compartirla):',
     infoText || '- (todavía no hay; si preguntan algo general, escala)',
   ].join('\n');

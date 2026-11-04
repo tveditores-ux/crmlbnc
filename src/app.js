@@ -5,6 +5,7 @@ const { adminRouter } = require('./routes/admin');
 const { publicRouter } = require('./routes/public');
 const { conversationsRouter } = require('./routes/conversations');
 const { asistenteRouter } = require('./routes/asistente');
+const { leaderGuideRouter } = require('./routes/leader-guide');
 const { ministriesMergeRouter } = require('./routes/ministries-merge');
 const { googleRouter } = require('./routes/google');
 const { attendanceRouter } = require('./routes/attendance');
@@ -127,6 +128,7 @@ function createApp(ctx) {
 
   app.use(conversationsRouter(ctx));
   app.use(asistenteRouter(ctx));
+  app.use(leaderGuideRouter(ctx));
   app.use(ministriesMergeRouter(ctx));
   app.use(memberRequestsRouter(ctx));
   app.use(attendanceRouter(ctx));

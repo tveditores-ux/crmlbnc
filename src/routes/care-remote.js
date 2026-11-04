@@ -6,6 +6,7 @@ const { displayPhone } = require('../phone');
 const { createRateLimiter } = require('../attendance-store');
 const { parseReport, upsertReport, parseLeaderProfile, parsePhoto, savePhoto, STAGES: cgStages, CONGREGATIONS: cgCongregations, DAYS: cgDays } = require('../care-groups');
 const fmt = require('../care-formats');
+const lg = require('../leader-guide');
 const views = require('../views/care-formats');
 const { leaderFields, PHOTO_SCRIPT } = require('../views/care-leader-form');
 
@@ -66,8 +67,8 @@ function careRemoteRouter(ctx) {
   const invalid = () =>
     shell('Enlace no válido', '<div class="card"><h1>Enlace no válido</h1><p class="muted">Este enlace ya no está activo. Pídele uno nuevo a quien administra el panel.</p></div>', 404);
 
-  const TABS = [['/datos', 'Datos del grupo'], ['', 'Reporte'], ['/planificador', 'Planificador'], ['/gente', 'Ruta de crecimiento'], ['/foda', 'F.O.D.A.'], ['/trimestral', 'Trimestral']];
-  const tabKey = { '/datos': 'datos', '': 'reporte', '/planificador': 'planificador', '/gente': 'gente', '/foda': 'foda', '/trimestral': 'trimestral' };
+  const TABS = [['/datos', 'Datos del grupo'], ['', 'Reporte'], ['/planificador', 'Planificador'], ['/gente', 'Ruta de crecimiento'], ['/foda', 'F.O.D.A.'], ['/trimestral', 'Trimestral'], ['/guia', 'Guía']];
+  const tabKey = { '/datos': 'datos', '': 'reporte', '/planificador': 'planificador', '/gente': 'gente', '/foda': 'foda', '/trimestral': 'trimestral', '/guia': 'guia' };
   const tabs = (token, on) =>
     `<div class="tabs">${TABS.map(([p, l]) => `<a href="/g/${esc(token)}${p}" class="${tabKey[p] === on ? 'on' : ''}">${l}</a>`).join('')}</div>`;
   const tooMany = () => shell('Demasiados envíos', '<div class="card"><h1>Demasiados envíos</h1><p class="muted">Espera un rato antes de enviar otro.</p></div>', 429);
@@ -319,6 +320,39 @@ function careRemoteRouter(ctx) {
       if (errors.length) return send(res, shell('F.O.D.A.', fodaForm(g, req.params.token, value, errors), 400));
       await fmt.upsertFoda(db, g.id, value);
       send(res, saved(req.params.token, `/foda?q=${value.quarter}`, 'F.O.D.A. guardado.'));
+    })
+  );
+
+  // Guía del líder: solo lo confirmado por la iglesia, agrupado por tema y con buscador
+  r.get(
+    '/g/:token/guia',
+    ah(async (req, res) => {
+      const g = await findGroup(req.params.token);
+      if (!g) return send(res, invalid());
+      const groups = lg.groupByCategory(await lg.confirmed(db));
+      const body = groups.length
+        ? groups
+            .map(
+              (c) => `<h2>${esc(c.category)}</h2>${c.entries
+                .map(
+                  (e) => `<details class="card gq" data-find="${esc((e.question + ' ' + e.answer).toLowerCase())}"><summary style="font-weight:600;cursor:pointer">${esc(e.question)}</summary>
+                    <div style="white-space:pre-wrap;margin-top:8px">${esc(e.answer)}</div>${e.contact ? `<p class="muted" style="margin:8px 0 0;font-size:14px">A quién escribir: <strong>${esc(e.contact)}</strong></p>` : ''}</details>`
+                )
+                .join('')}`
+            )
+            .join('')
+        : '<div class="card"><p class="muted" style="margin:0">La guía todavía no tiene respuestas confirmadas. Cuando la iglesia las apruebe, las verás aquí.</p></div>';
+      send(
+        res,
+        shell(
+          'Guía del líder',
+          `${tabs(req.params.token, 'guia')}<h1>Guía del líder</h1>
+          <p class="sub" style="margin:0">Respuestas de la iglesia a las dudas más comunes de los líderes. Si no encuentras la tuya, escríbele al pastor.</p>
+          <input type="search" id="gfind" placeholder="Buscar una palabra (equipos, ofrenda, Riel…)" autocomplete="off" style="margin-top:12px">
+          ${body}
+          <script>document.getElementById('gfind').addEventListener('input',function(e){var q=e.target.value.toLowerCase();document.querySelectorAll('details.gq').forEach(function(d){d.style.display=d.dataset.find.indexOf(q)<0?'none':'';});document.querySelectorAll('h2').forEach(function(h){var n=h.nextElementSibling;if(!n||!n.classList.contains('gq'))return;var any=false;while(n&&n.classList.contains('gq')){if(n.style.display!=='none')any=true;n=n.nextElementSibling;}h.style.display=any?'':'none';});});</script>`
+        )
+      );
     })
   );
 
