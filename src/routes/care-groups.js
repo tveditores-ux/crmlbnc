@@ -24,6 +24,11 @@ function careGroupsRouter(ctx) {
     return `${d}/${m}/${y}`;
   };
 
+  // confirmación antes de borrar: el mismo patrón de la app (confirm() en el onsubmit, con el texto en data-msg)
+  const delMsg = (name) => `¿Seguro que quieres borrar el grupo "${name}"? Se borrarán también sus reportes y su enlace. Esto no se puede deshacer.`;
+  const delForm = (g) => `<form id="del-${g.id}" method="post" action="/grupos/${g.id}/borrar" data-msg="${esc(delMsg(g.name))}" onsubmit="return confirm(this.dataset.msg)"></form>`;
+  const delButton = (g) => `<button type="submit" form="del-${g.id}" class="small danger" title="Borrar grupo" aria-label="Borrar el grupo ${esc(g.name)}">✕</button>`;
+
   const select = (name, options, value, blank) =>
     `<select name="${name}">${blank ? `<option value="">${esc(blank)}</option>` : ''}${options.map((o) => `<option ${o === value ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
 
@@ -77,12 +82,14 @@ function careGroupsRouter(ctx) {
           const d = cg.daysSince(g.last_report, t);
           const badge = !g.active ? '<span class="badge b-muted">Inactivo</span>' : d === null ? '<span class="badge b-warn">Sin reportes</span>' : d > STALE_DAYS ? `<span class="badge b-warn">Hace ${d} días</span>` : `<span class="badge b-ok">Al día</span>`;
           return `<tr style="${g.active ? '' : 'opacity:.55'}">
+            <td><input type="checkbox" name="ids" value="${g.id}" aria-label="Elegir el grupo ${esc(g.name)}"></td>
             <td>${g.has_photo ? `<img src="/grupos/${g.id}/foto" alt="" width="36" height="36" style="float:left;margin:0 8px 0 0;border-radius:50%;object-fit:cover">` : ''}<a href="/grupos/${g.id}"><strong>${esc(g.name)}</strong></a><div class="muted">${esc([g.stage, g.congregation].filter(Boolean).join(' · '))}</div></td>
             <td>${esc(g.leader_name)}<div class="muted">${esc(displayPhone(g.leader_phone))}</div></td>
             <td>${esc([g.meeting_day, g.meeting_time].filter(Boolean).join(' '))}<div class="muted">${esc(g.place)}</div></td>
             <td>${badge}<div class="muted">${g.last_report ? esc(short(g.last_report)) : ''}</div></td>
             <td>${g.reports_30d}</td>
-            <td>${g.profile_updated_at ? `<span class="badge b-ok">Confirmados</span><div class="muted">${esc(short(new Date(g.profile_updated_at).toLocaleDateString('en-CA', { timeZone: config.timezone })))}</div>` : '<span class="badge b-warn">Pendientes</span>'}</td></tr>`;
+            <td>${g.profile_updated_at ? `<span class="badge b-ok">Confirmados</span><div class="muted">${esc(short(new Date(g.profile_updated_at).toLocaleDateString('en-CA', { timeZone: config.timezone })))}</div>` : '<span class="badge b-warn">Pendientes</span>'}</td>
+            <td style="white-space:nowrap">${delButton(g)}</td></tr>`;
         })
         .join('');
       page(
@@ -104,9 +111,28 @@ function careGroupsRouter(ctx) {
           .join('')}</table></div></div>` : ''}
         ${weekly.length ? `<div class="card"><h3>Asistencia semanal en todos los grupos</h3>${charts.lineChart(weekly.map((w) => w.lbl), [{ name: 'Asistentes', values: weekly.map((w) => w.att) }, { name: 'Invitados', values: weekly.map((w) => w.guests) }], { title: 'Asistencia semanal en los grupos de cuidado' })}</div>` : ''}
         ${everyone.length ? `<div class="card"><h3>Ruta de crecimiento: personas por hito (${everyone.length} en total)</h3>${charts.barChart(route, { title: 'Personas por hito de la ruta de crecimiento', color: '#6b5b95' })}</div>` : ''}
-        <div class="table-scroll"><table><tr><th>Grupo</th><th>Líder</th><th>Reunión</th><th>Último reporte</th><th>Reportes (30 d)</th><th>Datos del grupo</th></tr>${
-          rows || '<tr><td colspan="6" class="muted">Aún no hay grupos. Agrega el primero.</td></tr>'
-        }</table></div>
+        <form method="post" action="/grupos/borrar-varios" id="bulk">
+          <p class="toolbar" style="margin-bottom:8px"><button class="small danger" id="bulkBtn">Borrar seleccionados</button><span class="muted" id="bulkInfo" style="flex:0 1 auto"></span></p>
+          <div class="table-scroll"><table><tr><th><input type="checkbox" id="allG" aria-label="Elegir todos los grupos"></th><th>Grupo</th><th>Líder</th><th>Reunión</th><th>Último reporte</th><th>Reportes (30 d)</th><th>Datos del grupo</th><th></th></tr>${
+            rows || '<tr><td colspan="8" class="muted">Aún no hay grupos. Agrega el primero.</td></tr>'
+          }</table></div>
+        </form>
+        ${groups.map(delForm).join('')}
+        <script>
+          (function () {
+            var form = document.getElementById('bulk'), all = document.getElementById('allG'), info = document.getElementById('bulkInfo');
+            function boxes() { return Array.prototype.slice.call(form.querySelectorAll('input[name=ids]')); }
+            function count() { return boxes().filter(function (b) { return b.checked; }).length; }
+            function refresh() { var n = count(); info.textContent = n ? n + (n === 1 ? ' seleccionado' : ' seleccionados') : ''; }
+            all.addEventListener('change', function () { boxes().forEach(function (b) { b.checked = all.checked; }); refresh(); });
+            form.addEventListener('change', refresh);
+            form.addEventListener('submit', function (e) {
+              var n = count();
+              if (!n) { e.preventDefault(); alert('Elige al menos un grupo.'); return; }
+              if (!confirm('¿Borrar ' + n + ' grupo' + (n === 1 ? '' : 's') + '? No se puede deshacer')) e.preventDefault();
+            });
+          })();
+        </script>
         <p class="muted" style="font-size:13px;margin-top:18px"><a href="/grupos/borrar-todo">Borrar todos los datos de grupos de cuidado…</a></p>`
       );
     })
@@ -174,7 +200,8 @@ function careGroupsRouter(ctx) {
           (g) => `<tr data-name="${esc(g.leader_name || g.name)}" data-phone="${esc(g.leader_phone)}">
             <td><strong>${esc(g.name)}</strong><div class="muted">${esc(g.leader_name)}</div></td>
             <td>${g.profile_updated_at ? '<span class="badge b-ok">Confirmados</span>' : '<span class="badge b-warn">Pendientes</span>'}</td>
-            <td style="white-space:nowrap">${g.leader_phone ? '<a class="btn small wa" target="_blank" rel="noopener" href="#">WhatsApp</a>' : '<span class="muted">Sin teléfono</span>'}</td></tr>`
+            <td style="white-space:nowrap">${g.leader_phone ? '<a class="btn small wa" target="_blank" rel="noopener" href="#">WhatsApp</a>' : '<span class="muted">Sin teléfono</span>'}</td>
+            <td>${delButton(g)}</td></tr>`
         )
         .join('');
       page(
@@ -194,7 +221,8 @@ function careGroupsRouter(ctx) {
           <textarea id="tpl" style="min-height:110px">${esc(DEFAULT_ASK)}</textarea>
           <p class="toolbar" style="margin:8px 0 0"><button type="button" class="small sec" id="copyMsg">Copiar mensaje</button>
             <span class="muted">${pending} de ${groups.length} grupos aún no confirman sus datos.</span></p></div>
-        <div class="table-scroll"><table><tr><th>Grupo</th><th>Datos</th><th>Enviar a su líder</th></tr>${rows || '<tr><td colspan="3" class="muted">No hay grupos activos.</td></tr>'}</table></div>
+        <div class="table-scroll"><table><tr><th>Grupo</th><th>Datos</th><th>Enviar a su líder</th><th></th></tr>${rows || '<tr><td colspan="4" class="muted">No hay grupos activos.</td></tr>'}</table></div>
+        ${groups.map(delForm).join('')}
         <script>
           var tpl = document.getElementById('tpl'), url = document.getElementById('common').value;
           function msg(name){ return tpl.value.split('{nombre}').join(name).split('{enlace}').join(url); }
@@ -413,8 +441,10 @@ function careGroupsRouter(ctx) {
         <h2>Reporte trimestral</h2><p class="muted">${tri.reports} reportes en el ${esc(fmt.quarterLabel(quarter))}: ofrendas ${esc(views.money(tri.offeringTotal))}, asistencia promedio ${tri.attendanceAvg ?? '—'}, visitantes promedio ${tri.guestsAvg ?? '—'}. <a href="/grupos/${g.id}/trimestral">Ver el reporte completo</a></p>
         <p class="muted" style="font-size:13px">El plan, la ruta de crecimiento y el F.O.D.A. los llena el líder desde su enlace. Tú también puedes abrirlo: <a href="/g/${esc(g.token)}" target="_blank" rel="noopener">abrir como líder</a>.</p>
         <h2>Datos del grupo</h2>${groupForm(g, `/grupos/${g.id}/editar`)}
-        <form method="post" action="/grupos/${g.id}/${g.active ? 'desactivar' : 'activar'}" style="margin-top:10px"><button class="small ${g.active ? 'danger' : 'sec'}">${g.active ? 'Desactivar grupo' : 'Reactivar grupo'}</button>
-          <span class="muted">Un grupo inactivo conserva su historial y deja de aparecer como pendiente.</span></form>
+        <div class="actions" style="margin-top:10px">
+          <form class="inline" method="post" action="/grupos/${g.id}/${g.active ? 'desactivar' : 'activar'}"><button class="small ${g.active ? 'danger' : 'sec'}">${g.active ? 'Desactivar grupo' : 'Reactivar grupo'}</button></form>
+          <form class="inline" method="post" action="/grupos/${g.id}/borrar" data-msg="${esc(delMsg(g.name))}" onsubmit="return confirm(this.dataset.msg)"><button class="small danger">Borrar grupo</button></form>
+          <span class="muted">Un grupo inactivo conserva su historial. Borrarlo elimina el grupo, sus reportes y su enlace.</span></div>
         <script>document.querySelectorAll('[data-copy]').forEach(function(b){b.addEventListener('click',function(){var t=b.getAttribute('data-copy');(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){b.textContent='¡Copiado!';},function(){b.closest('.card').querySelector('input').select();b.textContent='Selecciona y copia';});});});</script>`
       );
     })
@@ -447,6 +477,26 @@ function careGroupsRouter(ctx) {
         [g.id, value.name, value.leader_name, value.leader_phone, value.leader_email, value.advisor_name, value.belongs_to, value.congregation, value.address, value.place, value.meeting_day, value.meeting_time, value.stage]
       );
       go(res, `/grupos/${g.id}`, { ok: 'Datos guardados.' });
+    })
+  );
+
+  // Borrar un grupo (con confirmación en el navegador). Ruta protegida por la sesión, como todas las de este router.
+  r.post(
+    '/grupos/:id(\\d{1,9})/borrar',
+    ah(async (req, res) => {
+      const out = await cg.deleteGroups(db, [+req.params.id]);
+      if (!out.length) return go(res, '/grupos', { err: 'Ese grupo no existe.' });
+      go(res, '/grupos', { ok: `Grupo "${out[0].name}" borrado` });
+    })
+  );
+  r.post(
+    '/grupos/borrar-varios',
+    ah(async (req, res) => {
+      const ids = (Array.isArray(req.body.ids) ? req.body.ids : [req.body.ids]).filter((x) => /^\d{1,9}$/.test(String(x))).map(Number).slice(0, 500);
+      if (!ids.length) return go(res, '/grupos', { err: 'Elige al menos un grupo.' });
+      const out = await cg.deleteGroups(db, ids);
+      if (!out.length) return go(res, '/grupos', { err: 'Esos grupos ya no existen.' });
+      go(res, '/grupos', { ok: out.length === 1 ? `Grupo "${out[0].name}" borrado` : `${out.length} grupos borrados` });
     })
   );
 

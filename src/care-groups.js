@@ -285,6 +285,24 @@ function upcomingBirthdays(groups, today, days = 45) {
   return out.sort((a, b) => a.inDays - b.inDays || a.who.localeCompare(b.who));
 }
 
+/* ------- Borrar grupos ------- */
+/**
+ * Borra uno o varios grupos con todo lo que depende de ellos, en una sola transacción: reportes, ruta de crecimiento,
+ * planes, F.O.D.A., foto y respuestas de la planilla del líder. Su enlace (/g/<token>) es una columna del propio grupo,
+ * así que se va con él. Todas esas tablas tienen ON DELETE CASCADE (una prueba lo vigila para las que se agreguen).
+ * Devuelve los grupos que sí existían: [{ id, name }]. Los ids que ya no existen se ignoran.
+ */
+async function deleteGroups(pool, ids) {
+  const list = [...new Set((ids || []).map(Number))].filter((n) => Number.isInteger(n) && n > 0 && n < 2147483647);
+  if (!list.length) return [];
+  return tx(pool, async (db) => {
+    const rows = (await db.query('SELECT id, name FROM care_groups WHERE id = ANY($1::int[]) ORDER BY id FOR UPDATE', [list])).rows;
+    if (!rows.length) return [];
+    await db.query('DELETE FROM care_groups WHERE id = ANY($1::int[])', [rows.map((r) => r.id)]);
+    return rows;
+  });
+}
+
 /* ------- Vaciar los datos de grupos de cuidado ------- */
 /** Cuántos registros hay, para mostrar antes de borrar. */
 async function wipeCounts(db) {
@@ -312,4 +330,4 @@ async function wipeAll(pool) {
   });
 }
 
-module.exports = { wipeCounts, wipeAll, parseBirthDate, parseCedula, parseLeaderProfile, leaderRequiredErrors, parsePhoto, savePhoto, upcomingBirthdays, MAX_PHOTO_BYTES, importGroups, STAGES, CONGREGATIONS, DAYS, parseGroup, parseReport, upsertReport, listGroups, daysSince, newToken };
+module.exports = { deleteGroups, wipeCounts, wipeAll, parseBirthDate, parseCedula, parseLeaderProfile, leaderRequiredErrors, parsePhoto, savePhoto, upcomingBirthdays, MAX_PHOTO_BYTES, importGroups, STAGES, CONGREGATIONS, DAYS, parseGroup, parseReport, upsertReport, listGroups, daysSince, newToken };
