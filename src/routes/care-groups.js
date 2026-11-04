@@ -25,6 +25,7 @@ function careGroupsRouter(ctx) {
   };
 
   // confirmación antes de borrar: el mismo patrón de la app (confirm() en el onsubmit, con el texto en data-msg)
+  const yn = (b) => (b === true ? 'sí' : b === false ? 'no' : '');
   const delMsg = (name) => `¿Seguro que quieres borrar el grupo "${name}"? Se borrarán también sus reportes y su enlace. Esto no se puede deshacer.`;
   const delForm = (g) => `<form id="del-${g.id}" method="post" action="/grupos/${g.id}/borrar" data-msg="${esc(delMsg(g.name))}" onsubmit="return confirm(this.dataset.msg)"></form>`;
   const delButton = (g) => `<button type="submit" form="del-${g.id}" class="small danger" title="Borrar grupo" aria-label="Borrar el grupo ${esc(g.name)}">✕</button>`;
@@ -359,8 +360,10 @@ function careGroupsRouter(ctx) {
       res.setHeader('Content-Disposition', 'attachment; filename="reportes-grupos-de-cuidado.csv"');
       res.send(
         toCsv([
-          ['Grupo', 'Fecha', 'Miembros', 'Invitados', 'Asistentes', 'Ofrenda', 'Refrigerio', 'Dinámicas', 'Testimonios', 'Canciones', 'Elemento clave', 'Seguimiento', 'Notas', 'Visita del asesor'],
-          ...rows.map((x) => [x.name, String(x.meeting_date).slice(0, 10), x.members_count, x.guests_count, x.attendance, x.offering, x.snack, x.dynamics, x.testimonies, x.songs, x.key_element, x.followup, x.notes, x.advisor_visit ? 'sí' : 'no']),
+          ['Grupo', 'Fecha', 'Miembros', 'Invitados', 'Asistentes', 'Ofrenda (bolívares)', 'Refrigerio', 'Dinámicas', 'Testimonios', 'Canciones', 'Elemento clave', 'Seguimiento', 'Notas', 'Visita del asesor',
+            'Hora de entrada', 'Hora de salida', 'Etapa', 'Semana de la etapa', 'Invitados de las últimas 3 semanas', 'Ofrenda (divisas)', 'Referencia del pago (4 últimos)', 'Líder asistió miércoles', 'Líder asistió domingo'],
+          ...rows.map((x) => [x.name, String(x.meeting_date).slice(0, 10), x.members_count, x.guests_count, x.attendance, x.offering, x.snack, x.dynamics, x.testimonies, x.songs, x.key_element, x.followup, x.notes, x.advisor_visit ? 'sí' : 'no',
+            x.start_time, x.end_time, x.stage, x.stage_week, x.recent_guests, x.offering_fx, x.payment_ref, yn(x.leader_wed), yn(x.leader_sun)]),
         ])
       );
     })
@@ -400,12 +403,15 @@ function careGroupsRouter(ctx) {
       const foda = await fmt.getFoda(db, g.id, quarter);
       const tri = await fmt.quarterly(db, g.id, quarter);
       const chronological = [...reports].reverse().slice(-16);
+      // compromiso del líder: cuántas veces dijo que asistió a los servicios, de los reportes donde lo contestó
+      const served = (key) => { const said = reports.filter((x) => x[key] !== null); return said.length ? `${said.filter((x) => x[key]).length} de ${said.length}` : ''; };
+      const leaderServices = [served('leader_wed') && `miércoles ${served('leader_wed')}`, served('leader_sun') && `domingo ${served('leader_sun')}`].filter(Boolean).join(' · ');
       const history = reports
         .map(
           (x) => `<tr><td>${esc(short(x.d))}${x.advisor_visit ? '<div class="muted">Visita del asesor</div>' : ''}</td>
             <td>${x.attendance ?? '—'}<div class="muted">${x.members_count ?? '—'} miembros · ${x.guests_count ?? '—'} invitados</div></td>
-            <td>${x.offering === null ? '—' : esc(Number(x.offering).toLocaleString('es-VE', { minimumFractionDigits: 2 }))}</td>
-            <td>${[['Elemento clave', x.key_element], ['Testimonios', x.testimonies], ['Seguimiento', x.followup], ['Notas', x.notes]]
+            <td>${x.offering === null ? '—' : esc(Number(x.offering).toLocaleString('es-VE', { minimumFractionDigits: 2 }))} <span class="muted">Bs.</span>${x.offering_fx === null ? '' : `<div>${esc(Number(x.offering_fx).toLocaleString('es-VE', { minimumFractionDigits: 2 }))} <span class="muted">divisas</span></div>`}${x.payment_ref ? `<div class="muted">ref. ${esc(x.payment_ref)}</div>` : ''}</td>
+            <td>${[['Horario', [x.start_time, x.end_time].filter(Boolean).join(' a ')], ['Etapa', x.stage ? `${x.stage}${x.stage_week ? `, semana ${x.stage_week}` : ''}` : ''], ['Invitados recientes', x.recent_guests === null ? '' : String(x.recent_guests)], ['Líder en servicios', [x.leader_wed === null ? '' : `miércoles ${yn(x.leader_wed)}`, x.leader_sun === null ? '' : `domingo ${yn(x.leader_sun)}`].filter(Boolean).join(' · ')], ['Elemento clave', x.key_element], ['Testimonios', x.testimonies], ['Seguimiento', x.followup], ['Notas', x.notes]]
               .filter(([, v]) => v)
               .map(([l, v]) => `<div><span class="muted">${l}:</span> ${esc(v)}</div>`)
               .join('')}</td></tr>`
@@ -433,7 +439,7 @@ function careGroupsRouter(ctx) {
             <form class="inline" method="post" action="/grupos/${g.id}/enlace/nuevo"><button class="small sec">Generar enlace nuevo</button></form>
             <span class="muted">${g.uses} envíos${g.last_used_at ? '' : ' · sin uso'}</span></p></div>
         ${chronological.length > 1 ? `<div class="card"><h3>Asistencia por reunión</h3>${charts.lineChart(chronological.map((x) => short(x.d).slice(0, 5)), [{ name: 'Asistentes', values: chronological.map((x) => x.attendance) }, { name: 'Invitados', values: chronological.map((x) => x.guests_count) }], { title: `Asistencia de ${g.name}` })}</div>` : ''}
-        <h2>Reportes</h2>
+        <h2>Reportes</h2>${leaderServices ? `<p class="muted" style="margin:-4px 0 10px">El líder dijo que asistió a los servicios: <strong>${esc(leaderServices)}</strong> reportes (de los que lo contestaron).</p>` : ''}
         <div class="table-scroll"><table><tr><th>Fecha</th><th>Asistentes</th><th>Ofrenda</th><th>Detalle</th></tr>${history || '<tr><td colspan="4" class="muted">Este grupo todavía no ha reportado.</td></tr>'}</table></div>
         <h2>Ruta de crecimiento</h2>${views.milestoneMatrix(people)}
         <h2>Plan de ${esc(views.monthName(month))}</h2>${views.planView(plan)}

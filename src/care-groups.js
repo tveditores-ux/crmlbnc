@@ -7,7 +7,7 @@ const { tx } = require('./db');
 const STAGES = ['Equipo', 'Conquista', 'Consolidación', 'Multiplicación'];
 const CONGREGATIONS = ['Niños', 'Preadolescentes', 'Adolescentes', 'Jóvenes', 'Jóvenes adultos', 'Matrimonios', 'Mujeres', 'Hombres'];
 const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
-const COUNTS = ['members_count', 'guests_count', 'attendance'];
+const COUNTS = ['members_count', 'guests_count', 'attendance', 'recent_guests'];
 const TEXTS = ['snack', 'dynamics', 'testimonies', 'songs', 'key_element', 'notes', 'followup'];
 const MAX_TEXT = 2000;
 
@@ -65,11 +65,37 @@ function parseReport(src, today) {
       v[k] = Number(raw);
     }
   }
-  const off = String(src.offering ?? '').trim().replace(',', '.');
-  if (off !== '') {
-    if (!/^\d{1,9}(\.\d{1,2})?$/.test(off)) errors.push('La ofrenda debe ser un monto, por ejemplo 25.50.');
-    else v.offering = Number(off);
+  // ofrenda en bolívares (offering) y en divisas (offering_fx)
+  v.offering_fx = null;
+  for (const [key, label] of [['offering', 'en bolívares'], ['offering_fx', 'en divisas']]) {
+    const raw = String(src[key] ?? '').trim().replace(',', '.');
+    if (raw === '') continue;
+    if (!/^\d{1,9}(\.\d{1,2})?$/.test(raw)) errors.push(`La ofrenda ${label} debe ser un monto, por ejemplo 25.50.`);
+    else v[key] = Number(raw);
   }
+  // puntualidad: hora de entrada y de salida (opcionales)
+  for (const key of ['start_time', 'end_time']) {
+    const raw = String(src[key] ?? '').trim();
+    v[key] = /^([01]\d|2[0-3]):[0-5]\d$/.test(raw) ? raw : '';
+    if (raw && !v[key]) errors.push('Las horas deben ser como 19:00.');
+  }
+  if (v.start_time && v.end_time && v.end_time <= v.start_time) errors.push('La hora de salida debe ser después de la de entrada.');
+  // etapa del grupo y semana de la etapa
+  v.stage = STAGES.includes(src.stage) ? src.stage : '';
+  const wk = String(src.stage_week ?? '').trim();
+  v.stage_week = null;
+  if (wk !== '') {
+    if (!/^\d{1,2}$/.test(wk) || +wk < 1 || +wk > 52) errors.push('La semana de la etapa debe ser un número del 1 al 52.');
+    else v.stage_week = +wk;
+  }
+  // solo los 4 últimos números del pago: nunca la cuenta ni el teléfono completos
+  v.payment_ref = String(src.payment_ref ?? '').trim();
+  if (!/^\d{0,4}$/.test(v.payment_ref)) {
+    errors.push('De la referencia del pago escribe solo los 4 últimos números.');
+    v.payment_ref = '';
+  }
+  // ¿el líder asistió a los servicios? (vacío = no lo dijo)
+  for (const key of ['leader_wed', 'leader_sun']) v[key] = src[key] === 'si' ? true : src[key] === 'no' ? false : null;
   for (const k of TEXTS) v[k] = cleanLong(src[k]);
   if (v.attendance === null && v.members_count === null && v.guests_count === null) {
     errors.push('Escribe al menos cuántos asistieron (miembros, invitados o el total).');
@@ -82,15 +108,20 @@ function parseReport(src, today) {
 /** Crea o corrige el reporte de ese grupo y esa fecha (reenviar la misma fecha lo corrige). */
 async function upsertReport(db, groupId, v, source = 'telefono') {
   const { rows } = await db.query(
-    `INSERT INTO care_group_reports (group_id, meeting_date, members_count, guests_count, attendance, offering, snack, dynamics, testimonies, songs, key_element, notes, followup, advisor_visit, source)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+    `INSERT INTO care_group_reports (group_id, meeting_date, members_count, guests_count, attendance, offering, snack, dynamics, testimonies, songs, key_element, notes, followup, advisor_visit, source,
+        start_time, end_time, stage, stage_week, recent_guests, offering_fx, payment_ref, leader_wed, leader_sun)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
      ON CONFLICT (group_id, meeting_date) DO UPDATE SET
        members_count = EXCLUDED.members_count, guests_count = EXCLUDED.guests_count, attendance = EXCLUDED.attendance,
        offering = EXCLUDED.offering, snack = EXCLUDED.snack, dynamics = EXCLUDED.dynamics, testimonies = EXCLUDED.testimonies,
        songs = EXCLUDED.songs, key_element = EXCLUDED.key_element, notes = EXCLUDED.notes, followup = EXCLUDED.followup,
-       advisor_visit = EXCLUDED.advisor_visit, source = EXCLUDED.source, updated_at = now()
+       advisor_visit = EXCLUDED.advisor_visit, source = EXCLUDED.source,
+       start_time = EXCLUDED.start_time, end_time = EXCLUDED.end_time, stage = EXCLUDED.stage, stage_week = EXCLUDED.stage_week,
+       recent_guests = EXCLUDED.recent_guests, offering_fx = EXCLUDED.offering_fx, payment_ref = EXCLUDED.payment_ref,
+       leader_wed = EXCLUDED.leader_wed, leader_sun = EXCLUDED.leader_sun, updated_at = now()
      RETURNING (xmax = 0) AS created`,
-    [groupId, v.meeting_date, v.members_count, v.guests_count, v.attendance, v.offering, v.snack, v.dynamics, v.testimonies, v.songs, v.key_element, v.notes, v.followup, v.advisor_visit, source]
+    [groupId, v.meeting_date, v.members_count, v.guests_count, v.attendance, v.offering, v.snack, v.dynamics, v.testimonies, v.songs, v.key_element, v.notes, v.followup, v.advisor_visit, source,
+      v.start_time, v.end_time, v.stage, v.stage_week, v.recent_guests, v.offering_fx, v.payment_ref, v.leader_wed, v.leader_sun]
   );
   return { created: !!(rows[0] && rows[0].created) };
 }

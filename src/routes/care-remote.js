@@ -146,10 +146,21 @@ function careRemoteRouter(ctx) {
         <div class="hp" aria-hidden="true"><label>No llenar<input type="text" name="web" tabindex="-1"></label></div>
         <label for="meeting_date">Fecha de la reunión</label>
         <input id="meeting_date" type="date" name="meeting_date" required value="${esc(v.meeting_date || today())}">
+        <div class="pair">
+          <div><label for="start_time">Hora de entrada</label><input id="start_time" type="time" name="start_time" value="${esc(v.start_time || '')}"></div>
+          <div><label for="end_time">Hora de salida</label><input id="end_time" type="time" name="end_time" value="${esc(v.end_time || '')}"></div></div>
+        <div class="pair">
+          <div><label for="stage">Etapa del grupo</label><select id="stage" name="stage" style="font-size:18px;padding:12px;width:100%;border-radius:10px;border:1px solid var(--line)"><option value="">Sin definir</option>${cgStages.map((s) => `<option ${v.stage === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>
+          ${num('stage_week', 'Semana de la etapa')}</div>
         <h2>Resumen</h2>
         <div class="pair">${num('members_count', 'Miembros')}${num('guests_count', 'Invitados')}</div>
-        <div class="pair">${num('attendance', 'Total de asistentes')}
-          <div><label for="offering">Ofrenda</label><input id="offering" type="text" inputmode="decimal" name="offering" value="${esc(v.offering ?? '')}" placeholder="0.00"></div></div>
+        <div class="pair">${num('attendance', 'Total de asistentes')}${num('recent_guests', 'Invitados de las últimas 3 semanas')}</div>
+        <h2>Ofrendas</h2>
+        <div class="pair">
+          <div><label for="offering">En bolívares</label><input id="offering" type="text" inputmode="decimal" name="offering" value="${esc(v.offering ?? '')}" placeholder="0.00"></div>
+          <div><label for="offering_fx">En divisas</label><input id="offering_fx" type="text" inputmode="decimal" name="offering_fx" value="${esc(v.offering_fx ?? '')}" placeholder="0.00"></div></div>
+        <label for="payment_ref">Pago móvil o transferencia: últimos 4 números de la referencia</label>
+        <input id="payment_ref" type="text" inputmode="numeric" name="payment_ref" maxlength="4" pattern="\\d{0,4}" value="${esc(v.payment_ref || '')}" placeholder="0000">
         <h2>La reunión</h2>
         ${area('snack', 'Tiempo de refrigerio')}
         ${area('dynamics', 'Dinámicas')}
@@ -160,6 +171,8 @@ function careRemoteRouter(ctx) {
         ${area('followup', 'Seguimiento', 'Personas que necesitan una llamada o una visita')}
         ${area('notes', 'Notas')}
         <label class="check"><input type="checkbox" name="advisor_visit" value="1" ${v.advisor_visit ? 'checked' : ''}> Nos visitó el líder asesor</label>
+        <h2>El líder en los servicios</h2>
+        <div class="pair">${[['leader_wed', 'Asistió el miércoles'], ['leader_sun', 'Asistió el domingo']].map(([k, l]) => `<div><label for="${k}">${l}</label><select id="${k}" name="${k}" style="font-size:18px;padding:12px;width:100%;border-radius:10px;border:1px solid var(--line)"><option value="">—</option><option value="si" ${v[k] === 'si' || v[k] === true ? 'selected' : ''}>Sí</option><option value="no" ${v[k] === 'no' || v[k] === false ? 'selected' : ''}>No</option></select></div>`).join('')}</div>
         <button class="go">Enviar reporte</button>
       </form>
       <script>document.querySelectorAll('input[type=number]').forEach(function(i){ i.addEventListener('focus', function(){ i.select(); }); });</script>`;

@@ -13,11 +13,12 @@ const monthName = (m) => {
 /** Reporte trimestral (Formato 05): ofrendas, visitantes y asistencia por semana, más totales y promedios. */
 function quarterlyView(t) {
   const col = (title, key, fmt, footLabel, footValue) => `<div class="card"><strong>${title}</strong>
-    <div class="table-scroll"><table><tr><th>Semana</th><th>${key === 'offering' ? 'Monto' : 'Nº'}</th></tr>
+    <div class="table-scroll"><table><tr><th>Semana</th><th>${key === 'offering' || key === 'fx' ? 'Monto' : 'Nº'}</th></tr>
     ${t.weeks.map((w) => `<tr><td>${w.n}</td><td>${fmt(w[key])}</td></tr>`).join('')}
     <tr><th>${footLabel}</th><th>${footValue}</th></tr></table></div></div>`;
   return `<div class="grid">
-      ${col('Ofrendas', 'offering', money, 'Total', money(t.offeringTotal))}
+      ${col('Ofrendas en bolívares', 'offering', money, 'Total', money(t.offeringTotal))}
+      ${col('Ofrendas en divisas', 'fx', money, 'Total', money(t.offeringFxTotal))}
       ${col('Visitantes', 'guests', cell, 'Promedio', cell(t.guestsAvg))}
       ${col('Asistencia', 'attendance', cell, 'Promedio', cell(t.attendanceAvg))}
     </div>

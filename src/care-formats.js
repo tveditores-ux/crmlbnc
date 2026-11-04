@@ -30,15 +30,16 @@ const dayDiff = (a, b) => Math.round((Date.parse(`${a}T00:00:00Z`) - Date.parse(
 async function quarterly(db, groupId, q) {
   const { start, end } = quarterBounds(q);
   const { rows } = await db.query(
-    `SELECT meeting_date::text AS d, attendance, guests_count, offering FROM care_group_reports
+    `SELECT meeting_date::text AS d, attendance, guests_count, offering, offering_fx FROM care_group_reports
       WHERE group_id = $1 AND meeting_date >= $2 AND meeting_date < $3 ORDER BY meeting_date`,
     [groupId, start, end]
   );
-  const weeks = Array.from({ length: 13 }, (_, i) => ({ n: i + 1, offering: null, guests: null, attendance: null }));
+  const weeks = Array.from({ length: 13 }, (_, i) => ({ n: i + 1, offering: null, fx: null, guests: null, attendance: null }));
   const add = (cur, v) => (v === null || v === undefined ? cur : (cur ?? 0) + Number(v));
   for (const r of rows) {
     const w = weeks[Math.min(12, Math.floor(dayDiff(r.d, start) / 7))];
     w.offering = add(w.offering, r.offering);
+    w.fx = add(w.fx, r.offering_fx);
     w.guests = add(w.guests, r.guests_count);
     w.attendance = add(w.attendance, r.attendance);
   }
@@ -53,6 +54,7 @@ async function quarterly(db, groupId, q) {
     weeks,
     reports: rows.length,
     offeringTotal: weeks.reduce((a, w) => a + (w.offering ?? 0), 0),
+    offeringFxTotal: weeks.reduce((a, w) => a + (w.fx ?? 0), 0),
     guestsAvg: avg('guests'),
     attendanceAvg: avg('attendance'),
   };
