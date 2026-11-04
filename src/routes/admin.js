@@ -9,6 +9,7 @@ const { csvToRecords, toCsv } = require('../csv');
 const repo = require('../repo');
 const members = require('../members');
 const { memberDataCard } = require('./member-requests');
+const mm = require('../ministries-merge');
 const reminders = require('../reminders');
 const msgs = require('../messages');
 const { whatsappReady, emailReady } = require('../config');
@@ -532,6 +533,7 @@ function adminRouter(ctx) {
         'Ministerios',
         '/ministerios',
         `<h1>Ministerios</h1><p class="sub">Al crear un evento eliges los ministerios y todos sus miembros quedan convocados.</p>
+        ${mm.duplicateGroups(rows).length ? `<div class="flash err">Hay ministerios que parecen repetidos. <a href="/ministerios/unir">Revisarlos y unirlos →</a></div>` : ''}
         <form method="post" action="/ministerios" class="card toolbar">
           <div><label>Nuevo ministerio</label><input type="text" name="name" required placeholder="Ej.: Diáconos"></div>
           <button>Crear</button></form>
@@ -539,6 +541,7 @@ function adminRouter(ctx) {
           [...rows].sort((a, b) => b.members - a.members).map((m) => ({ label: m.name, value: m.members })),
           { title: 'Miembros por ministerio' }
         )}</div>
+        <p class="muted" style="font-size:13px"><a href="/ministerios/unir">Unir ministerios repetidos</a></p>
         <div class="table-scroll"><table><tr><th>Ministerio</th><th>Coordinador</th><th>Miembros</th></tr>${
           rows
             .map(

@@ -101,3 +101,8 @@ Recordatorios y confirmaciones por WhatsApp y correo. Node 22, Express, PostgreS
 - **No cambia `opt_in`, `membership` ni `in_official_group` por sí sola.** "Quiero recibir recordatorios" es solo un aviso: se registra el consentimiento únicamente si la persona lo pidió **y** quien revisa marca la casilla al aprobar (`apply(..., { consent: true })`). Mantener esta regla.
 - Unir duplicados (`people-merge.js`) conserva estos campos y pasa la foto y las respuestas a la ficha que queda.
 - El envío del enlace es manual (botón de WhatsApp sin número para elegir el chat, o copiar el mensaje); el sistema no manda nada por su cuenta.
+
+## Ministerios repetidos (`src/ministries-merge.js`, `/ministerios/unir`)
+- Los ministerios se comparan **sin tildes, mayúsculas, signos ni espacios de más** (`normName`). `repo.ensureMinistry` (usado por el importador de personas y por "Nuevo ministerio") reutiliza el que ya se llama casi igual en vez de crear un repetido; antes solo comparaba en minúsculas y por eso "Anfitriones" pudo quedar dos veces.
+- `/ministerios/unir` muestra los que parecen repetidos (propone conservar el que tiene más personas) y permite unir dos a mano. `mergeMinistries` (una transacción): pasa las personas y los eventos al conservado sin repetir, hereda el coordinador solo si el conservado no tenía, y elimina el otro. Nadie se borra.
+- La lista de congregaciones (`CONGREGATIONS`, `care-groups.js`) ahora incluye **Preadolescentes** (Niños, Preadolescentes, Adolescentes, Jóvenes, Jóvenes adultos, Matrimonios, Mujeres, Hombres): la usan la planilla del líder y "Mis datos".

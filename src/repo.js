@@ -1,6 +1,7 @@
 'use strict';
 const crypto = require('crypto');
 const { tx } = require('./db');
+const { normName } = require('./ministries-merge');
 const { normalizePhone, normalizeEmail } = require('./phone');
 
 const newToken = () => crypto.randomBytes(12).toString('base64url');
@@ -66,6 +67,12 @@ function validatePerson(input, countryCode, { allowNoContact = false } = {}) {
 
 async function ensureMinistry(db, name) {
   const clean = String(name).trim().replace(/\s+/g, ' ');
+  // si ya hay uno que se llama casi igual (otra tilde, otro signo, un espacio de más), se usa ese en vez de crear un repetido
+  const key = normName(clean);
+  if (key) {
+    const existing = (await db.query('SELECT id, name FROM ministries ORDER BY id')).rows.find((m) => normName(m.name) === key);
+    if (existing) return existing.id;
+  }
   const { rows } = await db.query(
     `INSERT INTO ministries (name) VALUES ($1)
      ON CONFLICT ((lower(name))) DO UPDATE SET name = ministries.name
