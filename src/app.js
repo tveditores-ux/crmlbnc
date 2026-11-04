@@ -4,6 +4,7 @@ const path = require('path');
 const { adminRouter } = require('./routes/admin');
 const { publicRouter } = require('./routes/public');
 const { conversationsRouter } = require('./routes/conversations');
+const { asistenteRouter } = require('./routes/asistente');
 const { googleRouter } = require('./routes/google');
 const { attendanceRouter } = require('./routes/attendance');
 const { membersRouter } = require('./routes/members');
@@ -121,6 +122,7 @@ function createApp(ctx) {
   });
 
   app.use(conversationsRouter(ctx));
+  app.use(asistenteRouter(ctx));
   app.use(attendanceRouter(ctx));
   app.use(membersRouter(ctx));
   app.use(duplicatesRouter(ctx));

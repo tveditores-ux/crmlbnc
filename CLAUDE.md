@@ -26,6 +26,9 @@ Recordatorios y confirmaciones por WhatsApp y correo. Node 22, Express, PostgreS
 - Apagado por defecto (`AGENT_ENABLED`). Solo temas de congregación y grupos de cuidado; todo lo demás se escala a un líder/pastor.
 - Nunca darle al modelo datos de otras personas. Las crisis se responden con texto fijo, sin modelo.
 - Cualquier cambio al prompt o a los filtros debe pasar por el subagente `safety-reviewer` y mantener `test/agent.test.js` en verde.
+- **Asistente virtual del CRM y ERP** (pantalla `/asistente`, migración 021): además de lo anterior, comparte la **información general de la iglesia** que el administrador escribe en `agent_knowledge` (horarios, sedes, cómo bautizarse...; nunca datos de personas) y, si quien escribe es **líder de un grupo de cuidado** (su teléfono = `care_groups.leader_phone`), conoce **solo su grupo**: reunión, último reporte, si confirmó sus datos y sus enlaces `/g/<token>` y `/g/<token>/datos`. No inventa horarios, enlaces ni teléfonos: lo que no está en los datos, lo escala.
+- **Filtro de salida (`guardReply`)**: una respuesta que traiga un enlace o un teléfono que no esté en los datos dados al modelo no se envía; se manda el aviso fijo y se escala. Los teléfonos se comparan sin código de país. Mantén esta capa si cambias el prompt.
+- `/asistente` también tiene un **probador** (`dryAnswer`): muestra qué respondería a un número y un mensaje, sin enviar ni guardar nada (usa el modelo real). Úsalo antes de encender `AGENT_ENABLED`. El asistente solo responde a mensajes entrantes de personas registradas y activas; nunca escribe primero.
 
 ## Consolidación y Nueva Vida (`src/consolidation/`, `src/nuevavida/`)
 - Seguimiento de nuevos creyentes: decisión, llamada (estándar del ministerio: dentro de las 48 horas), reunión de Nueva Vida, Primeros Pasos, bautismo, grupo de cuidado y riel.

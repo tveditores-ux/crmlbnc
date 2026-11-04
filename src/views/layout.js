@@ -78,6 +78,7 @@ const NAV = [
   ['/grupos', 'Grupos de cuidado'],
   ['/reunion-equipo', 'Reunión de equipo'],
   ['/conversaciones', 'Conversaciones'],
+  ['/asistente', 'Asistente'],
   ['/pruebas', 'Pruebas'],
 ];
 
