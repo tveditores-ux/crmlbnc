@@ -55,10 +55,10 @@ async function withDb(t, fn) {
   }
 }
 
-test('el borrador inicial: 25 entradas, solo lo del propio sistema queda confirmado, se siembra una sola vez y no trae datos de personas', async (t) => {
+test('el borrador inicial: 27 entradas, solo lo del propio sistema queda confirmado, se siembra una sola vez y no trae datos de personas', async (t) => {
   await withDb(t, async (db) => {
     const rows = (await db.query('SELECT * FROM leader_guide ORDER BY sort')).rows;
-    assert.equal(rows.length, 25);
+    assert.equal(rows.length, 27); // 25 del borrador + 2 de REDIL
     const confirmed = rows.filter((r) => r.status === 'confirmada');
     assert.equal(confirmed.length, 4);
     assert.ok(confirmed.every((r) => r.category === 'Mi enlace y el sistema' && r.source === 'Sistema de la iglesia'));
@@ -72,7 +72,7 @@ test('el borrador inicial: 25 entradas, solo lo del propio sistema queda confirm
     // volver a correr la siembra no duplica ni pisa
     await db.query("UPDATE leader_guide SET answer = 'editada a mano' WHERE sort = 0");
     await db.query(fs.readFileSync(path.join(__dirname, '..', 'src', 'migrations', '024_guia_lider_borrador.sql'), 'utf8'));
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM leader_guide')).rows[0].n, 25);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM leader_guide')).rows[0].n, 27);
     assert.equal((await db.query('SELECT answer FROM leader_guide WHERE sort = 0')).rows[0].answer, 'editada a mano');
   });
 });
@@ -208,5 +208,27 @@ test('el asistente responde con la guía a un líder, y una respuesta con un tel
     const bad = await agent.handleInbound({ db, config, channels }, { from: '584140000001', body: 'dame el teléfono de la pastora', type: 'text' }, { fetchImpl: modelSays({ respuesta: 'Escríbele al 0414-777.66.55', escalar: false, motivo: '' }) });
     assert.equal(bad.handledAs, 'agente_escalado');
     assert.equal(sent[1], agent.FALLBACK_REPLY);
+  });
+});
+
+test('las tres categorías de REDIL: están en la guía, se pueden usar en el panel y se ven en el enlace del líder en su lugar', async (t) => {
+  assert.deepEqual(lg.CATEGORIES.slice(0, 4), ['Mi enlace y el sistema', 'REDIL ordinario', 'REDIL extraordinario', 'REDIL extendido']);
+  await withApp(t, async ({ db, get, post }) => {
+    const g = await mkGroup(db);
+    const html = await (await get('/guia')).text();
+    for (const c of ['REDIL ordinario', 'REDIL extraordinario', 'REDIL extendido']) assert.ok(html.includes(`<option value="${c}"`), c);
+
+    // el arranque trae una respuesta en ordinario y otra en extendido, por confirmar; el extraordinario lo escribe la iglesia
+    const seeded = (await db.query("SELECT category, status, source FROM leader_guide WHERE category LIKE 'REDIL%' ORDER BY category")).rows;
+    assert.deepEqual(seeded.map((r) => [r.category, r.status, r.source]), [['REDIL extendido', 'por_confirmar', 'Glosario de la iglesia'], ['REDIL ordinario', 'por_confirmar', 'Glosario de la iglesia']]);
+
+    const add = await post('/guia', { category: 'REDIL extraordinario', question: '¿Cuándo se convoca un REDIL extraordinario?', answer: 'Texto de prueba.', status: 'confirmada' });
+    assert.equal(add.status, 303);
+    await db.query("UPDATE leader_guide SET status = 'confirmada' WHERE category IN ('REDIL ordinario', 'REDIL extendido')");
+    await db.query("UPDATE leader_guide SET status = 'confirmada' WHERE id = (SELECT min(id) FROM leader_guide WHERE category = 'Grupos de cuidado')"); // la pestaña solo muestra categorías con algo confirmado
+    const tab = await (await get(`/g/${g.token}/guia`)).text();
+    const order = ['REDIL ordinario', 'REDIL extraordinario', 'REDIL extendido', 'Grupos de cuidado'].map((c) => tab.indexOf(`<h2>${c}</h2>`));
+    assert.ok(order.every((i) => i > 0), 'las cuatro categorías se ven');
+    assert.deepEqual(order, [...order].sort((a, b) => a - b)); // y en el orden de la guía
   });
 });

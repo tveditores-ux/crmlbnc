@@ -4,7 +4,7 @@
  * Guía del líder: respuestas aprobadas a las dudas operativas de los líderes.
  * Los líderes (en su enlace) y el asistente de WhatsApp solo ven las "confirmada" y activas.
  */
-const CATEGORIES = ['Mi enlace y el sistema', 'Grupos de cuidado', 'Ofrendas y cuidado pastoral', 'Espacios y equipos', 'Formación (Riel)', 'Ruta de crecimiento'];
+const CATEGORIES = ['Mi enlace y el sistema', 'REDIL ordinario', 'REDIL extraordinario', 'REDIL extendido', 'Grupos de cuidado', 'Ofrendas y cuidado pastoral', 'Espacios y equipos', 'Formación (Riel)', 'Ruta de crecimiento'];
 const STATUSES = { confirmada: 'Confirmada', por_confirmar: 'Por confirmar' };
 const MAX = { question: 200, answer: 1500, contact: 160, source: 160 };
 

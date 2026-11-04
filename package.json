@@ -7,7 +7,7 @@
     "start": "node src/server.js",
     "dev": "node --env-file=.env --watch src/server.js",
     "seed": "node src/seed.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test --test-concurrency=8 test/*.test.js"
   },
   "license": "UNLICENSED",
   "dependencies": {
