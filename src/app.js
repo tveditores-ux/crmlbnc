@@ -16,6 +16,7 @@ const { reunionEquipoRouter, reunionRemotaRouter } = require('./routes/reunion-e
 const { remoteRouter } = require('./routes/attendance-remote');
 const { careRemoteRouter } = require('./routes/care-remote');
 const { careIntakeRouter } = require('./routes/care-intake');
+const { cartasRouter } = require('./routes/cartas');
 const { careGroupsRouter } = require('./routes/care-groups');
 const { layout } = require('./views/layout');
 const { esc } = require('./util');
@@ -81,6 +82,7 @@ function createApp(ctx) {
 
   app.use(googleRouter(ctx));
   app.use(remoteRouter(ctx)); // formulario del teléfono: protegido por enlace secreto, sin sesión
+  app.use(cartasRouter()); // la carta de bienvenida se lee sin sesión: el enlace se manda por WhatsApp
   app.use(careIntakeRouter(ctx)); // enlace común para todos los líderes: también por enlace secreto
   app.use(reunionRemotaRouter(ctx)); // libreta de la reunión de equipo: enlace secreto, sin sesión
   app.use(careRemoteRouter(ctx)); // reporte del líder de grupo de cuidado: igual, enlace secreto

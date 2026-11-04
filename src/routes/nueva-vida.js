@@ -4,6 +4,7 @@ const { layout } = require('../views/layout');
 const { esc } = require('../util');
 const { displayPhone } = require('../phone');
 const nv = require('../nuevavida/store');
+const letters = require('../nuevavida/letters');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -20,6 +21,127 @@ function nuevaVidaRouter(ctx) {
   const go = (res, path, flash) => res.redirect(303, flash ? `${path}?${new URLSearchParams(flash).toString()}` : path);
   const dmy = (iso) => (iso ? iso.split('-').reverse().join('/') : '—');
   const idList = (v) => [...new Set((Array.isArray(v) ? v : v ? [v] : []).map(String).filter((x) => /^\d{1,9}$/.test(x)).map(Number))].slice(0, 500);
+
+  /* --------------------------- Carta de bienvenida --------------------------- */
+  // La carta se manda a mano: el sistema solo prepara el mensaje y abre WhatsApp en el teléfono de quien administra.
+  // No es un envío automático ni cambia ningún opt_in.
+  const letterUrl = (l) => `${config.publicUrl}/cartas/${l.file}`;
+  const letterOptions = (cur) => letters.LETTERS.map((l) => `<option value="${esc(l.id)}" ${l.id === cur ? 'selected' : ''}>${esc(l.title)}</option>`).join('');
+
+  r.get(
+    '/nueva-vida/carta',
+    ah(async (req, res) => {
+      const letter = letters.letterById(String(req.query.carta || '')) || letters.LETTERS[0];
+      const pre = new Set(idList(req.query.id));
+      const rows = (
+        await db.query(
+          `SELECT x.id, x.full_name, x.phone, x.decision_date::text AS d,
+                  (SELECT max(c.sent_at) FROM nueva_vida_cartas c WHERE c.phone = x.phone AND c.letter = $1) AS sent_at
+             FROM nueva_vida x WHERE x.phone IS NOT NULL AND x.phone <> ''
+            ORDER BY x.decision_date DESC NULLS LAST, x.id DESC LIMIT 300`,
+          [letter.id]
+        )
+      ).rows;
+      const list = rows
+        .map(
+          (x) => `<tr data-find="${esc((x.full_name + ' ' + displayPhone(x.phone)).toLowerCase())}">
+            <td><input type="checkbox" name="ids" value="${x.id}" ${pre.has(x.id) ? 'checked' : ''} aria-label="Elegir a ${esc(x.full_name)}"></td>
+            <td>${esc(x.full_name)}</td><td>${esc(displayPhone(x.phone))}</td><td>${esc(dmy(x.d))}</td>
+            <td>${x.sent_at ? `<span class="badge b-ok">Enviada ${esc(dmy(new Date(x.sent_at).toLocaleDateString('en-CA', { timeZone: config.timezone })))}</span>` : '<span class="muted">Sin enviar</span>'}</td></tr>`
+        )
+        .join('');
+      page(
+        req,
+        res,
+        'Carta de bienvenida',
+        `<p><a href="/nueva-vida">← Nueva Vida</a></p><h1>Enviar la carta de bienvenida</h1>
+        <p class="sub">Elige a quién y se abre WhatsApp con el mensaje y el enlace de la carta, listo para que tú lo envíes. El sistema no manda nada por su cuenta.</p>
+        <form method="post" action="/nueva-vida/carta">
+          <div class="card">
+            <label>Carta</label><select name="carta">${letterOptions(letter.id)}</select>
+            <p class="muted" style="margin:6px 0 0"><a href="/cartas/${esc(letter.file)}" target="_blank" rel="noopener">Ver la carta (PDF)</a> · ${esc(letter.hint)}</p>
+            <label>Mensaje (puedes cambiarlo; {nombre} y {enlace} se rellenan solos)</label>
+            <textarea name="mensaje" style="min-height:110px">${esc(letters.defaultTemplate(config.churchName))}</textarea>
+          </div>
+          <div class="card">
+            <label>Números de WhatsApp (uno por línea, o separados por coma)</label>
+            <textarea name="numeros" class="mono" style="min-height:90px" placeholder="0414-000.00.01&#10;Ana 0424-000.00.02"></textarea>
+            <p class="muted" style="margin:6px 0 0;font-size:13px">Si escribes un nombre antes del número, el mensaje saluda por su nombre.</p>
+          </div>
+          <div class="card">
+            <h3 style="margin:0 0 8px">O elige de la lista de Nueva Vida (${rows.length} con teléfono)</h3>
+            <input type="search" id="find" placeholder="Buscar por nombre o teléfono" autocomplete="off">
+            <div class="table-scroll" style="max-height:340px;overflow:auto;margin-top:8px"><table><tr><th></th><th>Nombre</th><th>Teléfono</th><th>Decisión</th><th>Carta</th></tr>${list || '<tr><td colspan="5" class="muted">Nadie tiene teléfono registrado.</td></tr>'}</table></div>
+          </div>
+          <div class="actions"><button>Preparar el envío</button><a class="btn sec" href="/nueva-vida">Cancelar</a></div>
+        </form>
+        <script>document.getElementById('find').addEventListener('input',function(e){var q=e.target.value.toLowerCase();document.querySelectorAll('tr[data-find]').forEach(function(tr){tr.style.display=tr.dataset.find.indexOf(q)<0?'none':'';});});</script>`
+      );
+    })
+  );
+
+  r.post(
+    '/nueva-vida/carta',
+    ah(async (req, res) => {
+      const letter = letters.letterById(String(req.body.carta || ''));
+      if (!letter) return go(res, '/nueva-vida/carta', { err: 'Elige una carta de la lista.' });
+      const typed = letters.parseNumbers(req.body.numeros, config.defaultCountryCode);
+      const ids = idList(req.body.ids);
+      const picked = ids.length
+        ? (await db.query("SELECT id, full_name, phone FROM nueva_vida WHERE id = ANY($1::int[]) AND phone IS NOT NULL AND phone <> ''", [ids])).rows
+        : [];
+      // sin repetidos: si un número está en las dos partes, gana el nombre de la lista
+      const byPhone = new Map(typed.recipients.map((x) => [x.phone, { phone: x.phone, name: x.name, nvId: null }]));
+      for (const p of picked) byPhone.set(p.phone, { phone: p.phone, name: p.full_name, nvId: p.id });
+      const recipients = [...byPhone.values()].slice(0, 100);
+      if (!recipients.length) {
+        return go(res, '/nueva-vida/carta', { err: typed.invalid.length ? `No reconocí ningún número: ${typed.invalid.join(', ')}` : 'Escribe al menos un número o elige a alguien de la lista.' });
+      }
+      const url = letterUrl(letter);
+      const template = String(req.body.mensaje || '').slice(0, 1500) || letters.defaultTemplate(config.churchName);
+      const sentBefore = new Set((await db.query('SELECT DISTINCT phone FROM nueva_vida_cartas WHERE letter = $1 AND phone = ANY($2::text[])', [letter.id, recipients.map((x) => x.phone)])).rows.map((x) => x.phone));
+      const rows = recipients
+        .map((x) => {
+          const msg = letters.buildMessage(template, x.name, url);
+          return `<tr data-phone="${esc(x.phone)}" data-name="${esc(x.name)}" data-nv="${x.nvId ?? ''}">
+            <td>${esc(x.name || 'Sin nombre')}<div class="muted">${esc(displayPhone(x.phone))}</div></td>
+            <td>${sentBefore.has(x.phone) ? '<span class="badge b-warn">Ya se le envió antes</span>' : ''}</td>
+            <td style="white-space:nowrap"><a class="btn small" target="_blank" rel="noopener" href="${esc(letters.waLink(x.phone, msg))}">Abrir WhatsApp</a>
+              <button type="button" class="small sec mark">Ya la envié</button></td></tr>`;
+        })
+        .join('');
+      page(
+        req,
+        res,
+        'Carta lista para enviar',
+        `<p><a href="/nueva-vida/carta">← Elegir otros</a></p><h1>Carta lista para enviar</h1>
+        <p class="sub">${esc(letter.title)} · ${recipients.length} persona${recipients.length === 1 ? '' : 's'}. Pulsa <strong>Abrir WhatsApp</strong> en cada una, envía el mensaje desde tu teléfono y luego marca <strong>Ya la envié</strong> para que quede registrado.</p>
+        ${typed.invalid.length ? `<div class="flash err">No reconocí estos números y los dejé fuera: ${typed.invalid.map(esc).join(', ')}</div>` : ''}
+        <div class="table-scroll"><table><tr><th>Persona</th><th></th><th></th></tr>${rows}</table></div>
+        <script>
+          document.querySelectorAll('button.mark').forEach(function(b){ b.addEventListener('click', function(){
+            var tr = b.closest('tr'); b.disabled = true;
+            fetch('/nueva-vida/carta/enviada', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+              body: new URLSearchParams({ phone: tr.dataset.phone, name: tr.dataset.name, nv: tr.dataset.nv, carta: ${JSON.stringify(letter.id)} }) })
+              .then(function(r){ b.textContent = r.ok ? '✓ Registrada' : 'No se pudo registrar'; if (!r.ok) b.disabled = false; })
+              .catch(function(){ b.textContent = 'No se pudo registrar'; b.disabled = false; });
+          }); });
+        </script>`
+      );
+    })
+  );
+
+  r.post(
+    '/nueva-vida/carta/enviada',
+    ah(async (req, res) => {
+      const letter = letters.letterById(String(req.body.carta || ''));
+      const phone = String(req.body.phone || '');
+      if (!letter || !/^\d{7,15}$/.test(phone)) return res.status(400).end();
+      const nvId = /^\d{1,9}$/.test(String(req.body.nv || '')) ? +req.body.nv : null;
+      await db.query('INSERT INTO nueva_vida_cartas (phone, name, nueva_vida_id, letter) VALUES ($1, $2, (SELECT id FROM nueva_vida WHERE id = $3), $4)', [phone, String(req.body.name || '').slice(0, 80), nvId, letter.id]);
+      res.status(204).end();
+    })
+  );
 
   /* ------------------------------ Lista ------------------------------ */
   r.get(
@@ -54,6 +176,11 @@ function nuevaVidaRouter(ctx) {
         <p class="sub">Lista de nuevos creyentes. Desde aquí se conecta cada persona con <a href="/consolidacion">Consolidación</a> cuando se quiera darle seguimiento. Contiene datos personales: solo la ven los administradores.</p>
         <div class="actions"><a class="btn" href="/nueva-vida/nueva">Registrar nuevo creyente</a>
           <a class="btn sec" href="/nueva-vida/importar">Cargar un archivo</a></div>
+        <div class="card" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+          <div style="flex:1 1 260px"><h3 style="margin:0 0 2px">Carta de bienvenida</h3>
+            <div class="muted" style="font-size:13px">${letters.LETTERS.map((l) => esc(l.title)).join(' · ')}</div></div>
+          <a class="btn sec" href="/cartas/${esc(letters.LETTERS[0].file)}" target="_blank" rel="noopener">Ver la carta</a>
+          <a class="btn" href="/nueva-vida/carta">Enviar por WhatsApp</a></div>
         <div class="grid">
           <div class="card"><div class="stat">${st.total}</div><div class="stat-label">personas registradas</div></div>
           <div class="card"><div class="stat">${st.with_phone}</div><div class="stat-label">con teléfono</div></div>
