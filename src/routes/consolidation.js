@@ -98,7 +98,7 @@ function consolidationRouter(ctx) {
             <div class="table-scroll" style="margin-top:12px"><table><tr><th>Etapa</th><th>Personas</th><th>Del total que decidió</th></tr>${funnelRows}</table></div></div>
         </div>
         <h2>Personas (${rows.length})</h2>
-        <div class="table-scroll"><table><tr><th>Persona</th><th>Decisión</th><th>Sede</th><th>Etapa actual</th><th>Responsable</th><th>Estado</th><th></th></tr>${
+        <div class="table-scroll"><table data-filter="Buscar persona…"><tr><th>Persona</th><th>Decisión</th><th>Sede</th><th>Etapa actual</th><th>Responsable</th><th>Estado</th><th></th></tr>${
           list || '<tr><td colspan="7" class="muted">Todavía no hay nadie en consolidación. Registra una decisión o importa la lista de Nueva Vida.</td></tr>'
         }</table></div>`
       );

@@ -35,6 +35,7 @@ th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);verti
 th{background:#efe9dc;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
 tr:last-child td{border-bottom:0}
 .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tfilter{display:flex;gap:10px;align-items:center;margin:0 0 8px}.tfilter input{max-width:340px}
 .chip{display:inline-block;background:var(--chip);border-radius:20px;padding:1px 9px;font-size:12px;margin:1px 3px 1px 0}
 .badge{display:inline-block;border-radius:5px;padding:1px 8px;font-size:12px;font-weight:600}
 .b-ok{background:var(--ok-bg);color:var(--ok)}.b-warn{background:var(--warn-bg);color:var(--warn)}.b-bad{background:var(--bad-bg);color:var(--bad)}.b-muted{background:var(--chip);color:var(--muted)}
@@ -90,6 +91,37 @@ function flash(query) {
   return '';
 }
 
+/**
+ * Buscador para las listas: cualquier <table data-filter="Buscar persona…"> recibe una casilla arriba que oculta las filas que
+ * no coinciden. Ignora mayúsculas y tildes, y también encuentra teléfonos sin importar cómo se escriban (0414-123.45.67).
+ * Se ejecuta en el navegador: no consulta nada al servidor ni cambia datos.
+ */
+const TABLE_FILTER_SCRIPT = `<script>
+(function () {
+  function norm(s) { return String(s).toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, ''); }
+  document.querySelectorAll('table[data-filter]').forEach(function (t) {
+    var wrap = t.closest('.table-scroll') || t;
+    var box = document.createElement('div'); box.className = 'tfilter no-print';
+    var inp = document.createElement('input'); inp.type = 'search'; inp.placeholder = t.getAttribute('data-filter') || 'Buscar…'; inp.setAttribute('aria-label', inp.placeholder); inp.autocomplete = 'off';
+    var info = document.createElement('span'); info.className = 'muted';
+    box.appendChild(inp); box.appendChild(info);
+    wrap.parentNode.insertBefore(box, wrap);
+    var rows = Array.prototype.slice.call(t.querySelectorAll('tr')).filter(function (r) { return !r.querySelector('th'); });
+    var text = rows.map(function (r) { var x = norm(r.textContent); return { x: x, d: x.replace(/\\D/g, '') }; });
+    inp.addEventListener('input', function () {
+      var q = norm(inp.value.trim()), qd = /^[\\d\\s().+-]+$/.test(q) ? q.replace(/\\D/g, '') : '', shown = 0;
+      // un teléfono se puede escribir con 0414…, con 414… o con el código del país (+58 414…)
+      var cand = qd ? [qd, qd.replace(/^58(?=\\d{9,})/, ''), qd.replace(/^0+/, '')].filter(function (c) { return c.length >= 3; }) : [];
+      rows.forEach(function (r, i) {
+        var ok = !q || text[i].x.indexOf(q) >= 0 || cand.some(function (c) { return text[i].d.indexOf(c) >= 0; });
+        r.style.display = ok ? '' : 'none'; if (ok) shown++;
+      });
+      info.textContent = q ? shown + ' de ' + rows.length : '';
+    });
+  });
+})();
+</script>`;
+
 function layout({ title, active, body, config, query, bare = false }) {
   const church = config ? config.churchName : '';
   const nav = bare
@@ -109,7 +141,8 @@ function layout({ title, active, body, config, query, bare = false }) {
 <title>${esc(title)} · ${esc(church)}</title><style>${CSS}</style></head><body>
 ${dryBanner}
 <header class="top"><div class="wrap"><div class="brand">Comunicación<small>${esc(church)}</small></div>${nav}</div></header>
-<main><div class="wrap">${flash(query)}${body}</div></main></body></html>`;
+<main><div class="wrap">${flash(query)}${body}</div></main>
+${bare ? '' : TABLE_FILTER_SCRIPT}</body></html>`;
 }
 
 const STATUS_BADGE = {

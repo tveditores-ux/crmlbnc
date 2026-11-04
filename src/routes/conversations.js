@@ -52,11 +52,11 @@ function conversationsRouter(ctx) {
         <p class="sub">El asistente ${on ? '<span class="badge b-ok">está activo</span>' : '<span class="badge b-bad">está apagado</span>'}
           y solo atiende temas de la congregación y los grupos de cuidado. Lo demás llega aquí para que lo atienda un líder o pastor.</p>
         <h2>Para atender (${open.length})</h2>
-        <div class="table-scroll"><table><tr><th>Persona</th><th>Mensaje</th><th>Motivo</th><th></th></tr>${
+        <div class="table-scroll"><table data-filter="Buscar persona o mensaje…"><tr><th>Persona</th><th>Mensaje</th><th>Motivo</th><th></th></tr>${
           openRows || '<tr><td colspan="4" class="muted">Nada pendiente.</td></tr>'
         }</table></div>
         <h2>Últimos mensajes</h2>
-        <div class="table-scroll"><table><tr><th>Cuándo</th><th>Persona</th><th></th><th>Texto</th></tr>${
+        <div class="table-scroll"><table data-filter="Buscar persona o texto…"><tr><th>Cuándo</th><th>Persona</th><th></th><th>Texto</th></tr>${
           recentRows || '<tr><td colspan="4" class="muted">Sin mensajes todavía.</td></tr>'
         }</table></div>`;
       res.send(layout({ title: 'Conversaciones', active: '/conversaciones', body, config, query: req.query }));

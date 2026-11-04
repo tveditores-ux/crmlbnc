@@ -243,7 +243,7 @@ function bautizadosRouter(ctx) {
         </div>
         ${rows.length ? chartsBlock(rows) : ''}
         ${rows.length ? `<div class="grid">${summary('Por fecha de bautismo', byDate, (k) => (k ? dmy(k) : 'Sin fecha'))}</div>` : ''}
-        <div class="table-scroll"><table><tr><th>#</th><th>Nombre</th><th>Teléfono</th><th>Bautismo</th><th>Sede</th><th>Bautizado por</th></tr>${
+        <div class="table-scroll"><table data-filter="Buscar persona…"><tr><th>#</th><th>Nombre</th><th>Teléfono</th><th>Bautismo</th><th>Sede</th><th>Bautizado por</th></tr>${
           list || '<tr><td colspan="6" class="muted">No hay bautizados con esos filtros.</td></tr>'
         }</table></div>`
       );

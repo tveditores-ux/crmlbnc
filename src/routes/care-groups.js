@@ -113,7 +113,7 @@ function careGroupsRouter(ctx) {
         ${everyone.length ? `<div class="card"><h3>Ruta de crecimiento: personas por hito (${everyone.length} en total)</h3>${charts.barChart(route, { title: 'Personas por hito de la ruta de crecimiento', color: '#6b5b95' })}</div>` : ''}
         <form method="post" action="/grupos/borrar-varios" id="bulk">
           <p class="toolbar" style="margin-bottom:8px"><button class="small danger" id="bulkBtn">Borrar seleccionados</button><span class="muted" id="bulkInfo" style="flex:0 1 auto"></span></p>
-          <div class="table-scroll"><table><tr><th><input type="checkbox" id="allG" aria-label="Elegir todos los grupos"></th><th>Grupo</th><th>Líder</th><th>Reunión</th><th>Último reporte</th><th>Reportes (30 d)</th><th>Datos del grupo</th><th></th></tr>${
+          <div class="table-scroll"><table data-filter="Buscar grupo o líder…"><tr><th><input type="checkbox" id="allG" aria-label="Elegir todos los grupos"></th><th>Grupo</th><th>Líder</th><th>Reunión</th><th>Último reporte</th><th>Reportes (30 d)</th><th>Datos del grupo</th><th></th></tr>${
             rows || '<tr><td colspan="8" class="muted">Aún no hay grupos. Agrega el primero.</td></tr>'
           }</table></div>
         </form>

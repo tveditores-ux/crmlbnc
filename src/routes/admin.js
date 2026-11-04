@@ -10,6 +10,7 @@ const repo = require('../repo');
 const members = require('../members');
 const { memberDataCard } = require('./member-requests');
 const mm = require('../ministries-merge');
+const { EVENT_TYPES, parseEventType } = require('../event-types');
 const reminders = require('../reminders');
 const msgs = require('../messages');
 const { whatsappReady, emailReady } = require('../config');
@@ -631,6 +632,7 @@ function adminRouter(ctx) {
     '/eventos',
     ah(async (req, res) => {
       const past = req.query.pasados === '1';
+      const tipo = parseEventType(req.query.tipo);
       const { rows } = await db.query(
         `SELECT e.*, coalesce(string_agg(DISTINCT m.name, ', '), '') AS mins,
                 count(DISTINCT ep.id) AS total,
@@ -639,9 +641,16 @@ function adminRouter(ctx) {
            LEFT JOIN event_ministries em ON em.event_id = e.id
            LEFT JOIN ministries m ON m.id = em.ministry_id
            LEFT JOIN event_participants ep ON ep.event_id = e.id
-          WHERE ${past ? 'e.starts_at <= now()' : 'e.starts_at > now()'}
-          GROUP BY e.id ORDER BY e.starts_at ${past ? 'DESC' : 'ASC'} LIMIT 200`
+          WHERE ${past ? 'e.starts_at <= now()' : 'e.starts_at > now()'} AND ($1 = '' OR e.event_type = $1)
+          GROUP BY e.id ORDER BY e.starts_at ${past ? 'DESC' : 'ASC'} LIMIT 200`,
+        [tipo]
       );
+      const q = (extra) => { const p = new URLSearchParams({ ...(past ? { pasados: '1' } : {}), ...extra }).toString(); return `/eventos${p ? `?${p}` : ''}`; };
+      // "Ver pasados" / "Ver próximos" conserva el tipo que se está filtrando
+      const toggleHref = `/eventos${new URLSearchParams({ ...(past ? {} : { pasados: '1' }), ...(tipo ? { tipo } : {}) }).toString().replace(/^(?=.)/, '?')}`;
+      const pills = [['', 'Todos'], ...EVENT_TYPES.map((t) => [t, t])]
+        .map(([k, l]) => `<a class="btn ${tipo === k ? '' : 'sec'} small" href="${esc(q(k ? { tipo: k } : {}))}">${esc(l)}</a>`)
+        .join(' ');
       page(
         req,
         res,
@@ -649,14 +658,15 @@ function adminRouter(ctx) {
         '/eventos',
         `<h1>Eventos</h1><p class="sub">${past ? 'Eventos pasados.' : 'Próximos eventos y convocatorias.'}</p>
         <div class="actions"><a class="btn" href="/eventos/nuevo">Nuevo evento</a>
-          <a class="btn sec" href="/eventos${past ? '' : '?pasados=1'}">${past ? 'Ver próximos' : 'Ver pasados'}</a></div>
+          <a class="btn sec" href="${esc(toggleHref)}">${past ? 'Ver próximos' : 'Ver pasados'}</a></div>
+        <p class="toolbar" style="margin-bottom:10px">${pills}</p>
         <div class="table-scroll"><table><tr><th>Fecha</th><th>Evento</th><th>Ministerios</th><th>Confirmados</th></tr>${
           rows
             .map(
               (e) => `<tr style="${e.cancelled ? 'opacity:.55' : ''}"><td>${esc(formatShort(e.starts_at, tz))}</td>
               <td><a href="/eventos/${e.id}">${esc(e.title)}</a>${
                 e.cancelled ? ' <span class="badge b-bad">Cancelado</span>' : ''
-              }<div class="muted">${esc(e.location)}</div></td>
+              }${e.event_type ? ` <span class="badge b-ok">${esc(e.event_type)}</span>` : ''}<div class="muted">${esc(e.location)}</div></td>
               <td>${esc(e.mins || '—')}</td><td>${e.si} / ${e.total}</td></tr>`
             )
             .join('') || '<tr><td colspan="4" class="muted">No hay eventos.</td></tr>'
@@ -675,6 +685,7 @@ function adminRouter(ctx) {
         )}"></div>
         <div><label>Lugar</label><input type="text" name="location" value="${esc(e.location || '')}" placeholder="Templo principal"></div>
       </div>
+      <div class="row"><div><label>Tipo de evento</label><select name="event_type"><option value="">Evento general</option>${EVENT_TYPES.map((t) => `<option ${e.event_type === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div></div>
       <label>Descripción (opcional, uso interno)</label><textarea name="description">${esc(e.description || '')}</textarea>
       <label>Ministerios convocados</label>
       <div class="checks">${
@@ -700,7 +711,7 @@ function adminRouter(ctx) {
     if (!starts_at) errors.push('Falta la fecha y hora.');
     return {
       errors,
-      value: { title, starts_at, location: String(b.location || '').trim(), description: String(b.description || '').trim() },
+      value: { title, starts_at, location: String(b.location || '').trim(), description: String(b.description || '').trim(), event_type: parseEventType(b.event_type) },
     };
   }
 
@@ -812,7 +823,7 @@ function adminRouter(ctx) {
         res,
         e.title,
         '/eventos',
-        `<h1>${esc(e.title)} ${e.cancelled ? '<span class="badge b-bad">Cancelado</span>' : ''}</h1>
+        `<h1>${esc(e.title)} ${e.event_type ? `<span class="badge b-ok">${esc(e.event_type)}</span>` : ''} ${e.cancelled ? '<span class="badge b-bad">Cancelado</span>' : ''}</h1>
         <p class="sub">${esc(formatEventDate(e.starts_at, tz))}${e.location ? ` · ${esc(e.location)}` : ''}${
           mins.length ? `<br>Ministerios: ${mins.map((n) => `<span class="chip">${esc(n)}</span>`).join('')}` : ''
         }</p>
@@ -845,7 +856,7 @@ function adminRouter(ctx) {
           <div><select name="person_id" required><option value="">Agregar a una persona…</option>${others
             .map((p) => `<option value="${p.id}">${esc(p.full_name)}</option>`)
             .join('')}</select></div><button class="sec">Agregar</button></form>
-        <div class="table-scroll"><table><tr><th>Persona</th><th>Respuesta</th><th>Enviados</th><th></th></tr>${
+        <div class="table-scroll"><table data-filter="Buscar entre los participantes…"><tr><th>Persona</th><th>Respuesta</th><th>Enviados</th><th></th></tr>${
           rows || '<tr><td colspan="4" class="muted">Sin participantes.</td></tr>'
         }</table></div>`
       );
@@ -959,7 +970,7 @@ function adminRouter(ctx) {
           { title: 'Cantidad de envíos por estado' }
         )}</div>
         <h2>Enviados</h2>
-        <div class="table-scroll"><table><tr><th>Cuándo</th><th>Persona</th><th>Evento</th><th>Tipo</th><th>Estado</th></tr>${
+        <div class="table-scroll"><table data-filter="Buscar por persona o evento…"><tr><th>Cuándo</th><th>Persona</th><th>Evento</th><th>Tipo</th><th>Estado</th></tr>${
           out.rows
             .map(
               (n) => `<tr><td>${esc(formatShort(n.created_at, tz))}</td><td>${esc(n.full_name)}</td>
@@ -972,7 +983,7 @@ function adminRouter(ctx) {
             .join('') || '<tr><td colspan="5" class="muted">Todavía no se ha enviado nada.</td></tr>'
         }</table></div>
         <h2>Recibidos</h2>
-        <div class="table-scroll"><table><tr><th>Cuándo</th><th>De</th><th>Mensaje</th><th>Interpretado</th></tr>${
+        <div class="table-scroll"><table data-filter="Buscar por número o mensaje…"><tr><th>Cuándo</th><th>De</th><th>Mensaje</th><th>Interpretado</th></tr>${
           inc.rows
             .map(
               (i) => `<tr><td>${esc(formatShort(i.received_at, tz))}</td><td>${esc(i.full_name || displayPhone(i.from_phone))}</td>

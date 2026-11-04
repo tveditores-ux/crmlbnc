@@ -32,7 +32,7 @@ function quarterlyView(t) {
 /** Ruta de desarrollo (Formato 04): matriz de personas por hito. */
 function milestoneMatrix(people) {
   if (!people.length) return '<p class="muted">Todavía no hay personas en la ruta de desarrollo.</p>';
-  return `<div class="table-scroll"><table><tr><th>Nombre</th>${f.MILESTONES.map((m) => `<th style="text-align:center">${esc(m)}</th>`).join('')}<th>Otros</th></tr>
+  return `<div class="table-scroll"><table data-filter="Buscar persona…"><tr><th>Nombre</th>${f.MILESTONES.map((m) => `<th style="text-align:center">${esc(m)}</th>`).join('')}<th>Otros</th></tr>
     ${people
       .map(
         (p) => `<tr><td>${esc(p.name)}</td>${f.MILESTONES.map((m) => `<td style="text-align:center">${p.milestones.includes(m) ? '✓' : ''}</td>`).join('')}<td>${esc(p.other)}</td></tr>`

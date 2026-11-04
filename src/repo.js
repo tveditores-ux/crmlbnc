@@ -240,14 +240,14 @@ async function saveEvent(pool, id, ev, ministryIds) {
     let eventId = id;
     if (id) {
       await db.query(
-        `UPDATE events SET title=$2, description=$3, location=$4, starts_at=$5, updated_at=now() WHERE id=$1`,
-        [id, ev.title, ev.description, ev.location, ev.starts_at]
+        `UPDATE events SET title=$2, description=$3, location=$4, starts_at=$5, event_type=$6, updated_at=now() WHERE id=$1`,
+        [id, ev.title, ev.description, ev.location, ev.starts_at, ev.event_type || '']
       );
       await db.query('DELETE FROM event_ministries WHERE event_id=$1', [id]);
     } else {
       const { rows } = await db.query(
-        `INSERT INTO events (title, description, location, starts_at) VALUES ($1,$2,$3,$4) RETURNING id`,
-        [ev.title, ev.description, ev.location, ev.starts_at]
+        `INSERT INTO events (title, description, location, starts_at, event_type) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+        [ev.title, ev.description, ev.location, ev.starts_at, ev.event_type || '']
       );
       eventId = rows[0].id;
     }

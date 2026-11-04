@@ -117,7 +117,7 @@ function nuevaVidaRouter(ctx) {
         `<p><a href="/nueva-vida/carta">← Elegir otros</a></p><h1>Carta lista para enviar</h1>
         <p class="sub">${esc(letter.title)} · ${recipients.length} persona${recipients.length === 1 ? '' : 's'}. Pulsa <strong>Abrir WhatsApp</strong> en cada una, envía el mensaje desde tu teléfono y luego marca <strong>Ya la envié</strong> para que quede registrado.</p>
         ${typed.invalid.length ? `<div class="flash err">No reconocí estos números y los dejé fuera: ${typed.invalid.map(esc).join(', ')}</div>` : ''}
-        <div class="table-scroll"><table><tr><th>Persona</th><th></th><th></th></tr>${rows}</table></div>
+        <div class="table-scroll"><table data-filter="Buscar persona…"><tr><th>Persona</th><th></th><th></th></tr>${rows}</table></div>
         <script>
           document.querySelectorAll('button.mark').forEach(function(b){ b.addEventListener('click', function(){
             var tr = b.closest('tr'); b.disabled = true;
