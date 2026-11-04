@@ -69,6 +69,13 @@ function mergedFields(keep, other, { inheritOptIn = false } = {}) {
     role: mergeRoles(keep.role, other.role),
     notes: mergeNotes(mergeNotes(keep.notes, other.notes), lost.join('. ')),
     whatsapp_name: keep.whatsapp_name || other.whatsapp_name || '',
+    birth_date: keep.birth_date || other.birth_date || '',
+    cedula: keep.cedula || other.cedula || '',
+    address: keep.address || other.address || '',
+    civil_status: keep.civil_status || other.civil_status || '',
+    congregation: keep.congregation || other.congregation || '',
+    care_group_name: keep.care_group_name || other.care_group_name || '',
+    profile_updated_at: keep.profile_updated_at || other.profile_updated_at || null,
     membership,
     in_official_group: Boolean(keep.in_official_group || other.in_official_group),
     active: Boolean(keep.active || other.active),
@@ -108,9 +115,15 @@ async function mergePeople(pool, idA, idB, { inheritOptIn = false } = {}) {
     await db.query('UPDATE people SET phone = NULL, email = NULL, google_email = NULL WHERE id = $1', [other.id]);
     await db.query(
       `UPDATE people SET full_name=$2, phone=$3, email=$4, google_email=$5, access_level=$6, role=$7, notes=$8,
-              whatsapp_name=$9, membership=$10, in_official_group=$11, active=$12, opt_in=$13, updated_at=now() WHERE id=$1`,
-      [keep.id, m.full_name, m.phone, m.email, m.google_email, m.access_level, m.role, m.notes, m.whatsapp_name, m.membership, m.in_official_group, m.active, m.opt_in]
+              whatsapp_name=$9, membership=$10, in_official_group=$11, active=$12, opt_in=$13,
+              birth_date=$14, cedula=$15, address=$16, civil_status=$17, congregation=$18, care_group_name=$19, profile_updated_at=$20, updated_at=now() WHERE id=$1`,
+      [keep.id, m.full_name, m.phone, m.email, m.google_email, m.access_level, m.role, m.notes, m.whatsapp_name, m.membership, m.in_official_group, m.active, m.opt_in,
+        m.birth_date, m.cedula, m.address, m.civil_status, m.congregation, m.care_group_name, m.profile_updated_at]
     );
+
+    // 1b) Foto y respuestas del enlace "Mis datos": pasan a la ficha conservada (la foto solo si esta no tenía).
+    await db.query('INSERT INTO people_photos (person_id, data, updated_at) SELECT $1, data, updated_at FROM people_photos WHERE person_id = $2 ON CONFLICT (person_id) DO NOTHING', [keep.id, other.id]);
+    await db.query('UPDATE member_submissions SET person_id = $1 WHERE person_id = $2', [keep.id, other.id]);
 
     // 2) Ministerios: se unen; si la otra era coordinadora, ahora lo es la conservada.
     summary.ministries = (

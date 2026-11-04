@@ -8,6 +8,7 @@ const { formatEventDate, formatShort, localInputToDate, dateToLocalInput } = req
 const { csvToRecords, toCsv } = require('../csv');
 const repo = require('../repo');
 const members = require('../members');
+const { memberDataCard } = require('./member-requests');
 const reminders = require('../reminders');
 const msgs = require('../messages');
 const { whatsappReady, emailReady } = require('../config');
@@ -217,6 +218,7 @@ function adminRouter(ctx) {
           <a class="btn sec" href="/personas/importar">Importar desde hoja (CSV)</a>
           <a class="btn sec" href="/personas/importar-grupo">Importar lista del grupo</a>
           <a class="btn sec" href="/personas/duplicados">Unir duplicados</a>
+          <a class="btn sec" href="/personas/solicitud">Pedir datos a las personas</a>
           <a class="btn sec" href="/personas/exportar.csv${esc(members.viewQuery(v))}">Descargar lista${filtered ? ' (con estos filtros)' : ''}</a></div>
         <div class="grid">
           <div class="card"><div class="stat" style="color:var(--ok)">${counts.miembro}</div><div class="stat-label">miembros</div></div>
@@ -382,12 +384,13 @@ function adminRouter(ctx) {
       const sel = (await db.query('SELECT ministry_id FROM person_ministries WHERE person_id=$1', [id])).rows.map(
         (x) => x.ministry_id
       );
+      const hasPhoto = (await db.query('SELECT 1 FROM people_photos WHERE person_id = $1', [id])).rows.length > 0;
       page(
         req,
         res,
         rows[0].full_name,
         '/personas',
-        `<h1>${esc(rows[0].full_name)}</h1>${personForm(rows[0], ministries, sel, `/personas/${id}`)}
+        `<h1>${esc(rows[0].full_name)}</h1>${memberDataCard(rows[0], hasPhoto, config.timezone)}${personForm(rows[0], ministries, sel, `/personas/${id}`)}
         <div class="card"><strong>¿Esta persona está repetida?</strong>
           <p class="muted" style="margin:4px 0 10px">Si hay otra ficha de la misma persona, únelas: se conserva la más antigua y se pasa todo lo de la otra.</p>
           <a class="btn sec" href="/personas/${id}/unir">Unir con otra persona</a></div>

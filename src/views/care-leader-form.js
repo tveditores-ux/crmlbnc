@@ -4,7 +4,7 @@ const { esc } = require('../util');
 const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
 /** Fecha de nacimiento como tres selectores (día, mes y año): en el teléfono salen como ruedas. */
-function birthRoll(v, today) {
+function birthRoll(v, today, label = 'Fecha de nacimiento del líder') {
   const [y, m, d] = v.bd_year !== undefined ? [v.bd_year, v.bd_month, v.bd_day] : String(v.leader_birth_date || '').split('-');
   const opt = (value, label, cur) => `<option value="${value}" ${String(cur) === String(value) ? 'selected' : ''}>${label}</option>`;
   const days = Array.from({ length: 31 }, (_, i) => opt(String(i + 1).padStart(2, '0'), i + 1, d));
@@ -12,7 +12,7 @@ function birthRoll(v, today) {
   const last = Number(String(today).slice(0, 4)) - 10;
   const years = Array.from({ length: last - 1909 }, (_, i) => opt(last - i, last - i, y));
   const st = 'font-size:18px;padding:12px 6px;width:100%;border-radius:10px;border:1px solid var(--line)';
-  return `<label>Fecha de nacimiento del líder</label>
+  return `<label>${label}</label>
         <div class="triple">
           <div><select name="bd_day" aria-label="Día" style="${st}"><option value="">Día</option>${days.join('')}</select></div>
           <div><select name="bd_month" aria-label="Mes" style="${st}"><option value="">Mes</option>${months.join('')}</select></div>
@@ -62,7 +62,14 @@ function leaderFields(v, { today, photoSrc = '', stages, days, congregations = [
 }
 
 /** La foto se reduce y se reconvierte a JPEG en el teléfono (así no viaja la ubicación). */
-const PHOTO_SCRIPT = `<script>
+const REQUIRED_PHOTO_BLOCK = `          var form = data.closest('form');
+          if (form) form.addEventListener('submit', function (e) {
+            if (!data.value && !prev.getAttribute('src')) { e.preventDefault(); msg.textContent = 'Cargar tu fotografía es necesario para completar el registro de tu ficha de liderazgo.'; msg.style.color = 'var(--bad)'; prev.scrollIntoView({ block: 'center' }); }
+          });
+`;
+
+/** { required: true } (por defecto): el formulario no se envía sin foto. Con false, la foto es opcional. */
+const photoScript = ({ required = true } = {}) => `<script>
         (function () {
           var data = document.getElementById('photo_data'), prev = document.getElementById('photo_prev'), msg = document.getElementById('photo_msg');
           function take(file) {
@@ -82,11 +89,8 @@ const PHOTO_SCRIPT = `<script>
             img.src = url;
           }
           ['photo_cam', 'photo_gal'].forEach(function (id) { document.getElementById(id).addEventListener('change', function (e) { take(e.target.files[0]); }); });
-          var form = data.closest('form');
-          if (form) form.addEventListener('submit', function (e) {
-            if (!data.value && !prev.getAttribute('src')) { e.preventDefault(); msg.textContent = 'Cargar tu fotografía es necesario para completar el registro de tu ficha de liderazgo.'; msg.style.color = 'var(--bad)'; prev.scrollIntoView({ block: 'center' }); }
-          });
-        })();
+${required ? REQUIRED_PHOTO_BLOCK : ''}        })();
       </script>`;
+const PHOTO_SCRIPT = photoScript();
 
-module.exports = { leaderFields, PHOTO_SCRIPT };
+module.exports = { leaderFields, PHOTO_SCRIPT, photoScript, birthRoll };
