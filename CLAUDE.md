@@ -132,3 +132,9 @@ Recordatorios y confirmaciones por WhatsApp y correo. Node 22, Express, PostgreS
 - **Referencia del pago: solo los 4 últimos números** (`payment_ref`); si escriben más, el servidor rechaza el reporte y no guarda lo escrito. Nunca pedir la cuenta ni el teléfono completos.
 - Panel: el historial de la ficha muestra horario, etapa, invitados recientes, ofrendas (Bs. y divisas), referencia y asistencia del líder; la ficha resume "el líder asistió a los servicios: miércoles X de Y · domingo X de Y" (solo cuenta los reportes donde lo contestó). La descarga `/grupos/reportes.csv` trae las columnas nuevas. El reporte trimestral separa **Ofrendas en bolívares** y **Ofrendas en divisas**.
 - Como antes, reenviar la misma fecha corrige el reporte (reemplaza todos sus campos, también los nuevos).
+
+## Borrar toda la lista de personas (`src/people-wipe.js`, `/personas/borrar-todas`)
+- **Destructivo y sin vuelta atrás.** La pantalla muestra primero qué se llevaría (consulta el catálogo `pg_constraint`, así incluye las tablas ligadas a `people` que se agreguen después), ofrece descargar la copia CSV y pide escribir `BORRAR TODAS`. Todo en una transacción.
+- **Se conservan las personas con acceso al panel** (`access_level` distinto de `ninguno`: administradores y coordinadores que entran con Google), porque viven en la misma tabla y borrarlas los dejaría sin poder entrar.
+- Lo que depende de cada persona sigue las claves foráneas: en cascada se borran sus ministerios, participaciones en eventos, consolidación, fotos y respuestas de "Mis datos"; solo pierden el vínculo (se conservan) Nueva Vida, las conversaciones del asistente y el coordinador de los ministerios. No toca grupos de cuidado, eventos, ministerios, asistencia ni bautizados.
+- La ruta vive detrás del guardia de sesión (sin sesión, un POST recibe 401). Vigilado por `test/borrar-personas.test.js`.
