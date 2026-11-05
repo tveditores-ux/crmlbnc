@@ -1008,7 +1008,10 @@ function adminRouter(ctx) {
       const wa = whatsappReady(config);
       const em = emailReady(config);
       const lr = (await db.query(`SELECT value, updated_at FROM system_state WHERE key='last_run'`)).rows[0];
-      const webhookUrl = `${config.publicUrl}/webhooks/whatsapp`;
+      const isWc = config.whatsappProvider === 'wecall';
+      const webhookUrl = `${config.publicUrl}/webhooks/${isWc ? 'wecall' : 'whatsapp'}`;
+      const avisos = isWc ? await require('../channels/wecall').recentDeliveries(db) : [];
+      const RES = { recibido: 'badge b-ok', repetido: 'badge b-ok', ignorado: 'badge b-warn', firma_invalida: 'badge b-bad', error: 'badge b-bad' };
       page(
         req,
         res,
@@ -1017,9 +1020,9 @@ function adminRouter(ctx) {
         `<h1>Pruebas y configuración</h1><p class="sub">Revisa que cada pieza esté conectada antes de activar los envíos reales.</p>
         <div class="card"><div class="table-scroll"><table>
           <tr><td>Modo</td><td>${config.dryRun ? '<span class="badge b-warn">Prueba (DRY_RUN=true)</span>' : '<span class="badge b-ok">Envíos reales</span>'}</td></tr>
-          <tr><td>WhatsApp Cloud API</td><td>${ok(wa)} <span class="muted">plantilla: ${esc(config.whatsapp.templateName)} (${esc(config.whatsapp.templateLang)})</span></td></tr>
-          <tr><td>Webhook de WhatsApp</td><td>${ok(config.whatsapp.verifyToken)} <span class="mono">${esc(webhookUrl)}</span></td></tr>
-          <tr><td>Firma del webhook (App Secret)</td><td>${ok(config.whatsapp.appSecret)}</td></tr>
+          <tr><td>${isWc ? 'WhatsApp por WeCall' : 'WhatsApp Cloud API'}</td><td>${ok(wa)} <span class="muted">plantilla: ${esc(config.whatsapp.templateName)} (${esc(config.whatsapp.templateLang)})</span></td></tr>
+          <tr><td>Webhook de WhatsApp</td><td>${ok(isWc ? config.wecall.webhookSecret : config.whatsapp.verifyToken)} <span class="mono">${esc(webhookUrl)}</span></td></tr>
+          <tr><td>Firma del webhook ${isWc ? '(Webhook secret de WeCall)' : '(App Secret)'}</td><td>${ok(isWc ? config.wecall.webhookSecret : config.whatsapp.appSecret)}</td></tr>
           <tr><td>Correo</td><td>${ok(em)} <span class="muted">${esc(config.email.provider)}${config.email.from ? ` · ${esc(config.email.from)}` : ''}</span></td></tr>
           <tr><td>Programador</td><td>${config.schedulerEnabled ? `cada ${config.schedulerIntervalMinutes} min` : 'apagado'} · última pasada: ${
             lr ? `${esc(formatShort(lr.updated_at, tz))} <span class="mono">${esc(lr.value)}</span>` : 'todavía no'
@@ -1027,6 +1030,7 @@ function adminRouter(ctx) {
           <tr><td>Zona horaria</td><td>${esc(tz)} · horario de envío ${config.sendWindowStart}:00–${config.sendWindowEnd}:00</td></tr>
         </table></div></div>
 
+        ${isWc ? `<h2>Últimos avisos de WeCall</h2><div class="card"><p class="muted" style="margin-top:0">Cada vez que WeCall avisa de un mensaje, queda aquí (sin el texto ni el número). Si escribes al número y no aparece nada, WeCall no está llamando a esta dirección: revisa la URL del webhook en su panel.</p>${avisos.length ? `<div class="table-scroll"><table><tr><th>Cuándo</th><th>Resultado</th><th>Evento</th><th>Detalle</th></tr>${avisos.map((a) => `<tr><td>${esc(formatShort(a.at, tz))}</td><td><span class="${RES[a.result] || 'badge'}">${esc(a.result)}</span></td><td class="mono">${esc(a.evento || '—')}</td><td class="muted">${esc(a.detail || '')}</td></tr>`).join('')}</table></div>` : '<p>Todavía no ha llegado ningún aviso.</p>'}</div>` : ''}
         <h2>1. Mensaje de prueba por WhatsApp</h2>
         <form method="post" action="/pruebas/whatsapp" class="card">
           <div class="row"><div><label>Número</label><input type="tel" name="phone" required placeholder="0414-1234567"></div>

@@ -109,13 +109,24 @@ function publicRouter(ctx) {
     ah(async (req, res) => {
       const w = config.wecall;
       if (config.whatsappProvider !== 'wecall' || !w.webhookSecret) return res.sendStatus(404);
-      if (!wecall.verifySignature(w.webhookSecret, req.rawBody || '', req.get('x-wecall-signature'))) return res.sendStatus(401);
+      const evento = (req.body && (req.body.evento || req.body.event)) || '';
+      const sigHeader = req.get('x-wecall-signature') || req.get('x-webhook-signature') || req.get('x-signature');
+      if (!wecall.verifySignature(w.webhookSecret, req.rawBody || '', sigHeader)) {
+        await wecall.recordDelivery(db, { result: 'firma_invalida', evento, detail: sigHeader ? 'llegó una firma, pero no coincide con el secreto de Railway' : 'llegó sin firma' });
+        return res.sendStatus(401);
+      }
       // Responder rápido: WeCall espera pocos segundos y no reintenta. Los errores quedan en el registro.
       try {
         const body = wecall.toMetaWebhook(req.body, config.defaultCountryCode);
-        if (body && !(await wecall.alreadySeen(db, body))) await responses.handleWhatsAppWebhook(ctx, body);
+        if (!body) await wecall.recordDelivery(db, { result: 'ignorado', evento, detail: 'no es un mensaje entrante que el CRM entienda' });
+        else if (await wecall.alreadySeen(db, body)) await wecall.recordDelivery(db, { result: 'repetido', evento });
+        else {
+          await responses.handleWhatsAppWebhook(ctx, body);
+          await wecall.recordDelivery(db, { result: 'recibido', evento });
+        }
       } catch (err) {
         console.error('[webhook wecall] error procesando:', err);
+        await wecall.recordDelivery(db, { result: 'error', evento, detail: err.message });
       }
       res.sendStatus(200);
     })

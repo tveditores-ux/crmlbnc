@@ -41,10 +41,10 @@ function createWeCall(cfg, fetchImpl = globalThis.fetch) {
 
 /** Firma del webhook: sha256=<hex> del HMAC del cuerpo crudo, comparada a tiempo constante. */
 function verifySignature(secret, rawBody, header) {
-  const h = String(header || '');
-  if (!secret || !h.startsWith('sha256=')) return false;
+  const h = String(header || '').trim().replace(/^sha256=/i, '').toLowerCase(); // con o sin el prefijo "sha256="
+  if (!secret || !h) return false;
   const expected = crypto.createHmac('sha256', secret).update(rawBody || '').digest('hex');
-  const a = Buffer.from(h.slice(7));
+  const a = Buffer.from(h);
   const b = Buffer.from(expected);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
@@ -54,12 +54,24 @@ function verifySignature(secret, rawBody, header) {
  * al formato del webhook de Meta, para reutilizar todo lo que ya sabe atenderlo (respuestas, asistente, registro).
  * Devuelve null si no es un mensaje entrante.
  */
+const INCOMING_EVENTS = new Set(['mensaje_nuevo', 'mensaje_recibido', 'mensaje_entrante', 'message', 'message_received', 'message.received', 'new_message', 'incoming_message']);
+const OUTGOING = new Set(['saliente', 'outbound', 'outgoing', 'out', 'enviado']);
+
 function toMetaWebhook(payload, countryCode) {
-  if (!payload || payload.evento !== 'mensaje_nuevo') return null;
-  const msg = payload.mensaje || {};
-  if (msg.direccion && msg.direccion !== 'entrante') return null;
-  const from = normalizePhone((payload.contacto || {}).telefono, countryCode);
-  if (!from || msg.id == null) return null;
+  if (!payload || typeof payload !== 'object') return null;
+  const msg = payload.mensaje || payload.message || {};
+  const evento = String(payload.evento || payload.event || '').toLowerCase();
+  // un evento conocido de mensaje entrante, o un aviso sin nombre de evento que trae un mensaje
+  if (evento ? !INCOMING_EVENTS.has(evento) : !(payload.mensaje || payload.message)) return null;
+  if (OUTGOING.has(String(msg.direccion || msg.direction || '').toLowerCase())) return null;
+  const c = payload.contacto || payload.contact || {};
+  const from = normalizePhone(c.telefono || c.phone || payload.telefono || payload.from, countryCode);
+  const mid = msg.id ?? msg.message_id;
+  if (!from || mid == null) return null;
+  msg.id = mid;
+  msg.texto = msg.texto ?? msg.text ?? msg.body ?? msg.mensaje;
+  if (msg.texto && typeof msg.texto === 'object') msg.texto = msg.texto.body || '';
+  msg.tipo = msg.tipo ?? msg.type;
   const texto = String(msg.texto || '').trim();
   const m = texto
     ? { id: `wecall-${msg.id}`, from, type: 'text', text: { body: texto } }
@@ -75,4 +87,33 @@ async function alreadySeen(db, body) {
   return rows.length > 0;
 }
 
-module.exports = { createWeCall, verifySignature, toMetaWebhook, alreadySeen };
+const LOG_KEY = 'wecall_avisos';
+/** Guarda los últimos avisos recibidos (sin datos de las personas ni claves) para poder ver en el panel por qué algo no entra. */
+async function recordDelivery(db, { result, evento = '', detail = '' }) {
+  try {
+    const cur = (await db.query('SELECT value FROM system_state WHERE key = $1', [LOG_KEY])).rows[0];
+    let list = [];
+    try {
+      list = JSON.parse(cur ? cur.value : '[]');
+    } catch {
+      /* se empieza de nuevo */
+    }
+    list.unshift({ at: new Date().toISOString(), result, evento: String(evento).slice(0, 40), detail: String(detail).slice(0, 120) });
+    await db.query(
+      "INSERT INTO system_state (key, value, updated_at) VALUES ($1, $2, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()",
+      [LOG_KEY, JSON.stringify(list.slice(0, 20))]
+    );
+  } catch (err) {
+    console.error('[webhook wecall] no se pudo guardar el aviso:', err.message);
+  }
+}
+async function recentDeliveries(db) {
+  const r = (await db.query('SELECT value FROM system_state WHERE key = $1', [LOG_KEY])).rows[0];
+  try {
+    return JSON.parse(r ? r.value : '[]');
+  } catch {
+    return [];
+  }
+}
+
+module.exports = { createWeCall, verifySignature, toMetaWebhook, alreadySeen, recordDelivery, recentDeliveries };

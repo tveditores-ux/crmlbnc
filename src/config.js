@@ -47,8 +47,9 @@ function loadConfig(env = process.env) {
     // WHATSAPP_PROVIDER=wecall hace que el CRM envíe y reciba por WeCall en vez de hablar directo con Meta.
     wecall: {
       baseUrl: String(env.WECALL_BASE_URL || '').trim().replace(/\/+$/, ''),
-      apiKey: env.WECALL_API_KEY || '',
-      webhookSecret: env.WECALL_WEBHOOK_SECRET || '',
+      // se recortan: pegar una clave con un espacio o salto de línea de más es el error más común
+      apiKey: String(env.WECALL_API_KEY || '').trim(),
+      webhookSecret: String(env.WECALL_WEBHOOK_SECRET || '').trim(),
     },
     whatsappProvider: String(env.WHATSAPP_PROVIDER || 'meta').toLowerCase() === 'wecall' ? 'wecall' : 'meta',
 

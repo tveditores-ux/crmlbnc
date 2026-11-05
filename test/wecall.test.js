@@ -32,7 +32,8 @@ test('firma: solo acepta el HMAC correcto del cuerpo crudo', () => {
   assert.equal(wecall.verifySignature(SECRET, body, sign(body, 'otro')), false);
   assert.equal(wecall.verifySignature(SECRET, body + ' ', sign(body)), false);
   assert.equal(wecall.verifySignature(SECRET, body, ''), false);
-  assert.equal(wecall.verifySignature(SECRET, body, sign(body).replace('sha256=', '')), false);
+  assert.equal(wecall.verifySignature(SECRET, body, sign(body).replace('sha256=', '')), true); // también sin el prefijo
+  assert.equal(wecall.verifySignature(SECRET, body, sign(body, 'otro').replace('sha256=', '')), false);
   assert.equal(wecall.verifySignature('', body, sign(body, '')), false); // sin secreto configurado nunca pasa
 });
 
@@ -45,6 +46,23 @@ test('toMetaWebhook: mensaje entrante de texto; ignora lo saliente y otros event
   assert.equal(wecall.toMetaWebhook({ ...ev, contacto: {} }, '58'), null);
   const foto = wecall.toMetaWebhook({ ...ev, mensaje: { id: 8, texto: '', tipo: 'image' } }, '58').entry[0].changes[0].value.messages[0];
   assert.deepEqual([foto.type, foto.text], ['image', undefined]);
+});
+
+test('toMetaWebhook: acepta otros nombres de evento y de campos, y un aviso sin nombre de evento', () => {
+  const base = { contacto: { telefono: '0414-555.12.12' }, mensaje: { id: 1, texto: 'Hola' } };
+  for (const evento of ['mensaje_recibido', 'message', 'message.received', undefined]) {
+    const r = wecall.toMetaWebhook({ ...base, evento }, '58');
+    assert.equal(r.entry[0].changes[0].value.messages[0].text.body, 'Hola', String(evento));
+  }
+  const en = wecall.toMetaWebhook({ event: 'message_received', contact: { phone: '584145551212' }, message: { message_id: 'abc', text: 'Hi', direction: 'incoming' } }, '58');
+  assert.equal(en.entry[0].changes[0].value.messages[0].id, 'wecall-abc');
+  assert.equal(wecall.toMetaWebhook({ ...base, evento: 'estado_actualizado' }, '58'), null);
+  assert.equal(wecall.toMetaWebhook({ ...base, mensaje: { ...base.mensaje, direction: 'outbound' } }, '58'), null);
+});
+
+test('config: la clave y el secreto se recortan (espacios o saltos de línea al pegar)', () => {
+  const c = loadConfig(env({ WECALL_API_KEY: '  clave \t', WECALL_WEBHOOK_SECRET: ' sec ' }));
+  assert.deepEqual([c.wecall.apiKey, c.wecall.webhookSecret], ['clave', 'sec']);
 });
 
 test('envío: texto y plantilla van a la API v1 de WeCall con la clave; 409 y errores se explican', async () => {
@@ -86,6 +104,7 @@ test('webhook: firma obligatoria, el mensaje queda registrado una sola vez aunqu
   try {
     const body = JSON.stringify({ evento: 'mensaje_nuevo', contacto: { telefono: '0414-555.12.12' }, mensaje: { id: 99, direccion: 'entrante', texto: 'Hola, ¿a qué hora es el culto?' } });
     assert.equal((await post(s1, body)).status, 401);
+    assert.deepEqual((await wecall.recentDeliveries(h.db)).map((a) => [a.result, a.detail]), [['firma_invalida', 'llegó sin firma']]);
     assert.equal((await post(s1, body, sign(body, 'otro'))).status, 401);
     assert.equal((await h.db.query('SELECT count(*)::int AS n FROM inbound_messages')).rows[0].n, 0);
     assert.equal((await post(s1, body, sign(body))).status, 200);
@@ -95,6 +114,8 @@ test('webhook: firma obligatoria, el mensaje queda registrado una sola vez aunqu
     const saliente = JSON.stringify({ evento: 'mensaje_nuevo', contacto: { telefono: '0414-555.12.12' }, mensaje: { id: 100, direccion: 'saliente', texto: 'respuesta nuestra' } });
     assert.equal((await post(s1, saliente, sign(saliente))).status, 200);
     assert.equal((await h.db.query('SELECT count(*)::int AS n FROM inbound_messages')).rows[0].n, 1);
+    assert.deepEqual((await wecall.recentDeliveries(h.db)).map((a) => a.result), ['ignorado', 'repetido', 'recibido', 'firma_invalida', 'firma_invalida']);
+    assert.ok(!JSON.stringify(await wecall.recentDeliveries(h.db)).includes('5551212')); // el registro no guarda números ni textos
     assert.equal((await post(s2, body, sign(body))).status, 404);
   } finally {
     s1.close();

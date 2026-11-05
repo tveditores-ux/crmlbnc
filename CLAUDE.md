@@ -25,6 +25,7 @@ Recordatorios y confirmaciones por WhatsApp y correo. Node 22, Express, PostgreS
 ## WeCall como proveedor del número (`src/channels/wecall.js`)
 - `WHATSAPP_PROVIDER=wecall` (+ `WECALL_BASE_URL`, `WECALL_API_KEY`, `WECALL_WEBHOOK_SECRET`): el canal `channels.whatsapp` envía por la API v1 de WeCall (`POST /api/v1/mensajes/enviar/`, Bearer) en vez de Meta directo; el resto del CRM (asistente, recordatorios, respuestas) no cambia. Por defecto sigue `meta`.
 - Recibe en `POST /webhooks/wecall` (público, antes del guardia de sesión): exige `X-WeCall-Signature: sha256=<hmac del cuerpo crudo>`; convierte `mensaje_nuevo` entrante al formato de Meta y reutiliza `handleWhatsAppWebhook`; ignora lo saliente; no repite un mensaje ya registrado (`raw->>'id'`). Con `meta` la ruta responde 404. DRY_RUN sigue simulando los envíos.
+- Tolerante a propósito: la firma se acepta con o sin `sha256=`; reconoce varios nombres de evento y de campos del mensaje entrante; `WECALL_API_KEY`/`WECALL_WEBHOOK_SECRET` se recortan. Cada aviso (recibido, repetido, ignorado, firma_invalida, error) se anota, sin números ni textos, en `system_state.wecall_avisos` (últimos 20) y se ve en `/pruebas` → "Últimos avisos de WeCall".
 - Pendiente de verificar con WeCall real: formato de `variables` de plantillas y tipos de mensaje no texto; WeCall no reintenta webhooks (el call center usa además un polling de respaldo; aquí aún no).
 
 ## Asistente de WhatsApp (`src/agent.js`)
