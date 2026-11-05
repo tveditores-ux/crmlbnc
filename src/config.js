@@ -43,6 +43,15 @@ function loadConfig(env = process.env) {
       appSecret: env.WHATSAPP_APP_SECRET || '',
     },
 
+    // WeCall Inbox: proveedor del número de WhatsApp (API oficial de Meta administrada por ellos).
+    // WHATSAPP_PROVIDER=wecall hace que el CRM envíe y reciba por WeCall en vez de hablar directo con Meta.
+    wecall: {
+      baseUrl: String(env.WECALL_BASE_URL || '').trim().replace(/\/+$/, ''),
+      apiKey: env.WECALL_API_KEY || '',
+      webhookSecret: env.WECALL_WEBHOOK_SECRET || '',
+    },
+    whatsappProvider: String(env.WHATSAPP_PROVIDER || 'meta').toLowerCase() === 'wecall' ? 'wecall' : 'meta',
+
     // Acceso al panel con Google (opcional; sin esto solo funciona la contraseña)
     google: {
       clientId: env.GOOGLE_CLIENT_ID || '',
@@ -87,6 +96,7 @@ function configProblems(config) {
 }
 
 function whatsappReady(config) {
+  if (config.whatsappProvider === 'wecall') return Boolean(config.wecall.apiKey && config.wecall.baseUrl);
   return Boolean(config.whatsapp.token && config.whatsapp.phoneNumberId);
 }
 

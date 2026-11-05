@@ -1,6 +1,7 @@
 'use strict';
 const crypto = require('crypto');
 const { createWhatsApp } = require('./whatsapp');
+const { createWeCall } = require('./wecall');
 const { createEmail } = require('./email');
 const { whatsappReady, emailReady } = require('../config');
 
@@ -9,7 +10,8 @@ const { whatsappReady, emailReady } = require('../config');
  * se registra el mensaje como "simulado" para poder probar todo el flujo.
  */
 function createChannels(config, { fetchImpl, logger = console } = {}) {
-  const waReal = whatsappReady(config) ? createWhatsApp(config.whatsapp, fetchImpl) : null;
+  const makeWa = config.whatsappProvider === 'wecall' ? () => createWeCall(config.wecall, fetchImpl) : () => createWhatsApp(config.whatsapp, fetchImpl);
+  const waReal = whatsappReady(config) ? makeWa() : null;
   const mailReal = emailReady(config) ? createEmail(config.email, fetchImpl) : null;
   const fakeId = () => `simulado-${crypto.randomBytes(4).toString('hex')}`;
 

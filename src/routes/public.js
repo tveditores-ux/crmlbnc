@@ -5,6 +5,7 @@ const { layout } = require('../views/layout');
 const { esc, firstName } = require('../util');
 const { formatEventDate } = require('../time');
 const responses = require('../responses');
+const wecall = require('../channels/wecall');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -97,6 +98,24 @@ function publicRouter(ctx) {
         await responses.handleWhatsAppWebhook(ctx, req.body);
       } catch (err) {
         console.error('[webhook] error procesando:', err);
+      }
+      res.sendStatus(200);
+    })
+  );
+
+  /* ---------- Webhook de WeCall (número de WhatsApp administrado por WeCall) ---------- */
+  r.post(
+    '/webhooks/wecall',
+    ah(async (req, res) => {
+      const w = config.wecall;
+      if (config.whatsappProvider !== 'wecall' || !w.webhookSecret) return res.sendStatus(404);
+      if (!wecall.verifySignature(w.webhookSecret, req.rawBody || '', req.get('x-wecall-signature'))) return res.sendStatus(401);
+      // Responder rápido: WeCall espera pocos segundos y no reintenta. Los errores quedan en el registro.
+      try {
+        const body = wecall.toMetaWebhook(req.body, config.defaultCountryCode);
+        if (body && !(await wecall.alreadySeen(db, body))) await responses.handleWhatsAppWebhook(ctx, body);
+      } catch (err) {
+        console.error('[webhook wecall] error procesando:', err);
       }
       res.sendStatus(200);
     })
