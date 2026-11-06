@@ -9,6 +9,8 @@ const fmt = require('../care-formats');
 const lg = require('../leader-guide');
 const views = require('../views/care-formats');
 const { leaderFields, PHOTO_SCRIPT } = require('../views/care-leader-form');
+const redil = require('../redil-remote');
+const { formatEventDate } = require('../time');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -67,8 +69,8 @@ function careRemoteRouter(ctx) {
   const invalid = () =>
     shell('Enlace no válido', '<div class="card"><h1>Enlace no válido</h1><p class="muted">Este enlace ya no está activo. Pídele uno nuevo a quien administra el panel.</p></div>', 404);
 
-  const TABS = [['/datos', 'Datos del grupo'], ['', 'Reporte'], ['/planificador', 'Planificador'], ['/gente', 'Ruta de crecimiento'], ['/foda', 'F.O.D.A.'], ['/trimestral', 'Trimestral'], ['/guia', 'Guía']];
-  const tabKey = { '/datos': 'datos', '': 'reporte', '/planificador': 'planificador', '/gente': 'gente', '/foda': 'foda', '/trimestral': 'trimestral', '/guia': 'guia' };
+  const TABS = [['/redil', 'REDIL'], ['/datos', 'Datos del grupo'], ['', 'Reporte'], ['/planificador', 'Planificador'], ['/gente', 'Ruta de crecimiento'], ['/foda', 'F.O.D.A.'], ['/trimestral', 'Trimestral'], ['/guia', 'Guía']];
+  const tabKey = { '/redil': 'redil', '/datos': 'datos', '': 'reporte', '/planificador': 'planificador', '/gente': 'gente', '/foda': 'foda', '/trimestral': 'trimestral', '/guia': 'guia' };
   const tabs = (token, on) =>
     `<div class="tabs">${TABS.map(([p, l]) => `<a href="/g/${esc(token)}${p}" class="${tabKey[p] === on ? 'on' : ''}">${l}</a>`).join('')}</div>`;
   const tooMany = () => shell('Demasiados envíos', '<div class="card"><h1>Demasiados envíos</h1><p class="muted">Espera un rato antes de enviar otro.</p></div>', 429);
@@ -178,12 +180,52 @@ function careRemoteRouter(ctx) {
       <script>document.querySelectorAll('input[type=number]').forEach(function(i){ i.addEventListener('focus', function(){ i.select(); }); });</script>`;
   }
 
+  /* ---------------- REDIL: confirmar asistencia ---------------- */
+  const STATUS_TEXT = { confirmado: '<strong style="color:var(--ok)">✔ Confirmaste que vas</strong>', no_puede: '<strong>✖ Avisaste que no puedes</strong>', pendiente: '<strong>Falta tu respuesta</strong>' };
+  async function redilPage(g, token, flash = '') {
+    const list = await redil.listForLeader(db, g);
+    const card = (e) => `<div class="card"><strong>${esc(e.title)}</strong><br><span class="muted">${esc(e.event_type)}</span>
+        <p style="margin:8px 0">${esc(formatEventDate(new Date(e.starts_at), config.timezone))}${e.location ? `<br>${esc(e.location)}` : ''}</p>
+        <p style="margin:0 0 10px">${STATUS_TEXT[e.status]}</p>
+        <form method="post" action="/g/${esc(token)}/redil" autocomplete="off">${honey}<input type="hidden" name="event_id" value="${e.event_id}">
+          <div class="pair"><button name="r" value="si" class="go" style="margin-top:0">Voy</button><button name="r" value="no" class="go sec" style="margin-top:0">No puedo</button></div></form></div>`;
+    return `${tabs(token, 'redil')}<h1>REDIL</h1>
+      <p class="sub" style="margin:0"><strong>${esc(g.name)}</strong>${g.leader_name ? ` · ${esc(g.leader_name)}` : ''}</p>
+      ${flash}
+      ${list.length ? list.map(card).join('') : '<div class="card"><p style="margin:0">No tienes ningún REDIL por confirmar. Si hay uno próximo y no lo ves aquí, avisa a quien administra el panel: puede que falte convocarte.</p></div>'}
+      <p class="muted" style="font-size:13px">Puedes cambiar tu respuesta cuando quieras, hasta que empiece el REDIL.</p>`;
+  }
+  r.get(
+    '/g/:token/redil',
+    ah(async (req, res) => {
+      const g = await findGroup(req.params.token);
+      if (!g) return send(res, invalid());
+      send(res, shell('REDIL', await redilPage(g, req.params.token)));
+    })
+  );
+  r.post(
+    '/g/:token/redil',
+    ah(async (req, res) => {
+      const g = await findGroup(req.params.token);
+      if (!g) return send(res, invalid());
+      if (req.body.web) return send(res, shell('Gracias', '<div class="ok">Gracias.</div>'));
+      if (!limiter.take(`${req.ip}|${req.params.token}`)) return send(res, tooMany());
+      const out = await redil.respond(db, g, req.body.event_id, req.body.r);
+      if (!out) return send(res, shell('REDIL', await redilPage(g, req.params.token, '<div class="flash err">No pude registrar tu respuesta. Intenta otra vez.</div>'), 400));
+      await db.query('UPDATE care_groups SET uses = uses + 1, last_used_at = now() WHERE id = $1', [g.id]);
+      const msg = out.status === 'confirmado' ? '¡Listo! Confirmaste tu asistencia. Te esperamos.' : 'Anotado: no podrás asistir. Gracias por avisar.';
+      send(res, shell('REDIL', await redilPage(g, req.params.token, `<div class="ok">${esc(msg)}</div>`)));
+    })
+  );
+
   r.get(
     '/g/:token',
     ah(async (req, res) => {
       const g = await findGroup(req.params.token);
       if (!g) return send(res, invalid());
-      send(res, shell('Reporte del grupo', form(g)));
+      const pending = await redil.countPending(db, g);
+      const banner = pending ? `<a class="card" style="display:block;text-decoration:none;color:inherit;border-color:var(--accent)" href="/g/${esc(req.params.token)}/redil"><strong>📣 Tienes un REDIL por confirmar</strong><br><span class="muted">Toca aquí para decir si vas.</span></a>` : '';
+      send(res, shell('Reporte del grupo', banner + form(g)));
     })
   );
 
