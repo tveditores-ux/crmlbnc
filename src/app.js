@@ -24,6 +24,7 @@ const { cartasRouter } = require('./routes/cartas');
 const { memberIntakeRouter } = require('./routes/member-intake');
 const { memberRequestsRouter } = require('./routes/member-requests');
 const { careGroupsRouter } = require('./routes/care-groups');
+const { redilPreguntasRouter } = require('./routes/redil-preguntas');
 const { calendarRouter } = require('./routes/calendar');
 const { layout } = require('./views/layout');
 const { esc } = require('./util');
@@ -143,6 +144,7 @@ function createApp(ctx) {
   app.use(bautizadosRouter(ctx));
   app.use(reunionEquipoRouter(ctx));
   app.use(careGroupsRouter(ctx));
+  app.use(redilPreguntasRouter(ctx));
   app.use(calendarRouter(ctx));
   app.use(adminRouter(ctx));
 

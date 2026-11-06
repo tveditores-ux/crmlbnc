@@ -80,6 +80,7 @@ const NAV = [
   ['/grupos', 'Grupos de cuidado'],
   ['/guia', 'Guía del líder'],
   ['/reunion-equipo', 'Reunión de equipo'],
+  ['/redil/preguntas', 'Preguntas REDIL'],
   ['/conversaciones', 'Conversaciones'],
   ['/asistente', 'Asistente'],
   ['/pruebas', 'Pruebas'],

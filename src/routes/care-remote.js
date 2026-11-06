@@ -10,6 +10,7 @@ const lg = require('../leader-guide');
 const views = require('../views/care-formats');
 const { leaderFields, PHOTO_SCRIPT } = require('../views/care-leader-form');
 const redil = require('../redil-remote');
+const lib = require('../redil-libreta');
 const { formatEventDate } = require('../time');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -182,6 +183,37 @@ function careRemoteRouter(ctx) {
 
   /* ---------------- REDIL: confirmar asistencia ---------------- */
   const STATUS_TEXT = { confirmado: '<strong style="color:var(--ok)">✔ Confirmaste que vas</strong>', no_puede: '<strong>✖ Avisaste que no puedes</strong>', pendiente: '<strong>Falta tu respuesta</strong>' };
+  const libretaCard = (token) => {
+    const L = lib.getLibreta();
+    return L
+      ? `<a class="card" style="display:block;text-decoration:none;color:inherit;border-color:var(--accent)" href="/g/${esc(token)}/redil/libreta"><strong>📖 Libretica del ${esc(L.title)}</strong><br><span class="muted">${esc(L.when)}</span><p style="margin:8px 0 0">Los temas que vamos a tratar, y un espacio para escribir tus preguntas.</p></a>`
+      : '';
+  };
+
+  const ago = (d) => esc(new Date(d).toLocaleDateString('es-VE', { timeZone: config.timezone, day: 'numeric', month: 'short' }));
+  function libretaPage(g, token, mine, flash = '') {
+    const L = lib.getLibreta();
+    const asked = (list) =>
+      (list || [])
+        .map((q) => `<div style="background:var(--bg);border-radius:8px;padding:8px 10px;margin-top:8px;font-size:14px"><span class="muted">Tu pregunta · ${ago(q.created_at)}</span><br>${esc(q.question).replace(/\n/g, '<br>')}${q.answer ? `<div style="margin-top:6px;color:var(--ok)"><strong>Respuesta:</strong> ${esc(q.answer).replace(/\n/g, '<br>')}</div>` : ''}</div>`)
+        .join('');
+    const box = (point, label) => `<form method="post" action="/g/${esc(token)}/redil/libreta" autocomplete="off" style="margin-top:10px">${honey}<input type="hidden" name="point" value="${point ?? ''}">
+        <label for="q${point ?? 'g'}" style="margin-top:0;font-size:14px">${label}</label>
+        <textarea id="q${point ?? 'g'}" name="question" maxlength="${lib.MAX_LEN}" placeholder="Escribe aquí…" style="font-size:16px;min-height:70px"></textarea>
+        <button class="go" style="font-size:16px;padding:12px;margin-top:8px">Enviar</button></form>`;
+    const point = (p) => `<div class="card" id="p${p.n}" style="margin-bottom:10px"><div style="display:flex;gap:10px"><strong style="color:var(--accent);font-size:18px;min-width:26px">${String(p.n).padStart(2, '0')}</strong><div>${p.text.map((t) => `<p style="margin:0 0 6px">${esc(t)}</p>`).join('')}</div></div>
+        ${asked(mine.get(p.n))}${box(p.n, 'Mi pregunta o comentario sobre este punto')}</div>`;
+    const sections = L.sections
+      .map((s, i) => `<details ${i === 0 ? 'open' : ''} style="margin-bottom:10px"><summary style="cursor:pointer;font-weight:700;font-size:17px;padding:8px 0">${String(i + 1).padStart(2, '0')} · ${esc(s.title)} <span class="muted" style="font-weight:400;font-size:13px">(${s.points.length} puntos)</span></summary>${s.points.map(point).join('')}</details>`)
+      .join('');
+    return `${tabs(token, 'redil')}<p style="margin:0"><a href="/g/${esc(token)}/redil">← REDIL</a></p><h1>📖 Libretica del ${esc(L.title)}</h1>
+      <p class="sub" style="margin:0"><strong>${esc(L.when)}</strong></p>
+      <p style="margin:8px 0 4px">${esc(L.intro)}</p>
+      <p class="muted" style="font-size:14px;margin:0 0 6px">Estás escribiendo como <strong>${esc(g.leader_name || g.name)}</strong> · ${esc(g.name)}. Tus preguntas le llegan al equipo con tu nombre.</p>
+      ${flash}
+      ${sections}
+      <div class="card" id="general"><strong>¿Otra pregunta que no está en los puntos?</strong>${asked(mine.get(null))}${box(null, 'Mi pregunta general')}</div>`;
+  }
   async function redilPage(g, token, flash = '') {
     const list = await redil.listForLeader(db, g);
     const card = (e) => `<div class="card"><strong>${esc(e.title)}</strong><br><span class="muted">${esc(e.event_type)}</span>
@@ -192,9 +224,38 @@ function careRemoteRouter(ctx) {
     return `${tabs(token, 'redil')}<h1>REDIL</h1>
       <p class="sub" style="margin:0"><strong>${esc(g.name)}</strong>${g.leader_name ? ` · ${esc(g.leader_name)}` : ''}</p>
       ${flash}
+      ${libretaCard(token)}
       ${list.length ? list.map(card).join('') : '<div class="card"><p style="margin:0">No tienes ningún REDIL por confirmar. Si hay uno próximo y no lo ves aquí, avisa a quien administra el panel: puede que falte convocarte.</p></div>'}
       <p class="muted" style="font-size:13px">Puedes cambiar tu respuesta cuando quieras, hasta que empiece el REDIL.</p>`;
   }
+  r.get(
+    '/g/:token/redil/libreta',
+    ah(async (req, res) => {
+      const g = await findGroup(req.params.token);
+      if (!g) return send(res, invalid());
+      const flash = req.query.ok ? '<div class="ok">¡Listo! Tu pregunta le llegó al equipo.</div>' : '';
+      send(res, shell('Libretica del REDIL', libretaPage(g, req.params.token, await lib.listForGroup(db, g, lib.ACTIVE), flash)));
+    })
+  );
+  r.post(
+    '/g/:token/redil/libreta',
+    ah(async (req, res) => {
+      const g = await findGroup(req.params.token);
+      if (!g) return send(res, invalid());
+      if (req.body.web) return send(res, shell('Gracias', '<div class="ok">Gracias.</div>'));
+      if (!limiter.take(`${req.ip}|${req.params.token}`)) return send(res, tooMany());
+      const L = lib.getLibreta();
+      const { value, errors } = lib.parseQuestion(L, req.body);
+      const out = errors.length ? { error: errors.join(' ') } : await lib.addQuestion(db, g, lib.ACTIVE, value);
+      if (out.error) {
+        const flash = `<div class="flash err">${esc(out.error)}</div>`;
+        return send(res, shell('Libretica del REDIL', libretaPage(g, req.params.token, await lib.listForGroup(db, g, lib.ACTIVE), flash), 400));
+      }
+      await db.query('UPDATE care_groups SET uses = uses + 1, last_used_at = now() WHERE id = $1', [g.id]);
+      res.redirect(303, `/g/${req.params.token}/redil/libreta?ok=1#${value.point ? `p${value.point}` : 'general'}`);
+    })
+  );
+
   r.get(
     '/g/:token/redil',
     ah(async (req, res) => {
