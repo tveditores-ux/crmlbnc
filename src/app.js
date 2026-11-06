@@ -24,6 +24,7 @@ const { cartasRouter } = require('./routes/cartas');
 const { memberIntakeRouter } = require('./routes/member-intake');
 const { memberRequestsRouter } = require('./routes/member-requests');
 const { careGroupsRouter } = require('./routes/care-groups');
+const { calendarRouter } = require('./routes/calendar');
 const { layout } = require('./views/layout');
 const { esc } = require('./util');
 const auth = require('./auth');
@@ -142,6 +143,7 @@ function createApp(ctx) {
   app.use(bautizadosRouter(ctx));
   app.use(reunionEquipoRouter(ctx));
   app.use(careGroupsRouter(ctx));
+  app.use(calendarRouter(ctx));
   app.use(adminRouter(ctx));
 
   app.use((req, res) => res.status(404).send(layout({ title: 'No encontrado', config, body: '<h1>Página no encontrada</h1>' })));

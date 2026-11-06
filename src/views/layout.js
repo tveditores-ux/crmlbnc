@@ -68,6 +68,7 @@ ${CHARTS_CSS}
 const NAV = [
   ['/', 'Inicio'],
   ['/eventos', 'Eventos'],
+  ['/calendario', 'Calendario'],
   ['/personas', 'Personas'],
   ['/ministerios', 'Ministerios'],
   ['/mensajes', 'Mensajes'],

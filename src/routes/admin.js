@@ -14,6 +14,8 @@ const { EVENT_TYPES, parseEventType } = require('../event-types');
 const reminders = require('../reminders');
 const msgs = require('../messages');
 const { whatsappReady, emailReady } = require('../config');
+const cal = require('../calendar');
+const calViews = require('../views/calendar');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -71,6 +73,10 @@ function adminRouter(ctx) {
       ]);
       const c = counts.rows[0];
       const lr = lastRun.rows[0];
+      // cintillo: lo que queda de esta semana en el calendario (si falla, el Inicio sigue funcionando sin él)
+      const todayIso = cal.today(tz);
+      const week = cal.weekRange(todayIso);
+      const weekItems = await cal.collect(db, tz, week.from, week.to).catch((e) => (console.error('[calendario]', e.message), []));
       const evRows = events.rows
         .map(
           (e) => `<tr><td><a href="/eventos/${e.id}">${esc(e.title)}</a><div class="muted">${esc(
@@ -129,7 +135,7 @@ function adminRouter(ctx) {
         res,
         'Inicio',
         '/',
-        `<h1>Inicio</h1><p class="sub">Recordatorios automáticos 1 mes, 1 semana y 1 día antes de cada evento.</p>
+        `${calViews.ticker({ items: weekItems, today: todayIso, weekFrom: week.from, weekTo: week.to })}<h1>Inicio</h1><p class="sub">Recordatorios automáticos 1 mes, 1 semana y 1 día antes de cada evento.</p>
         <div class="grid">
           <div class="card"><div class="stat">${c.people}</div><div class="stat-label">personas activas</div></div>
           <div class="card"><div class="stat">${c.optin}</div><div class="stat-label">aceptan recibir mensajes</div></div>
