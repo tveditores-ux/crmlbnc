@@ -4,6 +4,7 @@ const { createPool, migrate } = require('./db');
 const { createChannels } = require('./channels');
 const { createApp } = require('./app');
 const { startScheduler } = require('./reminders');
+const settings = require('./settings');
 
 async function main() {
   const config = loadConfig();
@@ -18,6 +19,7 @@ async function main() {
 
   const channels = createChannels(config);
   const ctx = { db, config, channels };
+  await settings.apply(ctx); // lo guardado en la pestaña Configuración manda sobre las variables de Railway
   const app = createApp(ctx);
 
   const server = app.listen(config.port, () => {

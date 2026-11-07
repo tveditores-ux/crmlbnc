@@ -26,6 +26,7 @@ const { memberRequestsRouter } = require('./routes/member-requests');
 const { careGroupsRouter } = require('./routes/care-groups');
 const { redilPreguntasRouter } = require('./routes/redil-preguntas');
 const { libretaRemotaRouter } = require('./routes/libreta-remota');
+const { configuracionRouter } = require('./routes/configuracion');
 const { calendarRouter } = require('./routes/calendar');
 const { layout } = require('./views/layout');
 const { esc } = require('./util');
@@ -148,6 +149,7 @@ function createApp(ctx) {
   app.use(careGroupsRouter(ctx));
   app.use(redilPreguntasRouter(ctx));
   app.use(calendarRouter(ctx));
+  app.use(configuracionRouter(ctx));
   app.use(adminRouter(ctx));
 
   app.use((req, res) => res.status(404).send(layout({ title: 'No encontrado', config, body: '<h1>Página no encontrada</h1>' })));
