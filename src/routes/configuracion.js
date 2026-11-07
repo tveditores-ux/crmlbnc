@@ -53,6 +53,13 @@ function configuracionRouter(ctx) {
       const src = (k) => settings.sourceOf(k, stored, config);
       const isWc = config.whatsappProvider === 'wecall';
       const missing = ['wecallBaseUrl', 'wecallApiKey', 'wecallWebhookSecret'].filter((k) => src(k) === 'falta' || src(k) === 'ilegible').map((k) => settings.FIELDS[k].label);
+      const wa = ctx.channels.whatsapp && ctx.channels.whatsapp.available;
+      const faltaBot = [!config.agent.enabled && 'está apagado', !config.agent.apiKey && 'falta la clave del modelo', !wa && 'WhatsApp no está conectado'].filter(Boolean);
+      const agentState = faltaBot.length
+        ? `<span class="badge b-warn">No responde todavía</span> <span class="muted">${esc(faltaBot.join(' · '))}</span>`
+        : config.dryRun
+          ? '<span class="badge b-warn">Listo, pero en modo prueba (DRY_RUN): no envía nada</span> <span class="muted">Para que responda de verdad hay que cambiar DRY_RUN a false en Railway.</span>'
+          : '<span class="badge b-ok">El asistente responde por WhatsApp</span>';
       const secretRow = (key, name, clearName, help) => `<div style="margin-top:14px"><label for="${name}">${esc(settings.FIELDS[key].label)} ${SOURCE[src(key)]}</label>
         <input id="${name}" type="password" name="${name}" autocomplete="new-password" spellcheck="false" placeholder="${src(key) === 'falta' ? 'Pega aquí la clave' : 'Déjalo vacío para conservar la actual'}">
         <p class="muted" style="margin:4px 0 0;font-size:13px">${help}</p>
@@ -73,6 +80,24 @@ function configuracionRouter(ctx) {
             <div class="actions"><button>Guardar</button></div>
             <p class="muted" style="font-size:13px;margin:8px 0 0">Las claves se guardan cifradas y no se vuelven a mostrar. Pegar de nuevo reemplaza la anterior.</p>
           </form>
+        </div>
+        <div class="card"><h2 style="margin-top:0">Asistente de WhatsApp (el bot)</h2>
+          <p style="margin:0 0 10px">${agentState}</p>
+          <form method="post" action="/configuracion/agente" autocomplete="off">
+            <label for="agent_enabled">El asistente ${SOURCE[src('agentEnabled')]}</label>
+            <select id="agent_enabled" name="enabled"><option value="no" ${config.agent.enabled ? '' : 'selected'}>Apagado</option><option value="si" ${config.agent.enabled ? 'selected' : ''}>Encendido: responde a quien le escribe</option></select>
+            <div style="margin-top:14px"><label for="agent_key">${esc(settings.FIELDS.anthropicApiKey.label)} ${SOURCE[src('anthropicApiKey')]}</label>
+              <input id="agent_key" type="password" name="api_key" autocomplete="new-password" spellcheck="false" placeholder="${src('anthropicApiKey') === 'falta' ? 'Pega aquí la clave' : 'Déjalo vacío para conservar la actual'}">
+              <p class="muted" style="margin:4px 0 0;font-size:13px">La clave de la API de Anthropic (empieza con sk-ant-). Es lo que le da “cerebro” al asistente.</p>
+              ${stored.anthropicApiKey ? '<label style="font-weight:400;font-size:13px;margin-top:6px"><input type="checkbox" name="clear_api_key" value="1" style="width:auto"> Borrar la que guardé en el panel</label>' : ''}</div>
+            <div class="row" style="margin-top:14px">
+              <div><label for="agent_model">Modelo ${SOURCE[src('agentModel')]}</label><input id="agent_model" type="text" name="model" value="${esc(config.agent.model)}" spellcheck="false"></div>
+              <div><label for="agent_max">Respuestas por persona al día ${SOURCE[src('agentMaxReplies')]}</label><input id="agent_max" type="number" name="max_replies" min="1" max="100" value="${esc(config.agent.maxRepliesPerDay)}"></div></div>
+            <div class="actions"><button>Guardar</button></div>
+            <p class="muted" style="font-size:13px;margin:8px 0 0">Solo responde a personas registradas y activas, solo sobre la iglesia, nunca escribe primero, y pasa a un líder o pastor lo que no sabe. Lo que no es de la iglesia lo rechaza con amabilidad.</p>
+          </form>
+          <div class="actions" style="margin-top:10px"><form class="inline" method="post" action="/configuracion/agente/probar"><button class="sec small">Probar la clave del modelo</button></form>
+            <a class="btn sec small" href="/asistente">Probar una conversación (sin enviar nada)</a></div>
         </div>
         <div class="card"><h3 style="margin:0 0 6px">Comprobar la conexión</h3>
           <p class="muted" style="margin:0 0 8px">Hace una consulta de solo lectura a WeCall con la API key guardada. No envía ningún mensaje.</p>
@@ -116,6 +141,45 @@ function configuracionRouter(ctx) {
       await settings.apply(ctx);
       const faltan = config.whatsappProvider === 'wecall' && !(config.wecall.baseUrl && config.wecall.apiKey && config.wecall.webhookSecret);
       go(res, { ok: `Configuración guardada y aplicada.${faltan ? ' Ojo: WeCall está activo pero todavía falta alguno de sus datos.' : ''}` });
+    })
+  );
+
+  r.post(
+    '/configuracion/agente',
+    ah(async (req, res) => {
+      const b = req.body || {};
+      const errors = [];
+      const changes = [];
+      if (b.enabled !== undefined) {
+        if (!['si', 'no'].includes(b.enabled)) errors.push('Elige si el asistente va encendido o apagado.');
+        else changes.push(['agentEnabled', b.enabled]);
+      }
+      const key = settings.parseSecret(b.api_key, settings.FIELDS.anthropicApiKey.label);
+      if (key.error) errors.push(key.error);
+      else if (key.value) changes.push(['anthropicApiKey', key.value]);
+      else if (b.clear_api_key) changes.push(['anthropicApiKey', null]);
+      const model = settings.parseModel(b.model);
+      if (model.error) errors.push(model.error);
+      else if (model.value) changes.push(['agentModel', model.value]);
+      const max = settings.parseMaxReplies(b.max_replies);
+      if (max.error) errors.push(max.error);
+      else if (max.value) changes.push(['agentMaxReplies', max.value]);
+      if (errors.length) return go(res, { err: errors.join(' ') });
+      for (const [k, value] of changes) {
+        if (value === null) await settings.removeValue(db, k);
+        else await settings.setValue(db, config.sessionSecret, k, value);
+      }
+      await settings.apply(ctx);
+      const falta = config.agent.enabled && !config.agent.apiKey;
+      go(res, { ok: `Asistente guardado y aplicado.${falta ? ' Ojo: está encendido pero todavía falta la clave del modelo.' : ''}` });
+    })
+  );
+
+  r.post(
+    '/configuracion/agente/probar',
+    ah(async (req, res) => {
+      const out = await settings.testAnthropic(config.agent, ctx.fetchImpl);
+      go(res, out.ok ? { ok: out.text } : { err: out.text });
     })
   );
 

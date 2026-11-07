@@ -15,6 +15,10 @@ const FIELDS = {
   wecallBaseUrl: { env: 'WECALL_BASE_URL', label: 'Dirección de la API de WeCall', secret: false },
   wecallApiKey: { env: 'WECALL_API_KEY', label: 'API key de WeCall', secret: true },
   wecallWebhookSecret: { env: 'WECALL_WEBHOOK_SECRET', label: 'Webhook secret de WeCall', secret: true },
+  agentEnabled: { env: 'AGENT_ENABLED', label: 'Asistente encendido', secret: false },
+  anthropicApiKey: { env: 'ANTHROPIC_API_KEY', label: 'Clave del modelo (Anthropic)', secret: true },
+  agentModel: { env: 'AGENT_MODEL', label: 'Modelo del asistente', secret: false },
+  agentMaxReplies: { env: 'AGENT_MAX_REPLIES_PER_DAY', label: 'Respuestas por persona al día', secret: false },
 };
 const PROVIDERS = ['meta', 'wecall'];
 const MAX_SECRET = 300;
@@ -60,6 +64,22 @@ function parseBaseUrl(v) {
   return { value: `${u.origin}${u.pathname === '/' ? '' : u.pathname.replace(/\/+$/, '')}` };
 }
 
+/** Nombre del modelo: letras, números, punto y guion (ej. claude-sonnet-5-5). Vacío = no cambiar. */
+function parseModel(v) {
+  const s = String(v ?? '').trim();
+  if (!s) return { value: '' };
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{2,79}$/.test(s)) return { error: 'El nombre del modelo no es válido (ejemplo: claude-sonnet-5-5).' };
+  return { value: s };
+}
+/** Respuestas por persona al día: entero de 1 a 100. Vacío = no cambiar. */
+function parseMaxReplies(v) {
+  const s = String(v ?? '').trim();
+  if (!s) return { value: '' };
+  const n = Number(s);
+  if (!/^\d{1,3}$/.test(s) || n < 1 || n > 100) return { error: 'Las respuestas por persona al día deben ser un número de 1 a 100.' };
+  return { value: String(n) };
+}
+
 function parseSecret(v, label) {
   const s = String(v ?? '').trim();
   if (!s) return { value: '' };
@@ -99,7 +119,7 @@ const removeValue = (db, key) => db.query('DELETE FROM app_settings WHERE key = 
 async function apply(ctx) {
   const { db, config } = ctx;
   if (!config._env) {
-    config._env = { whatsappProvider: config.whatsappProvider, wecall: { ...config.wecall } };
+    config._env = { whatsappProvider: config.whatsappProvider, wecall: { ...config.wecall }, agent: { ...config.agent } };
   }
   const stored = await loadStored(db, config.sessionSecret);
   const pick = (key, envValue) => (stored[key] && !stored[key].unreadable && stored[key].value ? stored[key].value : envValue);
@@ -108,6 +128,13 @@ async function apply(ctx) {
   config.wecall.baseUrl = pick('wecallBaseUrl', config._env.wecall.baseUrl);
   config.wecall.apiKey = pick('wecallApiKey', config._env.wecall.apiKey);
   config.wecall.webhookSecret = pick('wecallWebhookSecret', config._env.wecall.webhookSecret);
+  const a = config._env.agent;
+  const en = pick('agentEnabled', null);
+  config.agent.enabled = en === 'si' ? true : en === 'no' ? false : a.enabled;
+  config.agent.apiKey = pick('anthropicApiKey', a.apiKey);
+  config.agent.model = pick('agentModel', a.model);
+  const mx = Number(pick('agentMaxReplies', null));
+  config.agent.maxRepliesPerDay = Number.isInteger(mx) && mx >= 1 ? mx : a.maxRepliesPerDay;
   // el canal se reconstruye con la configuración nueva; quien lo usa lo lee de ctx.channels en cada envío
   const fresh = createChannels(config, { fetchImpl: ctx.fetchImpl });
   ctx.channels.whatsapp = fresh.whatsapp;
@@ -119,8 +146,17 @@ async function apply(ctx) {
 function sourceOf(key, stored, config) {
   if (stored[key] && stored[key].unreadable) return 'ilegible';
   if (stored[key] && stored[key].value) return 'panel';
-  const env = config._env || { whatsappProvider: config.whatsappProvider, wecall: config.wecall };
-  const v = key === 'whatsappProvider' ? env.whatsappProvider : { wecallBaseUrl: env.wecall.baseUrl, wecallApiKey: env.wecall.apiKey, wecallWebhookSecret: env.wecall.webhookSecret }[key];
+  const env = config._env || { whatsappProvider: config.whatsappProvider, wecall: config.wecall, agent: config.agent };
+  const v = {
+    whatsappProvider: env.whatsappProvider,
+    wecallBaseUrl: env.wecall.baseUrl,
+    wecallApiKey: env.wecall.apiKey,
+    wecallWebhookSecret: env.wecall.webhookSecret,
+    agentEnabled: env.agent.enabled ? 'si' : '',
+    anthropicApiKey: env.agent.apiKey,
+    agentModel: env.agent.model,
+    agentMaxReplies: env.agent.maxRepliesPerDay,
+  }[key];
   return v ? 'railway' : 'falta';
 }
 
@@ -144,4 +180,23 @@ async function testWeCall(wecall, fetchImpl = globalThis.fetch) {
   }
 }
 
-module.exports = { FIELDS, PROVIDERS, encrypt, decrypt, parseBaseUrl, parseSecret, loadStored, setValue, removeValue, apply, sourceOf, testWeCall };
+/**
+ * Prueba la clave del modelo con una consulta de solo lectura (lista de modelos): no gasta tokens ni envía mensajes.
+ * 200 = sirve; 401/403 = rechazada.
+ */
+async function testAnthropic(agent, fetchImpl = globalThis.fetch) {
+  if (!agent.apiKey) return { ok: false, text: 'Falta la clave del modelo.' };
+  try {
+    const res = await fetchImpl('https://api.anthropic.com/v1/models?limit=1', {
+      headers: { 'x-api-key': agent.apiKey, 'anthropic-version': '2023-06-01' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (res.status === 401 || res.status === 403) return { ok: false, text: 'Anthropic rechazó la clave (¿está bien copiada?).' };
+    if (res.ok) return { ok: true, text: 'Conexión correcta: Anthropic aceptó la clave.' };
+    return { ok: false, text: `Anthropic respondió ${res.status}; intenta de nuevo en un rato.` };
+  } catch (err) {
+    return { ok: false, text: `No se pudo llegar a Anthropic (${err && err.name === 'TimeoutError' ? 'tardó demasiado' : 'revisa la conexión'}).` };
+  }
+}
+
+module.exports = { FIELDS, PROVIDERS, encrypt, decrypt, parseBaseUrl, parseSecret, parseModel, parseMaxReplies, loadStored, setValue, removeValue, apply, sourceOf, testWeCall, testAnthropic };

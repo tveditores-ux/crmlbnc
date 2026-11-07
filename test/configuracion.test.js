@@ -219,3 +219,109 @@ test('al arrancar se aplica lo guardado; si cambió la SESSION_SECRET queda "ile
     await s.close();
   }
 });
+
+const KEY2 = 'sk-ant-clave-inventada-0001';
+
+test('validación del asistente: modelo y límite diario', () => {
+  assert.equal(settings.parseModel(' claude-sonnet-5-5 ').value, 'claude-sonnet-5-5');
+  assert.equal(settings.parseModel('').value, '');
+  for (const bad of ['a b', 'x', 'modelo/raro', '../etc', 'a'.repeat(81)]) assert.ok(settings.parseModel(bad).error, bad);
+  assert.equal(settings.parseMaxReplies(' 12 ').value, '12');
+  assert.equal(settings.parseMaxReplies('').value, '');
+  for (const bad of ['0', '101', '-3', '2.5', 'doce', '1000']) assert.ok(settings.parseMaxReplies(bad).error, bad);
+});
+
+test('asistente: se guarda cifrado, se aplica al instante y la pantalla nunca muestra la clave', async (t) => {
+  const s = await setup(t, { DRY_RUN: 'true' });
+  if (!s) return;
+  try {
+    assert.equal(s.config.agent.enabled, false);
+    const antes = await (await s.get('/configuracion')).text();
+    assert.match(antes, /No responde todavía/);
+    assert.match(antes, /está apagado/);
+
+    const r = await s.post('/configuracion/agente', { enabled: 'si', api_key: ` ${KEY2} `, model: 'claude-sonnet-5-5', max_replies: '8' });
+    assert.equal(r.status, 303);
+    assert.match(s.flash(r), /Asistente guardado y aplicado\.$/);
+    assert.deepEqual([s.config.agent.enabled, s.config.agent.apiKey, s.config.agent.model, s.config.agent.maxRepliesPerDay], [true, KEY2, 'claude-sonnet-5-5', 8]);
+
+    const rows = (await s.db.query("SELECT key, value FROM app_settings WHERE key IN ('anthropicApiKey','agentEnabled','agentMaxReplies')")).rows;
+    const key = rows.find((x) => x.key === 'anthropicApiKey').value;
+    assert.ok(key.startsWith('enc1:') && !key.includes(KEY2));
+    assert.ok(!JSON.stringify(rows).includes(KEY2));
+
+    // con DRY_RUN activo el bot queda "listo pero sin enviar"; nada de esto cambia DRY_RUN
+    await s.post('/configuracion/wecall', { provider: 'wecall', base_url: 'https://wecall.ejemplo.com', api_key: KEY, webhook_secret: WH });
+    const page = await (await s.get('/configuracion')).text();
+    assert.match(page, /Listo, pero en modo prueba \(DRY_RUN\): no envía nada/);
+    assert.equal(s.config.dryRun, true);
+    assert.ok(!page.includes(KEY2));
+    assert.ok(!(await (await s.get('/asistente')).text()).includes(KEY2));
+
+    // apagar y borrar la clave del panel
+    await s.post('/configuracion/agente', { enabled: 'no', clear_api_key: '1' });
+    assert.deepEqual([s.config.agent.enabled, s.config.agent.apiKey], [false, '']);
+  } finally {
+    await s.close();
+  }
+});
+
+test('asistente: el bot responde de verdad solo con todo conectado, y contesta por WeCall al mensaje entrante', async (t) => {
+  const s = await setup(t); // DRY_RUN=false
+  if (!s) return;
+  try {
+    const modelCalls = [];
+    s.ctx.fetchImpl = async (url, opts) => {
+      if (String(url).startsWith('https://api.anthropic.com')) {
+        modelCalls.push(url);
+        return { status: 200, ok: true, json: async () => ({ content: [{ type: 'text', text: JSON.stringify({ respuesta: 'Hola, el culto es el domingo.', escalar: false, motivo: '' }) }] }) };
+      }
+      s.calls.push({ url, auth: opts.headers.Authorization, body: opts.body });
+      return { status: 200, ok: true, json: async () => ({ id: 9 }) };
+    };
+    await s.post('/configuracion/wecall', { provider: 'wecall', base_url: 'https://wecall.ejemplo.com', api_key: KEY, webhook_secret: WH });
+    await s.post('/configuracion/agente', { enabled: 'si', api_key: KEY2 });
+    assert.match(await (await s.get('/configuracion')).text(), /El asistente responde por WhatsApp/);
+    // una persona registrada escribe por WeCall
+    await s.db.query("INSERT INTO people (full_name, phone, active) VALUES ('Ana Pérez', '584145551212', TRUE)");
+    s.calls.length = 0;
+    const body = JSON.stringify({ evento: 'mensaje_nuevo', contacto: { telefono: '0414-555.12.12' }, mensaje: { id: 21, direccion: 'entrante', texto: 'Hola, ¿a qué hora es el culto del domingo?' } });
+    const sig = 'sha256=' + crypto.createHmac('sha256', WH).update(body).digest('hex');
+    const hook = await fetch(`${s.base}/webhooks/wecall`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-WeCall-Signature': sig }, body });
+    assert.equal(hook.status, 200);
+    assert.equal(modelCalls.length, 1);
+    const sent = s.calls.filter((c) => c.url === 'https://wecall.ejemplo.com/api/v1/mensajes/enviar/');
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].auth, `Bearer ${KEY}`);
+    assert.equal(JSON.parse(sent[0].body).telefono, '584145551212');
+    assert.match(JSON.parse(sent[0].body).texto, /culto/);
+  } finally {
+    await s.close();
+  }
+});
+
+test('asistente: errores no guardan nada; probar la clave del modelo es de solo lectura; solo administración', async (t) => {
+  const s = await setup(t);
+  if (!s) return;
+  try {
+    for (const c of [{ enabled: 'quizás' }, { api_key: 'dos palabras' }, { model: 'modelo raro' }, { max_replies: '500' }]) {
+      const r = await s.post('/configuracion/agente', c);
+      assert.ok(new URL(r.headers.get('location'), s.base).searchParams.get('err'), JSON.stringify(c));
+    }
+    assert.equal((await s.db.query('SELECT count(*)::int AS n FROM app_settings')).rows[0].n, 0);
+
+    assert.match(s.flash(await s.post('/configuracion/agente/probar', {})), /Falta la clave del modelo/);
+    await s.post('/configuracion/agente', { api_key: KEY2 });
+    const seen = [];
+    s.ctx.fetchImpl = async (url, opts) => ((seen.push([url, (opts && opts.method) || 'GET']), { status: seen.length === 1 ? 200 : 401, ok: seen.length === 1 }));
+    assert.match(s.flash(await s.post('/configuracion/agente/probar', {})), /Conexión correcta/);
+    assert.match(s.flash(await s.post('/configuracion/agente/probar', {})), /rechazó la clave/);
+    assert.deepEqual(seen[0], ['https://api.anthropic.com/v1/models?limit=1', 'GET']);
+
+    const coord = { Cookie: `${auth.COOKIE}=${auth.makeSession(SECRET, Date.now(), { role: 'coordinador', pid: 1 })}` };
+    assert.equal((await s.post('/configuracion/agente', { enabled: 'si' }, coord)).status, 403);
+    assert.equal((await fetch(`${s.base}/configuracion/agente`, { method: 'POST', headers: FORM, body: 'enabled=si' })).status, 401);
+  } finally {
+    await s.close();
+  }
+});

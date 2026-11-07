@@ -64,7 +64,7 @@ function asistenteRouter(ctx) {
           <div class="card"><div class="stat-label">WhatsApp</div>${yn(channels.whatsapp && channels.whatsapp.available, 'Conectado', 'Sin conectar')}</div>
           <div class="card"><div class="stat-label">Respuestas por persona al día</div><strong>${config.agent.maxRepliesPerDay}</strong></div>
         </div>
-        <p class="muted" style="font-size:13px">Se enciende con las variables <span class="mono">AGENT_ENABLED</span> y <span class="mono">ANTHROPIC_API_KEY</span> en Railway. Mientras WhatsApp no esté conectado, el asistente no puede conversar.</p>
+        <p class="muted" style="font-size:13px">Se enciende y se le pone la clave en <a href="/configuracion">Configuración</a> (también valen las variables <span class="mono">AGENT_ENABLED</span> y <span class="mono">ANTHROPIC_API_KEY</span> de Railway). Mientras WhatsApp no esté conectado, o con <span class="mono">DRY_RUN</span> activo, el asistente no envía nada.</p>
 
         <h2>Límites del asistente</h2>
         <div class="card"><ul style="margin:0;padding-left:20px">
