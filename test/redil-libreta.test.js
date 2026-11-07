@@ -11,23 +11,24 @@ const TOK = (n) => `lider${String(n).padStart(2, '0')}abcdefghijklmn`;
 const FORM = { 'Content-Type': 'application/x-www-form-urlencoded' };
 const JSONH = { 'Content-Type': 'application/json' };
 
-test('la libretica trae los 27 puntos en 7 temas, numerados sin saltos, tal como en el PDF', () => {
+test('la libretica trae los 28 puntos en 8 temas, numerados sin saltos, en la redacción en preguntas', () => {
   const L = lib.getLibreta();
-  assert.equal(L.sections.length, 7);
-  assert.deepEqual(lib.pointNumbers(L), Array.from({ length: 27 }, (_, i) => i + 1));
-  assert.deepEqual(L.sections.map((s) => s.points.length), [5, 3, 4, 4, 4, 4, 3]);
-  assert.equal(lib.findPoint(L, 4).text[0], 'No casamos personas de otra congregación');
-  assert.equal(lib.findPoint(L, 7).text.length, 2);
+  assert.equal(L.sections.length, 8);
+  assert.deepEqual(lib.pointNumbers(L), Array.from({ length: 28 }, (_, i) => i + 1));
+  assert.deepEqual(L.sections.map((s) => s.points.length), [5, 3, 4, 4, 4, 4, 3, 1]);
+  assert.match(lib.findPoint(L, 4).text[0], /^¿Cuál es el criterio pastoral para no celebrar matrimonios/);
+  assert.equal(lib.findPoint(L, 7).text.length, 1);
   assert.equal(lib.findPoint(L, 12).section, 'Liderazgo y estructura');
-  assert.equal(lib.findPoint(L, 28), null);
-  assert.equal(lib.sheetKeys(L).length, 28);
+  assert.equal(lib.findPoint(L, 29), null);
+  assert.equal(lib.findPoint(L, 28).section, 'Asistencia al REDIL');
+  assert.equal(lib.sheetKeys(L).length, 29);
 });
 
 test('parseSheet: solo pasan las cajas de la libretica; se limpian espacios; demasiado largo se rechaza', () => {
   const L = lib.getLibreta();
   const ok = lib.parseSheet(L, { p12: '  ¿Cómo   hago?  ', general: 'Otra', p99: 'no existe', hack: 'x', p3: '   ' });
   assert.deepEqual(ok.errors, []);
-  assert.equal(ok.value.length, 28);
+  assert.equal(ok.value.length, 29);
   assert.deepEqual(ok.value.filter((v) => v.question).map((v) => [v.point, v.question]), [[12, '¿Cómo hago?'], [null, 'Otra']]);
   assert.match(lib.parseSheet(L, { p1: 'a'.repeat(lib.MAX_LEN + 1) }).errors[0], /muy larga/);
   assert.equal(lib.parseSheet(L, null).value.filter((v) => v.question).length, 0);
@@ -60,8 +61,8 @@ test('la hoja del líder es un cuaderno manuscrito con una caja por punto, y se 
     assert.equal(r.status, 200);
     assert.equal(r.headers.get('cache-control'), 'no-store');
     const page = await r.text();
-    for (const x of ['Amatic', 'Cuidado y acompañamiento', 'Comunicación y contenidos', 'Protocolo para funerales.', 'No bautizamos personas de otra congregación', 'Ana Pérez · Grupo Esperanza', 'Enviar a la iglesia', 'Sábado 7 de noviembre de 2026']) assert.ok(page.includes(x), x);
-    assert.equal((page.match(/<textarea data-k=/g) || []).length, 28); // 27 puntos + la general
+    for (const x of ['Amatic', 'Cuidado y acompañamiento', 'Comunicación y contenidos', 'protocolo de acompañamiento pastoral ante un funeral', 'no bautizar a personas de otra congregación', 'Ana Pérez · Grupo Esperanza', 'Enviar a la iglesia', 'Sábado 7 de noviembre de 2026']) assert.ok(page.includes(x), x);
+    assert.equal((page.match(/<textarea data-k=/g) || []).length, 29); // 28 puntos + la general
     assert.ok(page.includes('data-k="p14"') && page.includes('data-k="general"'));
   } finally {
     await s.close();
@@ -82,15 +83,15 @@ test('enviar: queda con el nombre del líder y su grupo; reenviar corrige sin du
     assert.ok(rows.find((x) => x.point === null && x.question === 'Otra duda'));
 
     // reenviar con el mismo punto corrige; con otro punto suma; texto vacío quita
-    await s.send(1, { p14: '¿Es correcto que visiten de sorpresa?', p15: 'Ayuda financiera', general: '' });
+    await s.send(1, { p14: 'Pregunta de prueba uno del grupo', p15: 'Comentario de prueba dos del grupo', general: '' });
     rows = await s.rows();
-    assert.deepEqual(rows.map((x) => [x.point, x.question]), [[14, '¿Es correcto que visiten de sorpresa?'], [15, 'Ayuda financiera']]);
+    assert.deepEqual(rows.map((x) => [x.point, x.question]), [[14, 'Pregunta de prueba uno del grupo'], [15, 'Comentario de prueba dos del grupo']]);
 
     // al volver a abrir, la hoja muestra lo que ya envió; el otro grupo no lo ve
     const again = await (await s.get(`/g/${TOK(1)}/redil/libreta`)).text();
-    assert.ok(again.includes('¿Es correcto que visiten de sorpresa?') && again.includes('Ayuda financiera'));
+    assert.ok(again.includes('Pregunta de prueba uno del grupo') && again.includes('Comentario de prueba dos del grupo'));
     const other = await (await s.get(`/g/${TOK(2)}/redil/libreta`)).text();
-    assert.ok(!other.includes('visiten de sorpresa') && !other.includes('Ayuda financiera'));
+    assert.ok(!other.includes('Pregunta de prueba uno del grupo') && !other.includes('Comentario de prueba dos del grupo'));
     await s.send(2, { p14: 'Pregunta de Beto' });
     assert.equal((await s.rows()).length, 3);
     assert.equal((await s.rows()).filter((x) => x.group_name === 'Grupo Esperanza').length, 2); // no mezcla grupos
@@ -135,7 +136,7 @@ test('panel: libretica en estilo cuaderno, preguntas por punto y por persona, re
     assert.equal((await s.form('/redil/preguntas/1/respuesta', { answer: 'x' })).status, 401);
 
     const vista = await (await s.get('/redil/libreta', s.admin)).text();
-    for (const x of ['Libretica del REDIL extraordinario', 'No casamos personas de otra congregación', 'Reforzar todas las instrucciones', '2 pregunta(s) recibida(s)', 'class="re"']) assert.ok(vista.includes(x), x);
+    for (const x of ['Libretica del REDIL extraordinario', 'no celebrar matrimonios de personas de otra congregación', 'Cómo reforzamos en la práctica', '2 pregunta(s) recibida(s)', 'class="re"']) assert.ok(vista.includes(x), x);
     assert.ok(!vista.includes('<textarea data-k=')); // en el panel es solo lectura
 
     const page = await (await s.get('/redil/preguntas', s.admin)).text();

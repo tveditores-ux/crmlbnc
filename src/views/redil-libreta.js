@@ -15,7 +15,7 @@ const EXTRA_CSS = `
 .re .who{font-size:23px;margin:0 0 30px;color:#555}
 .re .intro{font-size:26px;margin:0 0 34px}
 .tools a{font:inherit;font-size:24px;text-transform:uppercase;color:#2b2b2b;text-decoration:none;border:1.5px solid #2b2b2b;border-radius:3px 10px 4px 9px;padding:8px 16px}
-.re .pregunta textarea{min-height:72px}
+.re .pregunta textarea{min-height:144px}
 `;
 
 const para = (lines) => lines.map((t) => `<span style="display:block;margin-bottom:4px">${esc(t)}</span>`).join('');
@@ -33,7 +33,7 @@ function sheet(L, { mine = new Map(), readOnly = false, counts = new Map() } = {
         if (counts.get(p.n)) h += `<div class="pregunta"><a href="/redil/preguntas?ver=todas" style="color:#8a6116;font-size:22px">${counts.get(p.n)} pregunta(s) recibida(s)</a></div>`;
         else h += '<div class="pregunta"></div>';
       } else {
-        h += `<div class="pregunta"><p class="lbl" style="margin-top:6px">Mi pregunta o comentario</p><textarea data-k="p${p.n}" rows="2" spellcheck="false" autocomplete="off" maxlength="1500" aria-label="Mi pregunta sobre el punto ${p.n}">${esc(m ? m.question : '')}</textarea>${
+        h += `<div class="pregunta"><p class="lbl" style="margin-top:6px">Mi pregunta o comentario</p><textarea data-k="p${p.n}" rows="4" spellcheck="false" autocomplete="off" maxlength="1500" aria-label="Mi pregunta sobre el punto ${p.n}">${esc(m ? m.question : '')}</textarea>${
           m && m.answer ? `<p class="resp"><strong>Respuesta:</strong> ${esc(m.answer)}</p>` : ''
         }</div>`;
       }
@@ -49,7 +49,7 @@ const LEADER_SCRIPT = `
   var cfg=window.__LIB,KEY='lbnc-redil-'+cfg.key+'-'+cfg.tok,data={};
   try{data=JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){data={}}
   function persist(){try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){}}
-  function grow(e){e.style.height='auto';e.style.height=Math.max(72,e.scrollHeight)+'px'}
+  function grow(e){e.style.height='auto';e.style.height=Math.max(144,e.scrollHeight)+'px'}
   var msg=document.getElementById('msg');
   function say(t){msg.textContent=t;setTimeout(function(){msg.textContent=''},3000)}
   var boxes=document.querySelectorAll('.re textarea');
@@ -102,7 +102,7 @@ function leaderPage({ L, group, token, mine, libretaKey }) {
     <p class="who">Escribo como: <strong>${esc(who)}</strong>. Lo que envíe le llega al equipo con mi nombre.</p>
     ${sheet(L, { mine })}
     <section><h2>Otra pregunta${squig(97)}</h2><p class="pt">¿Algo que no está en los puntos?</p>
-      <div class="pregunta" style="margin-left:0"><textarea data-k="general" rows="2" spellcheck="false" autocomplete="off" maxlength="1500" aria-label="Pregunta general">${esc((mine.get(null) || {}).question || '')}</textarea>${
+      <div class="pregunta" style="margin-left:0"><textarea data-k="general" rows="4" spellcheck="false" autocomplete="off" maxlength="1500" aria-label="Pregunta general">${esc((mine.get(null) || {}).question || '')}</textarea>${
         (mine.get(null) || {}).answer ? `<p class="resp"><strong>Respuesta:</strong> ${esc(mine.get(null).answer)}</p>` : ''
       }</div></section>
     <div class="tools"><button type="button" id="send">Enviar a la iglesia</button><button type="button" id="copy">Copiar todo</button><button type="button" id="wa">Enviar por WhatsApp</button><span id="msg"></span></div></div>`;
