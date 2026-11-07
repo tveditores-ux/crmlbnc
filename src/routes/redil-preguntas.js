@@ -73,16 +73,43 @@ function redilPreguntasRouter(ctx) {
       const L = lib.getLibreta();
       const counts = new Map();
       for (const q of await lib.listAll(db, lib.ACTIVE)) counts.set(q.point, (counts.get(q.point) || 0) + 1);
+      const link = await lib.ensureLink(db);
+      const url = `${String(config.publicUrl || '').replace(/\/$/, '')}/libreta/${link.token}`;
+      const wa = `${L.title} (${L.when}): abre este enlace, escribe tu nombre y tus preguntas, y toca «Enviar a REDIL del CRM»: ${url}`;
+      const remote = `<div class="card"><h2 style="margin-top:0">Control remoto de la libretica</h2>
+          <p class="muted" style="margin:0 0 10px">Un enlace para todos: abre <strong>solo la libretica</strong>, la persona escribe su nombre y sus anotaciones, y al tocar «Enviar a REDIL del CRM» quedan registradas en <a href="/redil/preguntas">Preguntas REDIL</a>. Lo que escribe se guarda en su teléfono hasta que envía.</p>
+          ${link.active ? `<input type="text" readonly value="${esc(url)}" onclick="this.select()" class="mono">` : '<p><span class="badge b-warn">Enlace apagado</span></p>'}
+          <div class="actions">
+            ${link.active ? `<a class="btn small" href="https://wa.me/?text=${encodeURIComponent(wa)}" target="_blank" rel="noopener">Enviar por WhatsApp</a><a class="btn sec small" href="${esc(url)}" target="_blank" rel="noopener">Abrir como líder</a>` : ''}
+            <form class="inline" method="post" action="/redil/libreta/enlace/${link.active ? 'apagar' : 'encender'}"><button class="sec small">${link.active ? 'Apagar enlace' : 'Encender enlace'}</button></form>
+            <form class="inline" method="post" action="/redil/libreta/enlace/regenerar" onsubmit="return confirm('El enlace anterior dejará de funcionar. ¿Generar uno nuevo?')"><button class="sec small">Generar enlace nuevo</button></form>
+          </div></div>`;
       res.send(
         layout({
           title: 'Libretica del REDIL',
           active: '/redil/libreta',
           config,
           query: req.query,
-          body: `<style>${CSS}${EXTRA_CSS}</style><h1>📖 Libretica del ${esc(L.title)}</h1><p class="sub"><strong>${esc(L.when)}</strong></p><p>${esc(L.intro)}</p>
+          body: `<style>${CSS}${EXTRA_CSS}</style><h1>📖 Libretica del ${esc(L.title)}</h1><p class="sub"><strong>${esc(L.when)}</strong></p><p>${esc(L.intro)}</p>${remote}
             <p class="muted" style="font-size:14px">Así la leen los líderes en la pestaña REDIL de su enlace (<a href="/grupos">Grupos de cuidado</a> → ficha del grupo → "abrir como líder"). Allí cada punto tiene su caja de pregunta. <a href="/redil/preguntas">Ver las preguntas recibidas</a>.</p><div class="re">${sheet(L, { readOnly: true, counts })}</div>`,
         })
       );
+    })
+  );
+
+  r.post(
+    '/redil/libreta/enlace/:accion',
+    ah(async (req, res) => {
+      const a = req.params.accion;
+      if (a === 'regenerar') {
+        await lib.ensureLink(db);
+        await lib.regenerateLink(db);
+        return go(res, '/redil/libreta', { ok: 'Enlace nuevo generado. El anterior ya no funciona; vuelve a enviarlo.' });
+      }
+      if (a !== 'apagar' && a !== 'encender') return res.sendStatus(404);
+      await lib.ensureLink(db);
+      await lib.setLinkActive(db, a === 'encender');
+      go(res, '/redil/libreta', { ok: a === 'encender' ? 'Enlace encendido.' : 'Enlace apagado.' });
     })
   );
 

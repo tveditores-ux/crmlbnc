@@ -13,71 +13,79 @@ const LIBRETAS = {
       'Puntos para exponer, conversar y registrar los acuerdos del equipo, agrupados por tema. Las preguntas quedan abiertas para su consideración en el encuentro.',
     sections: [
       {
+        title: 'Compartiendo',
+        points: [
+          { n: 1, text: ['¿Qué es lo que más disfrutas de liderar grupos de cuidado?'] },
+          { n: 2, text: ['¿Qué de la reunión se te hace más fácil ejecutar?'] },
+          { n: 3, text: ['¿Qué es lo que más te cuesta hacer dentro del grupo?'] },
+        ],
+      },
+      {
         title: 'Cuidado y acompañamiento',
         points: [
-          { n: 1, text: ['¿Cuál es el protocolo de acompañamiento pastoral ante un funeral?'] },
-          { n: 2, text: ['¿Por qué presentamos a los niños al Señor? ¿Por qué deseas presentar a tu hijo/a, y cuál es su fundamento bíblico?'] },
-          { n: 3, text: ['¿Cómo y a quién deben reportar los líderes si hay algún hermano enfermo en su GDC o que lleva tiempo sin asistir?'] },
-          { n: 4, text: ['¿Cuál es el criterio pastoral para no celebrar matrimonios de personas de otra congregación, y cómo se les explica y se les acompaña?'] },
-          { n: 5, text: ['¿Cuál es el criterio pastoral para no bautizar a personas de otra congregación, y cómo se les explica y se les acompaña?'] },
+          { n: 4, text: ['¿Cuál es el protocolo de acompañamiento pastoral ante un funeral?'] },
+          { n: 5, text: ['¿Por qué presentamos a los niños al Señor? ¿Por qué deseas presentar a tu hijo/a, y cuál es su fundamento bíblico?'] },
+          { n: 6, text: ['¿Cómo y a quién deben reportar los líderes si hay algún hermano enfermo en su GDC o que lleva tiempo sin asistir?'] },
+          { n: 7, text: ['¿Cuál es el criterio pastoral para no celebrar matrimonios de personas de otra congregación, y cómo se les explica y se les acompaña?'] },
+          { n: 8, text: ['¿Cuál es el criterio pastoral para no bautizar a personas de otra congregación, y cómo se les explica y se les acompaña?'] },
         ],
       },
       {
         title: 'Integración y crecimiento',
         points: [
-          { n: 6, text: ['¿Qué diferencias hay en la ruta de crecimiento y en los tiempos entre un nuevo creyente y un hermano recibido de otra congregación?'] },
-          { n: 7, text: ['¿Cómo deben ser conocidos por el equipo pastoral y tratados según su contexto los nuevos miembros que vienen de otra congregación? ¿Cómo darles espacio para conectarse y un tiempo prudente de permanencia antes de integrarlos en la ruta de crecimiento?'] },
-          { n: 8, text: ['¿Cómo debo tratar a un miembro que asiste al grupo de cuidado, pero congrega en otra iglesia?'] },
+          { n: 9, text: ['¿Qué diferencias hay en la ruta de crecimiento y en los tiempos entre un nuevo creyente y un hermano recibido de otra congregación?'] },
+          { n: 10, text: ['¿Cómo deben ser conocidos por el equipo pastoral y tratados según su contexto los nuevos miembros que vienen de otra congregación? ¿Cómo darles espacio para conectarse y un tiempo prudente de permanencia antes de integrarlos en la ruta de crecimiento?'] },
+          { n: 11, text: ['¿Cómo debo tratar a un miembro que asiste al grupo de cuidado, pero congrega en otra iglesia?'] },
         ],
       },
       {
         title: 'Liderazgo y estructura',
         points: [
-          { n: 9, text: ['¿Deben los líderes asistir a los servicios de los miércoles y domingos, y al REDIL, como responsabilidad inherente a su rol o función?'] },
-          { n: 10, text: ['¿Con qué frecuencia deben reunirse los coordinadores de ministerios con su red de liderazgo, para cuidado y planificación?'] },
-          { n: 11, text: ['¿Con quién debe comunicarse en primer lugar el líder: con su líder asesor o, si no cuenta con esa figura, con su coordinador?'] },
-          { n: 12, text: ['¿Cómo debe cada líder expresar, con convicción y fidelidad, lo que ha recibido de su líder asesor, coordinador o pastor, evitando presentarlo solo como «esta es la norma»?'] },
+          { n: 12, text: ['¿Deben los líderes asistir a los servicios de los miércoles y domingos, y al REDIL, como responsabilidad inherente a su rol o función?'] },
+          { n: 13, text: ['¿Con qué frecuencia deben reunirse los coordinadores de ministerios con su red de liderazgo, para cuidado y planificación?'] },
+          { n: 14, text: ['¿Con quién debe comunicarse en primer lugar el líder: con su líder asesor o, si no cuenta con esa figura, con su coordinador?'] },
+          { n: 15, text: ['¿Cómo debe cada líder expresar, con convicción y fidelidad, lo que ha recibido de su líder asesor, coordinador o pastor, evitando presentarlo solo como «esta es la norma»?'] },
         ],
       },
       {
         title: 'Acompañamiento al líder',
         points: [
-          { n: 13, text: ['¿Qué hacer como líder si me siento intimidado por otro miembro del grupo, porque lideraba en otra congregación o porque forma parte de otro ministerio y manifiesta conocer mucho de la Palabra?'] },
-          { n: 14, text: ['¿Es correcto que los líderes asesores visiten de sorpresa a los líderes de GDC para supervisar? ¿Con qué propósito y con qué criterios debería hacerse?'] },
-          { n: 15, text: ['¿Qué hacer cuando un miembro del grupo pide ayuda financiera al resto de los miembros?'] },
-          { n: 16, text: ['¿Cómo tratar el tema de las ofrendas en los grupos de cuidado?'] },
+          { n: 16, text: ['¿Qué hacer como líder si me siento intimidado por otro miembro del grupo, porque lideraba en otra congregación o porque forma parte de otro ministerio y manifiesta conocer mucho de la Palabra?'] },
+          { n: 17, text: ['¿Es correcto que los líderes asesores visiten de sorpresa a los líderes de GDC para supervisar? ¿Con qué propósito y con qué criterios debería hacerse?'] },
+          { n: 18, text: ['¿Qué hacer cuando un miembro del grupo pide ayuda financiera al resto de los miembros?'] },
+          { n: 19, text: ['¿Cómo tratar el tema de las ofrendas en los grupos de cuidado?'] },
         ],
       },
       {
         title: 'Enseñanza y capacitación',
         points: [
-          { n: 17, text: ['¿Cuál fue el motivo del cambio de nombre del taller PADRE por VIDA? ¿Afecta este cambio la estructura del GDC y sus etapas?'] },
-          { n: 18, text: ['¿Qué se enseña dentro de los grupos de cuidado? ¿Cuál es su propósito?'] },
-          { n: 19, text: ['¿Quién inscribe a los participantes en la ruta de crecimiento? ¿Qué ocurre cuando cierra el período de inscripción? Como líder, ¿puedo enviar a los talleres a miembros del GDC que no fueron registrados en el plazo fijado?'] },
-          { n: 20, text: ['¿Cuántos talleres del riel de capacitación se pueden realizar por ciclo?'] },
+          { n: 20, text: ['¿Cuál fue el motivo del cambio de nombre del taller PADRE por VIDA? ¿Afecta este cambio la estructura del GDC y sus etapas?'] },
+          { n: 21, text: ['¿Qué se enseña dentro de los grupos de cuidado? ¿Cuál es su propósito?'] },
+          { n: 22, text: ['¿Quién inscribe a los participantes en la ruta de crecimiento? ¿Qué ocurre cuando cierra el período de inscripción? Como líder, ¿puedo enviar a los talleres a miembros del GDC que no fueron registrados en el plazo fijado?'] },
+          { n: 23, text: ['¿Cuántos talleres del riel de capacitación se pueden realizar por ciclo?'] },
         ],
       },
       {
         title: 'Reuniones del grupo',
         points: [
-          { n: 21, text: ['Si no pude congregarme el domingo, ¿qué comparto en el GDC?'] },
-          { n: 22, text: ['¿Qué debe hacer el líder si las condiciones no están dadas para realizar el GDC? ¿Quién decide cuándo una reunión se suspende y se cambia de fecha o de casa anfitriona?'] },
-          { n: 23, text: ['¿Una reunión extra o un compartir sustituye la reunión regular del GDC?'] },
-          { n: 24, text: ['¿Qué tipo de música es apropiada en el grupo de cuidado, y con qué criterios se elige?'] },
+          { n: 24, text: ['Si no pude congregarme el domingo, ¿qué comparto en el GDC?'] },
+          { n: 25, text: ['¿Qué debe hacer el líder si las condiciones no están dadas para realizar el GDC? ¿Quién decide cuándo una reunión se suspende y se cambia de fecha o de casa anfitriona?'] },
+          { n: 26, text: ['¿Una reunión extra o un compartir sustituye la reunión regular del GDC?'] },
+          { n: 27, text: ['¿Qué tipo de música es apropiada en el grupo de cuidado, y con qué criterios se elige?'] },
         ],
       },
       {
         title: 'Comunicación y contenidos',
         points: [
-          { n: 25, text: ['¿Puedo grabar una prédica y enviarla a otro líder que no asistió al servicio? ¿Y puedo, como líder, grabarla y enviarla a los miembros de mi GDC?'] },
-          { n: 26, text: ['¿Qué información compartimos en los grupos de WhatsApp de la iglesia? Si un miembro del grupo ya no está asistiendo, ¿debe permanecer en el chat?'] },
-          { n: 27, text: ['¿Cómo reforzamos en la práctica que toda instrucción y todo acuerdo estén fundamentados en la Escritura?'] },
+          { n: 28, text: ['¿Puedo grabar una prédica y enviarla a otro líder que no asistió al servicio? ¿Y puedo, como líder, grabarla y enviarla a los miembros de mi GDC?'] },
+          { n: 29, text: ['¿Qué información compartimos en los grupos de WhatsApp de la iglesia? Si un miembro del grupo ya no está asistiendo, ¿debe permanecer en el chat?'] },
+          { n: 30, text: ['¿Cómo reforzamos en la práctica que toda instrucción y todo acuerdo estén fundamentados en la Escritura?'] },
         ],
       },
       {
         title: 'Asistencia al REDIL',
         points: [
-          { n: 28, text: ['Cuando ambos esposos son líderes, ¿deben asistir los dos al REDIL, o basta con uno?'] },
+          { n: 31, text: ['Cuando ambos esposos son líderes, ¿deben asistir los dos al REDIL, o basta con uno?'] },
         ],
       },
     ],
@@ -85,6 +93,7 @@ const LIBRETAS = {
 };
 const ACTIVE = 'redil-extraordinario-2026-11-07';
 
+const crypto = require('crypto');
 const MAX_LEN = 1500;
 const GENERAL = 'general'; // clave de la caja de pregunta general
 
@@ -139,6 +148,76 @@ async function saveSheet(db, group, libretaKey, items) {
   return { saved, removed };
 }
 
+
+/* ---------- Enlace común de la libretica (control remoto): se manda por WhatsApp y abre solo la libretica ----------
+ * El token vive en care_settings. Quien lo abre escribe su nombre; no se identifica con un grupo. */
+const newToken = () => crypto.randomBytes(24).toString('base64url');
+const DEVICE_RE = /^[A-Za-z0-9_-]{16,64}$/;
+const OPEN_GROUP = '(enlace común)';
+
+async function getLink(db) {
+  const { rows } = await db.query("SELECT key, value FROM care_settings WHERE key IN ('libreta_token', 'libreta_active')");
+  const m = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  return { token: m.libreta_token || '', active: m.libreta_active !== 'no' };
+}
+async function ensureLink(db) {
+  const cur = await getLink(db);
+  if (cur.token) return cur;
+  await db.query("INSERT INTO care_settings (key, value) VALUES ('libreta_token', $1) ON CONFLICT (key) DO NOTHING", [newToken()]);
+  return getLink(db);
+}
+async function regenerateLink(db) {
+  await db.query("INSERT INTO care_settings (key, value) VALUES ('libreta_token', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", [newToken()]);
+  await db.query("INSERT INTO care_settings (key, value) VALUES ('libreta_active', 'si') ON CONFLICT (key) DO UPDATE SET value = 'si'");
+}
+async function setLinkActive(db, on) {
+  await db.query("INSERT INTO care_settings (key, value) VALUES ('libreta_active', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", [on ? 'si' : 'no']);
+}
+/** Solo el enlace vigente y encendido abre la libretica. */
+async function linkIsValid(db, token) {
+  if (!/^[A-Za-z0-9_-]{16,64}$/.test(String(token))) return false;
+  const l = await getLink(db);
+  return l.active && l.token === token;
+}
+
+/** Valida el envío del enlace común: { name, device, answers }. Pide nombre y al menos una respuesta. */
+function parseOpenSubmission(lib, body) {
+  const b = body && typeof body === 'object' ? body : {};
+  const errors = [];
+  const name = String(b.name ?? '').replace(/\s+/g, ' ').trim();
+  if (name.length < 2) errors.push('Escribe tu nombre para poder enviar.');
+  if (name.length > 80) errors.push('El nombre es muy largo (máximo 80 letras).');
+  const device = String(b.device ?? '');
+  if (!DEVICE_RE.test(device)) errors.push('No pude identificar este teléfono. Recarga la página e intenta otra vez.');
+  const sheet = parseSheet(lib, b.answers);
+  errors.push(...sheet.errors);
+  if (!errors.length && !sheet.value.some((v) => v.question)) errors.push('Escribe al menos una pregunta o comentario antes de enviar.');
+  return { value: { name, device, items: sheet.value }, errors: [...new Set(errors)] };
+}
+
+/** Guarda lo enviado desde el enlace común: una fila por teléfono y punto (reenviar corrige, no duplica). Sin grupo ni persona del CRM. */
+async function saveOpenSheet(db, { name, device, items }, libretaKey) {
+  let saved = 0;
+  let removed = 0;
+  for (const it of items) {
+    if (!it.question) {
+      const r = await db.query("DELETE FROM redil_questions WHERE libreta = $1 AND device_id = $2 AND COALESCE(point, 0) = $3 AND answer = ''", [libretaKey, device, it.point || 0]);
+      removed += r.rowCount;
+      continue;
+    }
+    await db.query(
+      `INSERT INTO redil_questions (libreta, point, asker_name, group_name, device_id, question)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (libreta, device_id, COALESCE(point, 0)) WHERE device_id <> '' DO UPDATE SET
+         question = EXCLUDED.question, asker_name = EXCLUDED.asker_name,
+         status = CASE WHEN redil_questions.question = EXCLUDED.question THEN redil_questions.status ELSE 'abierta' END`,
+      [libretaKey, it.point, name, OPEN_GROUP, device, it.question]
+    );
+    saved++;
+  }
+  return { saved, removed };
+}
+
 /** Lo que este grupo ya envió: Map(punto → { question, answer, status }); null = la pregunta general. */
 async function listForGroup(db, group, libretaKey) {
   const { rows } = await db.query('SELECT id, point, question, status, answer, created_at FROM redil_questions WHERE libreta = $1 AND group_id = $2 ORDER BY created_at', [libretaKey, group.id]);
@@ -163,4 +242,4 @@ async function setStatus(db, id, status) {
   return rowCount > 0;
 }
 
-module.exports = { LIBRETAS, ACTIVE, MAX_LEN, GENERAL, getLibreta, findPoint, pointNumbers, sheetKeys, parseSheet, saveSheet, listForGroup, listAll, answer, setStatus };
+module.exports = { getLink, ensureLink, regenerateLink, setLinkActive, linkIsValid, parseOpenSubmission, saveOpenSheet, OPEN_GROUP, LIBRETAS, ACTIVE, MAX_LEN, GENERAL, getLibreta, findPoint, pointNumbers, sheetKeys, parseSheet, saveSheet, listForGroup, listAll, answer, setStatus };

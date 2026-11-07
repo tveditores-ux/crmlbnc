@@ -25,6 +25,7 @@ const { memberIntakeRouter } = require('./routes/member-intake');
 const { memberRequestsRouter } = require('./routes/member-requests');
 const { careGroupsRouter } = require('./routes/care-groups');
 const { redilPreguntasRouter } = require('./routes/redil-preguntas');
+const { libretaRemotaRouter } = require('./routes/libreta-remota');
 const { calendarRouter } = require('./routes/calendar');
 const { layout } = require('./views/layout');
 const { esc } = require('./util');
@@ -94,6 +95,7 @@ function createApp(ctx) {
   app.use(cartasRouter()); // la carta de bienvenida se lee sin sesión: el enlace se manda por WhatsApp
   app.use(careIntakeRouter(ctx)); // enlace común para todos los líderes: también por enlace secreto
   app.use(reunionRemotaRouter(ctx)); // libreta de la reunión de equipo: enlace secreto, sin sesión
+  app.use(libretaRemotaRouter(ctx)); // libretica del REDIL por enlace común (control remoto): enlace secreto, sin sesión
   app.use(careRemoteRouter(ctx)); // reporte del líder de grupo de cuidado: igual, enlace secreto
 
   app.get('/entrar', (req, res) => res.send(loginPage()));
