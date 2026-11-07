@@ -9,6 +9,7 @@ const { openTestDb } = require('./helpers/db');
 // Todos los datos son inventados.
 const TOK = (n) => `lider${String(n).padStart(2, '0')}abcdefghijklmn`;
 const FORM = { 'Content-Type': 'application/x-www-form-urlencoded' };
+const JSONH = { 'Content-Type': 'application/json' };
 
 test('la libretica trae los 27 puntos en 7 temas, numerados sin saltos, tal como en el PDF', () => {
   const L = lib.getLibreta();
@@ -19,16 +20,17 @@ test('la libretica trae los 27 puntos en 7 temas, numerados sin saltos, tal como
   assert.equal(lib.findPoint(L, 7).text.length, 2);
   assert.equal(lib.findPoint(L, 12).section, 'Liderazgo y estructura');
   assert.equal(lib.findPoint(L, 28), null);
+  assert.equal(lib.sheetKeys(L).length, 28);
 });
 
-test('parseQuestion: punto válido o general; vacío, punto inexistente o demasiado largo se rechazan', () => {
+test('parseSheet: solo pasan las cajas de la libretica; se limpian espacios; demasiado largo se rechaza', () => {
   const L = lib.getLibreta();
-  assert.deepEqual(lib.parseQuestion(L, { point: '12', question: '  ¿Cómo   hago?  ' }), { value: { point: 12, question: '¿Cómo hago?' }, errors: [] });
-  assert.equal(lib.parseQuestion(L, { point: '', question: 'General' }).value.point, null);
-  assert.equal(lib.parseQuestion(L, { point: '99', question: 'x' }).errors.length, 1);
-  assert.equal(lib.parseQuestion(L, { point: 'abc', question: 'x' }).errors.length, 1);
-  assert.match(lib.parseQuestion(L, { point: '3', question: '   ' }).errors[0], /Escribe tu pregunta/);
-  assert.match(lib.parseQuestion(L, { point: '3', question: 'a'.repeat(lib.MAX_LEN + 1) }).errors[0], /muy largo/);
+  const ok = lib.parseSheet(L, { p12: '  ¿Cómo   hago?  ', general: 'Otra', p99: 'no existe', hack: 'x', p3: '   ' });
+  assert.deepEqual(ok.errors, []);
+  assert.equal(ok.value.length, 28);
+  assert.deepEqual(ok.value.filter((v) => v.question).map((v) => [v.point, v.question]), [[12, '¿Cómo hago?'], [null, 'Otra']]);
+  assert.match(lib.parseSheet(L, { p1: 'a'.repeat(lib.MAX_LEN + 1) }).errors[0], /muy larga/);
+  assert.equal(lib.parseSheet(L, null).value.filter((v) => v.question).length, 0);
 });
 
 async function setup(t) {
@@ -40,112 +42,132 @@ async function setup(t) {
   const base = `http://127.0.0.1:${server.address().port}`;
   const group = async (n, name, leader, phone) => (await h.db.query('INSERT INTO care_groups (name, leader_name, leader_phone, token) VALUES ($1,$2,$3,$4) RETURNING id', [name, leader, phone, TOK(n)])).rows[0].id;
   const get = (p, headers = {}) => fetch(base + p, { headers, redirect: 'manual' });
-  const post = (p, f, headers = {}) => fetch(base + p, { method: 'POST', headers: { ...FORM, ...headers }, body: new URLSearchParams(f), redirect: 'manual' });
+  const form = (p, f, headers = {}) => fetch(base + p, { method: 'POST', headers: { ...FORM, ...headers }, body: new URLSearchParams(f), redirect: 'manual' });
+  const send = (n, answers) => fetch(`${base}/g/${TOK(n)}/redil/libreta/enviar`, { method: 'POST', headers: JSONH, body: JSON.stringify({ answers }) });
   const login = await fetch(`${base}/entrar`, { method: 'POST', headers: FORM, body: new URLSearchParams({ password: 'clave-de-prueba-123' }).toString(), redirect: 'manual' });
   const admin = { Cookie: login.headers.get('set-cookie').split(';')[0] };
-  return { db: h.db, group, get, post, admin, close: async () => { server.close(); await h.close(); } };
+  const rows = async () => (await h.db.query('SELECT * FROM redil_questions ORDER BY group_id, COALESCE(point, 0)')).rows;
+  return { db: h.db, group, get, form, send, admin, rows, close: async () => { server.close(); await h.close(); } };
 }
 
-test('el líder lee la libretica, escribe preguntas y quedan con su nombre; cada grupo ve solo las suyas', async (t) => {
+test('la hoja del líder es un cuaderno manuscrito con una caja por punto, y se abre desde la pestaña REDIL', async (t) => {
+  const s = await setup(t);
+  if (!s) return;
+  try {
+    await s.group(1, 'Grupo Esperanza', 'Ana Pérez', '584145550001');
+    assert.match(await (await s.get(`/g/${TOK(1)}/redil`)).text(), /Libretica del REDIL extraordinario/);
+    const r = await s.get(`/g/${TOK(1)}/redil/libreta`);
+    assert.equal(r.status, 200);
+    assert.equal(r.headers.get('cache-control'), 'no-store');
+    const page = await r.text();
+    for (const x of ['Amatic', 'Cuidado y acompañamiento', 'Comunicación y contenidos', 'Protocolo para funerales.', 'No bautizamos personas de otra congregación', 'Ana Pérez · Grupo Esperanza', 'Enviar a la iglesia', 'Sábado 7 de noviembre de 2026']) assert.ok(page.includes(x), x);
+    assert.equal((page.match(/<textarea data-k=/g) || []).length, 28); // 27 puntos + la general
+    assert.ok(page.includes('data-k="p14"') && page.includes('data-k="general"'));
+  } finally {
+    await s.close();
+  }
+});
+
+test('enviar: queda con el nombre del líder y su grupo; reenviar corrige sin duplicar; vacío borra; cada grupo ve lo suyo', async (t) => {
   const s = await setup(t);
   if (!s) return;
   try {
     await s.group(1, 'Grupo Esperanza', 'Ana Pérez', '584145550001');
     await s.group(2, 'Grupo Roca', 'Beto Ríos', '584145550002');
-    // el REDIL aparece como tarjeta en la pestaña REDIL y la libretica muestra los temas y los puntos
-    assert.match(await (await s.get(`/g/${TOK(1)}/redil`)).text(), /Libretica del REDIL extraordinario/);
-    const page = await (await s.get(`/g/${TOK(1)}/redil/libreta`)).text();
-    for (const x of ['Cuidado y acompañamiento', 'Comunicación y contenidos', 'Protocolo para funerales.', 'No bautizamos personas de otra congregación', 'Ana Pérez', 'Sábado 7 de noviembre de 2026']) assert.ok(page.includes(x), x);
-    assert.equal((page.match(/name="question"/g) || []).length, 28); // 27 puntos + la pregunta general
+    assert.equal((await s.send(1, { p14: '¿Cómo debe ser la visita del líder asesor?', general: 'Otra duda', p3: '' })).status, 204);
+    let rows = await s.rows();
+    assert.equal(rows.length, 2);
+    const q14 = rows.find((x) => x.point === 14);
+    assert.deepEqual([q14.asker_name, q14.group_name, q14.asker_phone, q14.libreta, q14.status], ['Ana Pérez', 'Grupo Esperanza', '584145550001', lib.ACTIVE, 'abierta']);
+    assert.ok(rows.find((x) => x.point === null && x.question === 'Otra duda'));
 
-    // pregunta sobre un punto
-    const ok = await s.post(`/g/${TOK(1)}/redil/libreta`, { point: '14', question: '¿Cómo debe ser la visita del líder asesor?' });
-    assert.equal(ok.status, 303);
-    assert.equal(ok.headers.get('location'), `/g/${TOK(1)}/redil/libreta?ok=1#p14`);
-    // y una general
-    assert.equal((await s.post(`/g/${TOK(1)}/redil/libreta`, { point: '', question: 'Otra duda' })).headers.get('location'), `/g/${TOK(1)}/redil/libreta?ok=1#general`);
-    const row = (await s.db.query('SELECT * FROM redil_questions WHERE point = 14')).rows[0];
-    assert.deepEqual([row.asker_name, row.group_name, row.asker_phone, row.libreta, row.status], ['Ana Pérez', 'Grupo Esperanza', '584145550001', lib.ACTIVE, 'abierta']);
+    // reenviar con el mismo punto corrige; con otro punto suma; texto vacío quita
+    await s.send(1, { p14: '¿Es correcto que visiten de sorpresa?', p15: 'Ayuda financiera', general: '' });
+    rows = await s.rows();
+    assert.deepEqual(rows.map((x) => [x.point, x.question]), [[14, '¿Es correcto que visiten de sorpresa?'], [15, 'Ayuda financiera']]);
 
-    const again = await (await s.get(`/g/${TOK(1)}/redil/libreta?ok=1`)).text();
-    assert.match(again, /Tu pregunta le llegó al equipo/);
-    assert.ok(again.includes('¿Cómo debe ser la visita del líder asesor?') && again.includes('Otra duda'));
+    // al volver a abrir, la hoja muestra lo que ya envió; el otro grupo no lo ve
+    const again = await (await s.get(`/g/${TOK(1)}/redil/libreta`)).text();
+    assert.ok(again.includes('¿Es correcto que visiten de sorpresa?') && again.includes('Ayuda financiera'));
     const other = await (await s.get(`/g/${TOK(2)}/redil/libreta`)).text();
-    assert.ok(!other.includes('visita del líder asesor') && !other.includes('Otra duda')); // no ve las de otro grupo
+    assert.ok(!other.includes('visiten de sorpresa') && !other.includes('Ayuda financiera'));
+    await s.send(2, { p14: 'Pregunta de Beto' });
+    assert.equal((await s.rows()).length, 3);
+    assert.equal((await s.rows()).filter((x) => x.group_name === 'Grupo Esperanza').length, 2); // no mezcla grupos
   } finally {
     await s.close();
   }
 });
 
-test('entradas malas no se guardan: punto que no existe, vacío, muy largo, robot, enlace inválido o desactivado; el HTML se escapa', async (t) => {
+test('entradas malas no se guardan: claves ajenas, muy largo, enlace inválido o desactivado; el HTML se escapa', async (t) => {
   const s = await setup(t);
   if (!s) return;
   try {
     const gid = await s.group(1, 'Grupo Esperanza', 'Ana Pérez', '584145550001');
-    const n = async () => (await s.db.query('SELECT count(*)::int AS n FROM redil_questions')).rows[0].n;
-    assert.equal((await s.post(`/g/${TOK(1)}/redil/libreta`, { point: '99', question: 'x' })).status, 400);
-    assert.equal((await s.post(`/g/${TOK(1)}/redil/libreta`, { point: '3', question: '  ' })).status, 400);
-    assert.equal((await s.post(`/g/${TOK(1)}/redil/libreta`, { point: '3', question: 'a'.repeat(lib.MAX_LEN + 1) })).status, 400);
-    await s.post(`/g/${TOK(1)}/redil/libreta`, { point: '3', question: 'spam', web: 'robot' });
-    assert.equal((await s.post('/g/zzzzzzzzzzzzzzzzzzzz/redil/libreta', { point: '3', question: 'x' })).status, 404);
-    assert.equal(await n(), 0);
-    await s.post(`/g/${TOK(1)}/redil/libreta`, { point: '3', question: '<script>alert(1)</script>' });
+    const long = await s.send(1, { p1: 'a'.repeat(lib.MAX_LEN + 1) });
+    assert.equal(long.status, 400);
+    assert.match((await long.json()).errors[0], /muy larga/);
+    await s.send(1, { p99: 'no existe', hack: 'x', constructor: 'y' });
+    assert.equal((await s.rows()).length, 0);
+    assert.equal((await s.get('/g/zzzzzzzzzzzzzzzzzzzz/redil/libreta')).status, 404);
+    await s.send(1, { p3: '<script>alert(1)</script>' });
     const html = await (await s.get(`/g/${TOK(1)}/redil/libreta`)).text();
     assert.ok(!html.includes('<script>alert(1)</script>') && html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
     await s.db.query('UPDATE care_groups SET link_active = FALSE WHERE id = $1', [gid]);
     assert.equal((await s.get(`/g/${TOK(1)}/redil/libreta`)).status, 404);
+    assert.equal((await s.send(1, { p3: 'otra' })).status, 404);
+    assert.equal((await s.rows()).length, 1);
   } finally {
     await s.close();
   }
 });
 
-test('tope por grupo: después de 60 preguntas avisa y no guarda más', async (t) => {
-  const s = await setup(t);
-  if (!s) return;
-  try {
-    const gid = await s.group(1, 'Grupo Esperanza', 'Ana Pérez', '584145550001');
-    for (let i = 0; i < 60; i++) await s.db.query("INSERT INTO redil_questions (libreta, point, asker_name, group_name, group_id, question) VALUES ($1, 1, 'Ana', 'G', $2, 'p')", [lib.ACTIVE, gid]);
-    const r = await s.post(`/g/${TOK(1)}/redil/libreta`, { point: '1', question: 'una más' });
-    assert.equal(r.status, 400);
-    assert.match(await r.text(), /Ya enviaste muchas preguntas/);
-    assert.equal((await s.db.query('SELECT count(*)::int AS n FROM redil_questions')).rows[0].n, 60);
-  } finally {
-    await s.close();
-  }
-});
-
-test('panel: solo con sesión; ve las preguntas por punto con nombre y grupo, responde y el líder ve la respuesta', async (t) => {
+test('panel: libretica en estilo cuaderno, preguntas por punto y por persona, responder; el líder ve la respuesta y ella no se pierde', async (t) => {
   const s = await setup(t);
   if (!s) return;
   try {
     await s.group(1, 'Grupo Esperanza', 'Ana Pérez', '584145550001');
-    await s.post(`/g/${TOK(1)}/redil/libreta`, { point: '19', question: '¿Quién inscribe en la ruta de crecimiento?' });
-    await s.post(`/g/${TOK(1)}/redil/libreta`, { point: '', question: 'Pregunta general de Ana' });
-    assert.equal((await s.get('/redil/preguntas')).status, 303); // sin sesión: al login
-    assert.equal((await s.post('/redil/preguntas/1/respuesta', { answer: 'x' })).status, 401);
+    await s.group(2, 'Grupo Roca', 'Beto Ríos', '584145550002');
+    await s.send(1, { p19: '¿Quién inscribe en la ruta de crecimiento?', general: 'Pregunta general de Ana' });
+    await s.send(2, { p19: 'Lo mismo, Beto' });
+    assert.equal((await s.get('/redil/libreta')).status, 303); // sin sesión
+    assert.equal((await s.get('/redil/preguntas')).status, 303);
+    assert.equal((await s.form('/redil/preguntas/1/respuesta', { answer: 'x' })).status, 401);
+
+    const vista = await (await s.get('/redil/libreta', s.admin)).text();
+    for (const x of ['Libretica del REDIL extraordinario', 'No casamos personas de otra congregación', 'Reforzar todas las instrucciones', '2 pregunta(s) recibida(s)', 'class="re"']) assert.ok(vista.includes(x), x);
+    assert.ok(!vista.includes('<textarea data-k=')); // en el panel es solo lectura
 
     const page = await (await s.get('/redil/preguntas', s.admin)).text();
-    for (const x of ['Punto 19 · Enseñanza y capacitación', 'Ana Pérez', 'Grupo Esperanza', '0414-555.00.01', '¿Quién inscribe en la ruta de crecimiento?', 'Preguntas generales', 'Abiertas (2)']) assert.ok(page.includes(x), x);
+    for (const x of ['Punto 19 · Enseñanza y capacitación', 'Ana Pérez', 'Beto Ríos', 'Grupo Esperanza', '0414-555.00.01', '¿Quién inscribe en la ruta de crecimiento?', 'Preguntas generales', 'Abiertas (3)']) assert.ok(page.includes(x), x);
+    const persona = await (await s.get('/redil/preguntas?ver=persona', s.admin)).text();
+    for (const x of ['Ana Pérez', 'Punto 19', 'Pregunta general', 'Grupo Roca']) assert.ok(persona.includes(x), x);
 
-    const id = (await s.db.query('SELECT id FROM redil_questions WHERE point = 19')).rows[0].id;
-    const ans = await s.post(`/redil/preguntas/${id}/respuesta`, { answer: 'La inscribe el líder en el plazo fijado.' }, s.admin);
-    assert.equal(ans.status, 303);
-    assert.equal((await s.db.query('SELECT status FROM redil_questions WHERE id = $1', [id])).rows[0].status, 'atendida');
+    const id = (await s.db.query("SELECT id FROM redil_questions WHERE group_name = 'Grupo Esperanza' AND point = 19")).rows[0].id;
+    assert.equal((await s.form(`/redil/preguntas/${id}/respuesta`, { answer: 'La inscribe el líder en el plazo fijado.' }, s.admin)).status, 303);
     assert.match(await (await s.get(`/g/${TOK(1)}/redil/libreta`)).text(), /Respuesta:<\/strong> La inscribe el líder en el plazo fijado\./);
     const open = await (await s.get('/redil/preguntas', s.admin)).text();
-    assert.ok(open.includes('Abiertas (1)') && !open.includes('¿Quién inscribe en la ruta de crecimiento?'));
-    const all = await (await s.get('/redil/preguntas?ver=todas', s.admin)).text();
-    assert.ok(all.includes('¿Quién inscribe en la ruta de crecimiento?') && all.includes('Atendida'));
-    // borrar la respuesta la reabre; reabrir a mano también
-    await s.post(`/redil/preguntas/${id}/respuesta`, { answer: '' }, s.admin);
+    assert.ok(open.includes('Abiertas (2)') && !open.includes('¿Quién inscribe en la ruta de crecimiento?'));
+    assert.ok((await (await s.get('/redil/preguntas?ver=todas', s.admin)).text()).includes('Atendida'));
+
+    // vaciar la caja NO borra una pregunta ya contestada; cambiar su texto la reabre
+    await s.send(1, { p19: '', general: 'Pregunta general de Ana' });
+    assert.equal((await s.rows()).filter((x) => x.point === 19 && x.group_name === 'Grupo Esperanza').length, 1);
+    await s.send(1, { p19: '¿Y si cierra el periodo?', general: 'Pregunta general de Ana' });
+    const q = (await s.rows()).find((x) => x.point === 19 && x.group_name === 'Grupo Esperanza');
+    assert.deepEqual([q.question, q.status, q.answer], ['¿Y si cierra el periodo?', 'abierta', 'La inscribe el líder en el plazo fijado.']);
+
+    // borrar la respuesta la reabre; reabrir a mano también; estado inválido no cambia nada
+    await s.form(`/redil/preguntas/${id}/respuesta`, { answer: '' }, s.admin);
     assert.equal((await s.db.query('SELECT status FROM redil_questions WHERE id = $1', [id])).rows[0].status, 'abierta');
-    await s.post(`/redil/preguntas/${id}/estado`, { status: 'atendida' }, s.admin);
+    await s.form(`/redil/preguntas/${id}/estado`, { status: 'atendida' }, s.admin);
     assert.equal((await s.db.query('SELECT status FROM redil_questions WHERE id = $1', [id])).rows[0].status, 'atendida');
-    assert.equal((await s.post(`/redil/preguntas/${id}/estado`, { status: 'otra' }, s.admin)).status, 303); // estado inválido: no cambia
+    await s.form(`/redil/preguntas/${id}/estado`, { status: 'otra' }, s.admin);
     assert.equal((await s.db.query('SELECT status FROM redil_questions WHERE id = $1', [id])).rows[0].status, 'atendida');
     // la pregunta sobrevive al borrado del grupo (sin claves foráneas a propósito)
+    const n = (await s.rows()).length;
     await s.db.query('DELETE FROM care_groups');
-    assert.equal((await s.db.query('SELECT count(*)::int AS n FROM redil_questions')).rows[0].n, 2);
+    assert.equal((await s.rows()).length, n);
   } finally {
     await s.close();
   }

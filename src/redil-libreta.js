@@ -86,7 +86,7 @@ const LIBRETAS = {
 const ACTIVE = 'redil-extraordinario-2026-11-07';
 
 const MAX_LEN = 1500;
-const MAX_PER_GROUP = 60; // tope por libretica y grupo: la pantalla es pública por enlace
+const GENERAL = 'general'; // clave de la caja de pregunta general
 
 const pointNumbers = (lib) => lib.sections.flatMap((s) => s.points.map((p) => p.n));
 const getLibreta = (key = ACTIVE) => LIBRETAS[key] || null;
@@ -94,39 +94,56 @@ const findPoint = (lib, n) => {
   for (const s of lib.sections) for (const p of s.points) if (p.n === n) return { ...p, section: s.title };
   return null;
 };
+/** Claves de las cajas de la hoja: p1…p27 y general. */
+const sheetKeys = (lib) => [...pointNumbers(lib).map((n) => `p${n}`), GENERAL];
 
-/** Valida lo que escribió el líder. point: número de la libretica o '' (pregunta general). */
-function parseQuestion(lib, body) {
+/**
+ * Valida lo que manda la hoja: { p1: '…', p14: '…', general: '…' }. Solo pasan las claves de la libretica; un texto vacío
+ * significa "sin pregunta en este punto". Devuelve { value: [{ point, question }], errors }.
+ */
+function parseSheet(lib, answers) {
   const errors = [];
-  const raw = String(body.point ?? '').trim();
-  let point = null;
-  if (raw !== '') {
-    point = Number(raw);
-    if (!Number.isInteger(point) || !pointNumbers(lib).includes(point)) errors.push('Ese punto no existe.');
+  const value = [];
+  const src = answers && typeof answers === 'object' ? answers : {};
+  for (const key of sheetKeys(lib)) {
+    const q = String(src[key] ?? '').replace(/\r\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
+    if (q.length > MAX_LEN) errors.push(`Una de tus preguntas es muy larga (máximo ${MAX_LEN} letras).`);
+    value.push({ point: key === GENERAL ? null : Number(key.slice(1)), question: q });
   }
-  const question = String(body.question ?? '').replace(/\r\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
-  if (!question) errors.push('Escribe tu pregunta o comentario.');
-  else if (question.length > MAX_LEN) errors.push(`Tu texto es muy largo (máximo ${MAX_LEN} letras).`);
-  return { value: { point, question }, errors };
+  return { value, errors: [...new Set(errors)] };
 }
 
-/** Guarda la pregunta con el nombre del líder del grupo. Devuelve { id } o { error }. */
-async function addQuestion(db, group, libretaKey, value) {
-  const { rows: cnt } = await db.query('SELECT count(*)::int AS n FROM redil_questions WHERE libreta = $1 AND group_id = $2', [libretaKey, group.id]);
-  if (cnt[0].n >= MAX_PER_GROUP) return { error: 'Ya enviaste muchas preguntas. Si tienes más, díselas a quien administra el panel.' };
-  const { rows } = await db.query(
-    `INSERT INTO redil_questions (libreta, point, asker_name, asker_phone, group_name, group_id, question)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-    [libretaKey, value.point, group.leader_name || group.name, group.leader_phone || '', group.name, group.id, value.question]
-  );
-  return { id: rows[0].id };
+/**
+ * Guarda la hoja del grupo: una fila por punto (reenviar corrige). Texto vacío borra la fila, salvo que ya tenga respuesta del
+ * equipo (esa se conserva). Si cambia el texto de una pregunta ya contestada, vuelve a quedar abierta. Devuelve { saved, removed }.
+ */
+async function saveSheet(db, group, libretaKey, items) {
+  let saved = 0;
+  let removed = 0;
+  for (const it of items) {
+    if (!it.question) {
+      const r = await db.query("DELETE FROM redil_questions WHERE libreta = $1 AND group_id = $2 AND COALESCE(point, 0) = $3 AND answer = ''", [libretaKey, group.id, it.point || 0]);
+      removed += r.rowCount;
+      continue;
+    }
+    await db.query(
+      `INSERT INTO redil_questions (libreta, point, asker_name, asker_phone, group_name, group_id, question)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (libreta, group_id, COALESCE(point, 0)) WHERE group_id IS NOT NULL DO UPDATE SET
+         question = EXCLUDED.question, asker_name = EXCLUDED.asker_name, asker_phone = EXCLUDED.asker_phone, group_name = EXCLUDED.group_name,
+         status = CASE WHEN redil_questions.question = EXCLUDED.question THEN redil_questions.status ELSE 'abierta' END`,
+      [libretaKey, it.point, group.leader_name || group.name, group.leader_phone || '', group.name, group.id, it.question]
+    );
+    saved++;
+  }
+  return { saved, removed };
 }
 
-/** Lo que este grupo ya preguntó, por punto (null = generales). */
+/** Lo que este grupo ya envió: Map(punto → { question, answer, status }); null = la pregunta general. */
 async function listForGroup(db, group, libretaKey) {
   const { rows } = await db.query('SELECT id, point, question, status, answer, created_at FROM redil_questions WHERE libreta = $1 AND group_id = $2 ORDER BY created_at', [libretaKey, group.id]);
   const by = new Map();
-  for (const q of rows) (by.get(q.point) || by.set(q.point, []).get(q.point)).push(q);
+  for (const q of rows) by.set(q.point, q);
   return by;
 }
 
@@ -146,4 +163,4 @@ async function setStatus(db, id, status) {
   return rowCount > 0;
 }
 
-module.exports = { LIBRETAS, ACTIVE, MAX_LEN, getLibreta, findPoint, pointNumbers, parseQuestion, addQuestion, listForGroup, listAll, answer, setStatus };
+module.exports = { LIBRETAS, ACTIVE, MAX_LEN, GENERAL, getLibreta, findPoint, pointNumbers, sheetKeys, parseSheet, saveSheet, listForGroup, listAll, answer, setStatus };
