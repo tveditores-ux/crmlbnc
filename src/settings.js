@@ -19,6 +19,9 @@ const FIELDS = {
   anthropicApiKey: { env: 'ANTHROPIC_API_KEY', label: 'Clave del modelo (Anthropic)', secret: true },
   agentModel: { env: 'AGENT_MODEL', label: 'Modelo del asistente', secret: false },
   agentMaxReplies: { env: 'AGENT_MAX_REPLIES_PER_DAY', label: 'Respuestas por persona al día', secret: false },
+  agentReviewer: { env: 'AGENT_REVIEWER', label: 'Revisor interno', secret: false },
+  agentReviewerModel: { env: 'AGENT_REVIEWER_MODEL', label: 'Modelo del revisor', secret: false },
+  agentBrain: { env: '', label: 'Cerebro del asistente', secret: false },
 };
 const PROVIDERS = ['meta', 'wecall'];
 const MAX_SECRET = 300;
@@ -135,6 +138,10 @@ async function apply(ctx) {
   config.agent.model = pick('agentModel', a.model);
   const mx = Number(pick('agentMaxReplies', null));
   config.agent.maxRepliesPerDay = Number.isInteger(mx) && mx >= 1 ? mx : a.maxRepliesPerDay;
+  const rv = pick('agentReviewer', null);
+  config.agent.reviewer = rv === 'si' ? true : rv === 'no' ? false : a.reviewer;
+  config.agent.reviewerModel = pick('agentReviewerModel', a.reviewerModel);
+  config.agent.brain = pick('agentBrain', a.brain);
   // el canal se reconstruye con la configuración nueva; quien lo usa lo lee de ctx.channels en cada envío
   const fresh = createChannels(config, { fetchImpl: ctx.fetchImpl });
   ctx.channels.whatsapp = fresh.whatsapp;
@@ -156,6 +163,9 @@ function sourceOf(key, stored, config) {
     anthropicApiKey: env.agent.apiKey,
     agentModel: env.agent.model,
     agentMaxReplies: env.agent.maxRepliesPerDay,
+    agentReviewer: env.agent.reviewer ? 'si' : '',
+    agentReviewerModel: env.agent.reviewerModel,
+    agentBrain: env.agent.brain,
   }[key];
   return v ? 'railway' : 'falta';
 }

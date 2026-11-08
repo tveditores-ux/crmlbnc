@@ -72,6 +72,9 @@ function loadConfig(env = process.env) {
       apiKey: env.ANTHROPIC_API_KEY || '',
       model: env.AGENT_MODEL || 'claude-sonnet-5-5',
       maxRepliesPerDay: int(env.AGENT_MAX_REPLIES_PER_DAY, 12),
+      reviewer: bool(env.AGENT_REVIEWER, false), // revisor interno: una segunda mirada a cada respuesta antes de enviarla
+      reviewerModel: env.AGENT_REVIEWER_MODEL || '', // vacío = el mismo modelo del asistente
+      brain: '', // el cerebro editable (se guarda desde el panel); vacío = el original
     },
 
     email: {
