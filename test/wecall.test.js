@@ -123,3 +123,25 @@ test('webhook: firma obligatoria, el mensaje queda registrado una sola vez aunqu
     await h.close();
   }
 });
+
+test('asistente: cada respuesta por WeCall queda anotada (aceptada o con el error exacto), sin número ni texto', async (t) => {
+  const h = await openTestDb();
+  if (!h) return t.skip('sin base de datos de prueba (instala @electric-sql/pglite o define DATABASE_URL_TEST)');
+  const agent = require('../src/agent');
+  try {
+    const config = loadConfig(env({ DRY_RUN: 'false', AGENT_ENABLED: 'true', ANTHROPIC_API_KEY: 'sk-ant-prueba' }));
+    let reply = { status: 200, ok: true, json: async () => ({ id: 77 }) };
+    const channels = createChannels(config, { fetchImpl: async () => reply });
+    const ctx = { db: h.db, config, channels };
+    await agent.handleInbound(ctx, { from: '584145551212', body: 'Hola', type: 'text' });
+    reply = { status: 502, ok: false, json: async () => ({ error: 'Meta rechazó el envío al 584145551212' }) };
+    await agent.handleInbound(ctx, { from: '584145551212', body: 'Hola otra vez', type: 'text' });
+    const avisos = await wecall.recentDeliveries(h.db);
+    assert.deepEqual(avisos.map((a) => [a.result, a.evento]), [['envio_fallido', 'respuesta_asistente'], ['enviado', 'respuesta_asistente']]);
+    assert.match(avisos[0].detail, /WeCall 502: Meta rechazó el envío/);
+    assert.match(avisos[1].detail, /id 77/);
+    assert.ok(!JSON.stringify(avisos).includes('5551212'));
+  } finally {
+    await h.close();
+  }
+});

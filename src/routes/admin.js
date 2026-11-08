@@ -1017,7 +1017,7 @@ function adminRouter(ctx) {
       const isWc = config.whatsappProvider === 'wecall';
       const webhookUrl = `${config.publicUrl}/webhooks/${isWc ? 'wecall' : 'whatsapp'}`;
       const avisos = isWc ? await require('../channels/wecall').recentDeliveries(db) : [];
-      const RES = { recibido: 'badge b-ok', repetido: 'badge b-ok', ignorado: 'badge b-warn', firma_invalida: 'badge b-bad', error: 'badge b-bad' };
+      const RES = { recibido: 'badge b-ok', repetido: 'badge b-ok', ignorado: 'badge b-warn', firma_invalida: 'badge b-bad', error: 'badge b-bad', enviado: 'badge b-ok', envio_fallido: 'badge b-bad', no_enviado: 'badge b-bad' };
       page(
         req,
         res,
