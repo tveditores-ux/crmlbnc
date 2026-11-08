@@ -215,7 +215,7 @@ test('panel: ver el cerebro, editarlo (vale al instante), validar y volver al or
     // volver al original
     assert.equal((await s.post('/configuracion/cerebro/restaurar', {})).status, 303);
     assert.equal(s.config.agent.brain, '');
-    assert.ok(agent.systemPrompt(s.config).includes('# Quién eres\n\nEres el asistente virtual'));
+    assert.ok(agent.systemPrompt(s.config).includes('# Quién eres\n\nTe llamas Grace'));
     assert.equal((await s.db.query("SELECT count(*)::int AS n FROM app_settings WHERE key = 'agentBrain'")).rows[0].n, 0);
   } finally {
     await s.close();
