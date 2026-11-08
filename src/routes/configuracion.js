@@ -4,6 +4,7 @@ const { layout } = require('../views/layout');
 const { esc } = require('../util');
 const auth = require('../auth');
 const settings = require('../settings');
+const brain = require('../agent-brain');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const go = (res, flash) => res.redirect(303, `/configuracion?${new URLSearchParams(flash).toString()}`);
@@ -93,12 +94,20 @@ function configuracionRouter(ctx) {
             <div class="row" style="margin-top:14px">
               <div><label for="agent_model">Modelo ${SOURCE[src('agentModel')]}</label><input id="agent_model" type="text" name="model" value="${esc(config.agent.model)}" spellcheck="false"></div>
               <div><label for="agent_max">Respuestas por persona al día ${SOURCE[src('agentMaxReplies')]}</label><input id="agent_max" type="number" name="max_replies" min="1" max="100" value="${esc(config.agent.maxRepliesPerDay)}"></div></div>
+            <div class="row" style="margin-top:14px">
+              <div><label for="agent_reviewer">Revisor interno ${SOURCE[src('agentReviewer')]}</label>
+                <select id="agent_reviewer" name="reviewer"><option value="no" ${config.agent.reviewer ? '' : 'selected'}>Apagado</option><option value="si" ${config.agent.reviewer ? 'selected' : ''}>Encendido: revisa cada respuesta antes de enviarla</option></select></div>
+              <div><label for="agent_rmodel">Modelo del revisor (opcional) ${SOURCE[src('agentReviewerModel')]}</label><input id="agent_rmodel" type="text" name="reviewer_model" value="${esc(config.agent.reviewerModel)}" placeholder="el mismo del asistente" spellcheck="false"></div></div>
+            <p class="muted" style="margin:4px 0 0;font-size:13px">El revisor es una segunda mirada: antes de enviar, comprueba la respuesta contra los valores del cerebro. Si la objeta, el asistente la corrige (hasta 2 veces); si sigue mal, pasa el caso a una persona. Usa una consulta más por mensaje.</p>
             <div class="actions"><button>Guardar</button></div>
             <p class="muted" style="font-size:13px;margin:8px 0 0">Solo responde a personas registradas y activas, solo sobre la iglesia, nunca escribe primero, y pasa a un líder o pastor lo que no sabe. Lo que no es de la iglesia lo rechaza con amabilidad.</p>
           </form>
           <div class="actions" style="margin-top:10px"><form class="inline" method="post" action="/configuracion/agente/probar"><button class="sec small">Probar la clave del modelo</button></form>
             <a class="btn sec small" href="/asistente">Probar una conversación (sin enviar nada)</a></div>
         </div>
+        <div class="card"><h3 style="margin:0 0 6px">Cerebro del asistente ${config.agent.brain ? '<span class="badge b-ok">Personalizado</span>' : '<span class="badge b-muted">Original</span>'}</h3>
+          <p class="muted" style="margin:0 0 8px">Quién es el asistente, sus valores, cómo conversa y cuándo pasa el caso a una persona, escrito en lenguaje normal. Lo editas aquí; las reglas de seguridad (no inventar datos, no dar datos de otros, no salirse de la iglesia) no se pueden quitar.</p>
+          <a class="btn sec small" href="/configuracion/cerebro">Ver y editar el cerebro</a></div>
         <div class="card"><h3 style="margin:0 0 6px">Comprobar la conexión</h3>
           <p class="muted" style="margin:0 0 8px">Hace una consulta de solo lectura a WeCall con la API key guardada. No envía ningún mensaje.</p>
           <form method="post" action="/configuracion/wecall/probar"><button class="sec">Probar la API key</button></form></div>
@@ -161,6 +170,13 @@ function configuracionRouter(ctx) {
       const model = settings.parseModel(b.model);
       if (model.error) errors.push(model.error);
       else if (model.value) changes.push(['agentModel', model.value]);
+      if (b.reviewer !== undefined) {
+        if (!['si', 'no'].includes(b.reviewer)) errors.push('Elige si el revisor va encendido o apagado.');
+        else changes.push(['agentReviewer', b.reviewer]);
+      }
+      const rmodel = settings.parseModel(b.reviewer_model);
+      if (rmodel.error) errors.push(rmodel.error);
+      else if (rmodel.value) changes.push(['agentReviewerModel', rmodel.value]);
       const max = settings.parseMaxReplies(b.max_replies);
       if (max.error) errors.push(max.error);
       else if (max.value) changes.push(['agentMaxReplies', max.value]);
@@ -172,6 +188,46 @@ function configuracionRouter(ctx) {
       await settings.apply(ctx);
       const falta = config.agent.enabled && !config.agent.apiKey;
       go(res, { ok: `Asistente guardado y aplicado.${falta ? ' Ojo: está encendido pero todavía falta la clave del modelo.' : ''}` });
+    })
+  );
+
+  // ---- el cerebro del asistente: ver, editar, restaurar el original ----
+  const brainPage = (req, res, { text, status = 200, err = '' } = {}) => {
+    const current = text ?? brain.activeBrain(config);
+    const body = `<p><a href="/configuracion">← Configuración</a></p><h1>Cerebro del asistente</h1>
+      <p class="sub">${config.agent.brain ? '<span class="badge b-ok">Personalizado</span>' : '<span class="badge b-muted">Original</span>'} Escríbelo en lenguaje normal: quién es, qué valores lo mandan, qué hace y qué no, cómo conversa y cuándo pasa el caso a una persona. Los cambios valen desde el siguiente mensaje.</p>
+      <div class="card"><h3 style="margin:0 0 6px">Lo que no se puede cambiar</h3>
+        <p class="muted" style="margin:0 0 6px;font-size:13px">Estas reglas se agregan siempre al final, aunque el cerebro diga otra cosa, y además el CRM filtra enlaces y teléfonos que no estén en los datos, responde con un mensaje fijo ante una crisis y solo atiende a personas registradas.</p>
+        <pre style="white-space:pre-wrap;margin:0;font-size:12px">${esc(brain.REGLAS_FIJAS)}</pre></div>
+      <form method="post" action="/configuracion/cerebro" class="card">
+        <label for="brain">Cerebro (${brain.MIN_BRAIN} a ${brain.MAX_BRAIN} letras)</label>
+        <textarea id="brain" name="brain" spellcheck="true" style="min-height:520px;font-family:inherit;font-size:14px;line-height:1.45">${esc(current)}</textarea>
+        <div class="actions"><button>Guardar el cerebro</button>
+          <button class="sec" formaction="/configuracion/cerebro/restaurar" formnovalidate onclick="return confirm('Se pierde lo que escribiste y vuelve el cerebro original. ¿Continuar?')">Volver al original</button>
+          <a class="btn sec" href="/asistente">Probar una conversación</a></div>
+        <p class="muted" style="font-size:13px;margin:8px 0 0">Prueba siempre en <a href="/asistente">Asistente</a> (no envía nada) antes de confiar en un cambio.</p>
+      </form>`;
+    res.status(status).send(layout({ title: 'Cerebro del asistente', active: '/configuracion', body, config, query: err ? { err } : req.query }));
+  };
+  r.get('/configuracion/cerebro', (req, res) => brainPage(req, res));
+  r.post(
+    '/configuracion/cerebro',
+    ah(async (req, res) => {
+      const p = brain.parseBrain(req.body && req.body.brain);
+      if (p.error) {
+        return brainPage(req, res, { text: String((req.body && req.body.brain) || ''), status: 400, err: p.error });
+      }
+      await settings.setValue(db, config.sessionSecret, 'agentBrain', p.value);
+      await settings.apply(ctx);
+      res.redirect(303, '/configuracion/cerebro?ok=' + encodeURIComponent('Cerebro guardado. Vale desde el siguiente mensaje.'));
+    })
+  );
+  r.post(
+    '/configuracion/cerebro/restaurar',
+    ah(async (req, res) => {
+      await settings.removeValue(db, 'agentBrain');
+      await settings.apply(ctx);
+      res.redirect(303, '/configuracion/cerebro?ok=' + encodeURIComponent('Volvió el cerebro original.'));
     })
   );
 

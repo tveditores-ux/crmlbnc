@@ -38,10 +38,11 @@ function asistenteRouter(ctx) {
         const phone = normalizePhone(req.query.telefono, config.defaultCountryCode);
         const out = phone ? await agent.dryAnswer(ctx, { phone, text: req.query.mensaje }) : { kind: 'telefono' };
         const label = {
-          modelo: out.escalate ? 'Respondería y pasaría el caso a un líder o pastor' : 'Respondería así',
+          modelo: (out.escalate ? 'Respondería y pasaría el caso a un líder o pastor' : 'Respondería así') + (out.revisions ? ` (el revisor interno la corrigió ${out.revisions} ${out.revisions === 1 ? 'vez' : 'veces'})` : ''),
           crisis: 'Mensaje de crisis: respuesta fija y aviso urgente al equipo pastoral (sin usar el modelo)',
           desconocido: 'Ese número no está registrado: respondería el aviso fijo, sin usar el modelo',
           bloqueada: 'El filtro de seguridad bloqueó la respuesta del modelo; enviaría el aviso fijo y pasaría el caso',
+          rechazada: 'El revisor interno no aprobó la respuesta ni después de corregirla; enviaría el aviso fijo y pasaría el caso',
           sin_clave: 'Falta la clave del modelo (ANTHROPIC_API_KEY) en el servidor',
           vacio: 'Escribe un mensaje de prueba',
           telefono: 'Escribe un número de teléfono válido',
@@ -64,7 +65,7 @@ function asistenteRouter(ctx) {
           <div class="card"><div class="stat-label">WhatsApp</div>${yn(channels.whatsapp && channels.whatsapp.available, 'Conectado', 'Sin conectar')}</div>
           <div class="card"><div class="stat-label">Respuestas por persona al día</div><strong>${config.agent.maxRepliesPerDay}</strong></div>
         </div>
-        <p class="muted" style="font-size:13px">Se enciende y se le pone la clave en <a href="/configuracion">Configuración</a> (también valen las variables <span class="mono">AGENT_ENABLED</span> y <span class="mono">ANTHROPIC_API_KEY</span> de Railway). Mientras WhatsApp no esté conectado, o con <span class="mono">DRY_RUN</span> activo, el asistente no envía nada.</p>
+        <p class="muted" style="font-size:13px"><a href="/configuracion/cerebro">Ver y editar el cerebro del asistente</a> · Se enciende y se le pone la clave en <a href="/configuracion">Configuración</a> (también valen las variables <span class="mono">AGENT_ENABLED</span> y <span class="mono">ANTHROPIC_API_KEY</span> de Railway). Mientras WhatsApp no esté conectado, o con <span class="mono">DRY_RUN</span> activo, el asistente no envía nada.</p>
 
         <h2>Límites del asistente</h2>
         <div class="card"><ul style="margin:0;padding-left:20px">
