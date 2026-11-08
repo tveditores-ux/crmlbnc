@@ -62,6 +62,17 @@ pre{white-space:pre-wrap;background:#f0ebdf;padding:12px;border-radius:8px;font-
 .toolbar > *{flex:1 1 180px}
 .toolbar > button,.toolbar > .btn{flex:0 0 auto}
 @media (max-width:640px){nav a{margin-right:8px;font-size:13px}h1{font-size:21px}}
+@media screen and (min-width:900px){
+  body.con-menu{padding-right:216px}
+  body.con-menu nav{position:fixed;top:0;right:0;bottom:0;width:216px;flex-direction:column;flex-wrap:nowrap;align-items:stretch;
+    background:var(--ink);padding:14px 10px 20px;overflow-y:auto;row-gap:1px;z-index:5;border-left:1px solid rgba(255,255,255,.12)}
+  body.con-menu nav a{margin:0;padding:8px 12px;border-radius:7px;border-bottom:0;font-size:14px}
+  body.con-menu nav a.on{background:rgba(217,181,106,.22);border-bottom:0;opacity:1}
+  body.con-menu nav a:hover{background:rgba(255,255,255,.1);border-bottom:0}
+  body.con-menu nav form.inline{display:block;margin-top:10px}
+  body.con-menu nav form.inline button{width:100%;margin:0!important}
+}
+@media print{nav{display:none!important}body.con-menu{padding-right:0}}
 ${CHARTS_CSS}
 `;
 
@@ -142,7 +153,7 @@ function layout({ title, active, body, config, query, bare = false }) {
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<title>${esc(title)} · ${esc(church)}</title><style>${CSS}</style></head><body>
+<title>${esc(title)} · ${esc(church)}</title><style>${CSS}</style></head><body${bare ? '' : ' class="con-menu"'}>
 ${dryBanner}
 <header class="top"><div class="wrap"><div class="brand">Comunicación<small>${esc(church)}</small></div>${nav}</div></header>
 <main><div class="wrap">${flash(query)}${body}</div></main>
