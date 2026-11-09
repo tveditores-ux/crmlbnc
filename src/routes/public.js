@@ -122,7 +122,10 @@ function publicRouter(ctx) {
         else if (await wecall.alreadySeen(db, body)) await wecall.recordDelivery(db, { result: 'repetido', evento });
         else {
           await responses.handleWhatsAppWebhook(ctx, body);
-          await wecall.recordDelivery(db, { result: 'recibido', evento });
+          // el formato del teléfono, con los dígitos tapados (p. ej. "+dddddddddddd"), para saber cómo lo escribe WeCall
+          const c = (req.body && (req.body.contacto || req.body.contact)) || {};
+          const tel = String(c.telefono || c.phone || '');
+          await wecall.recordDelivery(db, { result: 'recibido', evento, detail: tel ? `teléfono en formato ${tel.replace(/\d/g, 'd').slice(0, 24)}` : '' });
         }
       } catch (err) {
         console.error('[webhook wecall] error procesando:', err);

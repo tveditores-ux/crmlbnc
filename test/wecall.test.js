@@ -145,3 +145,31 @@ test('asistente: cada respuesta por WeCall queda anotada (aceptada o con el erro
     await h.close();
   }
 });
+
+test('respuesta: vuelve al teléfono como lo escribió WeCall (+58…) y ante un 409 se intenta una vez más', async () => {
+  const conMas = wecall.toMetaWebhook({ evento: 'mensaje_nuevo', contacto: { telefono: '+584145551212' }, mensaje: { id: 5, texto: 'Hola' } }, '58');
+  const m = conMas.entry[0].changes[0].value.messages[0];
+  assert.equal(m.from, '584145551212');
+  assert.equal(m.reply_to, '+584145551212');
+  const local = wecall.toMetaWebhook({ evento: 'mensaje_nuevo', contacto: { telefono: '0414-555.12.12' }, mensaje: { id: 6, texto: 'Hola' } }, '58');
+  assert.equal(local.entry[0].changes[0].value.messages[0].reply_to, undefined);
+
+  const calls = [];
+  let n = 0;
+  const fetchImpl = async (url, opts) => {
+    calls.push(JSON.parse(opts.body).telefono);
+    n++;
+    return n === 1 ? { status: 409, ok: false, json: async () => ({}) } : { status: 200, ok: true, json: async () => ({ id: 9 }) };
+  };
+  const ch = wecall.createWeCall({ baseUrl: 'https://wecall.ejemplo.test', apiKey: 'k', retryDelayMs: 1 }, fetchImpl);
+  assert.equal((await ch.sendText('+584145551212', 'Hola')).id, '9');
+  assert.deepEqual(calls, ['+584145551212', '+584145551212']);
+  const siempre409 = wecall.createWeCall({ baseUrl: 'https://wecall.ejemplo.test', apiKey: 'k', retryDelayMs: 1 }, async () => ({ status: 409, ok: false, json: async () => ({}) }));
+  await assert.rejects(siempre409.sendText('+584145551212', 'Hola'), /ventana de 24 h/);
+});
+
+test('configuración: el modelo tiene que empezar con "claude-" (así "haiku-5-5" no se guarda)', () => {
+  const settings = require('../src/settings');
+  assert.ok(settings.parseModel('haiku-5-5').error);
+  assert.equal(settings.parseModel('claude-haiku-5-5').value, 'claude-haiku-5-5');
+});

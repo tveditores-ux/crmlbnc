@@ -27,9 +27,20 @@ function createWeCall(cfg, fetchImpl = globalThis.fetch) {
   }
 
   return {
-    /** Texto libre: solo dentro de las 24 h después de que la persona escribió (si no, WeCall responde 409). */
+    /**
+     * Texto libre: solo dentro de las 24 h después de que la persona escribió (si no, WeCall responde 409).
+     * Si respondemos en el mismo segundo en que llegó el mensaje, WeCall a veces todavía no ha abierto la ventana:
+     * ante un 409 se espera un momento y se intenta una sola vez más.
+     */
     async sendText(to, text) {
-      return post('/api/v1/mensajes/enviar/', { telefono: to, texto: String(text).slice(0, 4096) });
+      const body = { telefono: to, texto: String(text).slice(0, 4096) };
+      try {
+        return await post('/api/v1/mensajes/enviar/', body);
+      } catch (e) {
+        if (!/ventana de 24 h/.test(e.message)) throw e;
+        await new Promise((r) => setTimeout(r, cfg.retryDelayMs ?? 3000));
+        return post('/api/v1/mensajes/enviar/', body);
+      }
     },
     /** Plantilla aprobada. WeCall recibe las variables como objeto {"1": ..., "2": ...} en el orden de la plantilla. */
     async sendTemplate(to, { name, bodyParams = [] }) {
@@ -65,7 +76,8 @@ function toMetaWebhook(payload, countryCode) {
   if (evento ? !INCOMING_EVENTS.has(evento) : !(payload.mensaje || payload.message)) return null;
   if (OUTGOING.has(String(msg.direccion || msg.direction || '').toLowerCase())) return null;
   const c = payload.contacto || payload.contact || {};
-  const from = normalizePhone(c.telefono || c.phone || payload.telefono || payload.from, countryCode);
+  const rawPhone = String(c.telefono || c.phone || payload.telefono || payload.from || '').trim();
+  const from = normalizePhone(rawPhone, countryCode);
   const mid = msg.id ?? msg.message_id;
   if (!from || mid == null) return null;
   msg.id = mid;
@@ -76,6 +88,8 @@ function toMetaWebhook(payload, countryCode) {
   const m = texto
     ? { id: `wecall-${msg.id}`, from, type: 'text', text: { body: texto } }
     : { id: `wecall-${msg.id}`, from, type: String(msg.tipo || 'unsupported') };
+  // la respuesta vuelve al teléfono tal como lo escribió WeCall: así encuentra la conversación abierta (ventana de 24 h)
+  if (/^\+\d{10,15}$/.test(rawPhone)) m.reply_to = rawPhone;
   return { object: 'whatsapp_business_account', entry: [{ changes: [{ value: { messages: [m] } }] }] };
 }
 

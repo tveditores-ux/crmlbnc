@@ -256,7 +256,7 @@ async function log(db, { phone, personId, direction, body, escalated = false, re
  * Atiende un mensaje entrante de WhatsApp. Devuelve null si el agente está apagado
  * (para que el flujo normal siga), o { handledAs } si ya respondió.
  */
-async function handleInbound(ctx, { from, body, type }, { fetchImpl, now = new Date() } = {}) {
+async function handleInbound(ctx, { from, replyTo, body, type }, { fetchImpl, now = new Date() } = {}) {
   const { db, config, channels } = ctx;
   if (!config.agent.enabled || !config.agent.apiKey) return null;
   // con WeCall, cada respuesta queda anotada en Pruebas → Últimos avisos (enviada o el error exacto), sin texto ni número
@@ -264,7 +264,7 @@ async function handleInbound(ctx, { from, body, type }, { fetchImpl, now = new D
   const send = async (text) => {
     if (!channels.whatsapp.available) return note({ result: 'no_enviado', detail: 'WhatsApp no está disponible en el CRM' });
     try {
-      const r = await channels.whatsapp.sendText(from, text);
+      const r = await channels.whatsapp.sendText(replyTo || from, text);
       await note({ result: 'enviado', detail: r && r.id ? `WeCall lo aceptó (id ${r.id})` : 'WeCall lo aceptó' });
     } catch (e) {
       console.error('[agente] no se pudo enviar:', e.message);
