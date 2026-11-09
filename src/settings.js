@@ -71,7 +71,7 @@ function parseBaseUrl(v) {
 function parseModel(v) {
   const s = String(v ?? '').trim();
   if (!s) return { value: '' };
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{2,79}$/.test(s)) return { error: 'El nombre del modelo no es válido (ejemplo: claude-sonnet-5-5).' };
+  if (!/^claude-[a-z0-9][a-z0-9._-]{2,72}$/.test(s)) return { error: 'El nombre del modelo no es válido: empieza con "claude-" (ejemplo: claude-haiku-5-5).' };
   return { value: s };
 }
 /** Respuestas por persona al día: entero de 1 a 100. Vacío = no cambiar. */

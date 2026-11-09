@@ -122,7 +122,7 @@ async function handleWhatsAppWebhook(ctx, body) {
           handledAs = updated.status;
           result.responses++;
           if (channels.whatsapp.available) {
-            await channels.whatsapp.sendText(from, msgs.ackText(answer, updated.title)).catch((e) => {
+            await channels.whatsapp.sendText(m.reply_to || from, msgs.ackText(answer, updated.title)).catch((e) => {
               console.error('[webhook] no se pudo enviar el acuse:', e.message);
             });
           }
@@ -130,7 +130,7 @@ async function handleWhatsAppWebhook(ctx, body) {
           let viaAgent = null;
           if (m.type !== 'button' && !payload) {
             try {
-              viaAgent = await agent.handleInbound(ctx, { from, body, type: m.type }, { fetchImpl: ctx.fetchImpl, now });
+              viaAgent = await agent.handleInbound(ctx, { from, replyTo: m.reply_to, body, type: m.type }, { fetchImpl: ctx.fetchImpl, now });
             } catch (err) {
               console.error('[agente] fallo inesperado:', err);
             }
