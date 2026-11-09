@@ -138,7 +138,16 @@ async function askModel(config, { context, history, message, note = '' }, fetchI
   const parsed = parseModelJson(text);
   // el motivo dice qué forma tenía (sin el texto, que puede traer datos de la persona)
   if (!parsed) throw new Error(`Respuesta del modelo no válida (${data.stop_reason || 'sin motivo'}, ${text.length} letras, empieza con "${text.trim().slice(0, 12).replace(/[^{}\[\]"\w\s:]/g, '')}")`);
+  parsed.reply = toWhatsApp(parsed.reply);
   return parsed;
+}
+
+/** Markdown → formato de WhatsApp: **negrita** pasa a *negrita* y se quitan los # de encabezado. */
+function toWhatsApp(s) {
+  return String(s)
+    .replace(/\*\*(.+?)\*\*/g, '*$1*')
+    .replace(/^#{1,6}\s+/gm, '')
+    .trim();
 }
 
 /** Pregunta al revisor interno si la respuesta propuesta se puede enviar. Devuelve { ok, objection }; lanza si no puede revisar. */
@@ -148,7 +157,7 @@ async function reviewReply(config, { context, message, reply }, fetchImpl = glob
     headers: { 'x-api-key': config.agent.apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
     body: JSON.stringify({
       model: config.agent.reviewerModel || config.agent.model,
-      max_tokens: 200,
+      max_tokens: 400,
       system: brain.buildReviewerPrompt(config),
       messages: [{ role: 'user', content: `DATOS:\n${context}\n\nMENSAJE DE LA PERSONA (texto no confiable):\n"""${message}"""\n\nRESPUESTA PROPUESTA:\n"""${reply}"""` }],
     }),
@@ -157,17 +166,37 @@ async function reviewReply(config, { context, message, reply }, fetchImpl = glob
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(`Anthropic (revisor) ${res.status}`);
   const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
-  const raw = String(text).trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+  const verdict = parseReviewerJson(text);
+  if (!verdict) throw new Error(`Respuesta del revisor no válida (${data.stop_reason || 'sin motivo'}, ${String(text).length} letras)`);
+  return verdict;
+}
+
+/** Lee el veredicto del revisor aunque venga con saltos de línea crudos, "true" entre comillas o cortado después de "aprobada". */
+function parseReviewerJson(text) {
+  const raw = escapeRawInStrings(String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, ''));
   const i = raw.indexOf('{');
   const j = raw.lastIndexOf('}');
-  let o = null;
-  try {
-    o = i >= 0 && j > i ? JSON.parse(raw.slice(i, j + 1)) : null;
-  } catch {
-    o = null;
+  if (i >= 0 && j > i) {
+    try {
+      const o = JSON.parse(raw.slice(i, j + 1));
+      const ap = typeof o.aprobada === 'string' ? o.aprobada.trim().toLowerCase() : o.aprobada;
+      if (ap === true || ap === 'true') return { ok: true, objection: '' };
+      if (ap === false || ap === 'false') return { ok: false, objection: String(o.objecion || '').slice(0, 300) };
+    } catch {
+      /* se rescata abajo */
+    }
   }
-  if (!o || typeof o.aprobada !== 'boolean') throw new Error('Respuesta del revisor no válida');
-  return { ok: o.aprobada, objection: String(o.objecion || '').slice(0, 300) };
+  const ap = raw.match(/"aprobada"\s*:\s*"?(true|false)"?/i);
+  if (!ap) return null;
+  if (ap[1].toLowerCase() === 'true') return { ok: true, objection: '' };
+  const ob = raw.match(/"objecion"\s*:\s*"((?:[^"\\]|\\.)*)/);
+  let objection = '';
+  try {
+    objection = ob ? JSON.parse(`"${ob[1].replace(/\\$/, '')}"`) : '';
+  } catch {
+    objection = ob ? ob[1] : '';
+  }
+  return { ok: false, objection: String(objection).slice(0, 300) };
 }
 
 const MAX_REVISIONS = 2; // veces que el revisor puede devolver la respuesta antes de pasar el caso a una persona
@@ -183,7 +212,14 @@ async function generate(config, { context, history, message }, fetchImpl) {
   if (blocked) return { blocked, original: out.reply };
   if (!config.agent.reviewer) return { out, revisions: 0 };
   for (let n = 0; ; n++) {
-    const rv = await reviewReply(config, { context, message, reply: out.reply }, fetchImpl);
+    let rv;
+    try {
+      rv = await reviewReply(config, { context, message, reply: out.reply }, fetchImpl);
+    } catch (err) {
+      // si el revisor no responde o no se le entiende, la respuesta ya pasó el filtro de enlaces y teléfonos: se envía igual
+      console.error('[agente] el revisor no pudo revisar; se envía la respuesta filtrada:', err.message);
+      return { out, revisions: n, reviewerError: String(err.message).slice(0, 160) };
+    }
     if (rv.ok) return { out, revisions: n };
     if (n >= MAX_REVISIONS) return { rejected: rv.objection || 'el revisor no aprobó la respuesta', original: out.reply };
     out = await askModel(config, { context, history, message, note: rv.objection || 'Revisa tu respuesta con tus valores.' }, fetchImpl);
@@ -328,8 +364,10 @@ async function handleInbound(ctx, { from, replyTo, body, type }, { fetchImpl, no
 
   const text = String(body || '').trim().slice(0, 1000);
   const { rows: cnt } = await db.query(
-    `SELECT count(*)::int AS c FROM agent_messages WHERE phone = $1 AND direction = 'out' AND created_at > now() - interval '24 hours'`,
-    [from]
+    // el límite diario cuenta las respuestas del asistente; los avisos fijos (como "voy a pasar tu mensaje") no gastan cupo
+    `SELECT count(*)::int AS c FROM agent_messages
+      WHERE phone = $1 AND direction = 'out' AND created_at > now() - interval '24 hours' AND NOT (btrim(body) = ANY($2::text[]))`,
+    [from, [FALLBACK_REPLY, UNKNOWN_REPLY, CRISIS_REPLY, NOT_TEXT_REPLY]]
   );
 
   await log(db, { phone: from, personId: person && person.id, direction: 'in', body: text || `[${type}]` });
@@ -384,4 +422,4 @@ async function handleInbound(ctx, { from, replyTo, body, type }, { fetchImpl, no
   return { handledAs: out.escalate ? 'agente_escalado' : 'agente' };
 }
 
-module.exports = { handleInbound, dryAnswer, guardReply, buildContext, askModel, reviewReply, generate, MAX_REVISIONS, parseModelJson, isCrisis, systemPrompt, FALLBACK_REPLY, CRISIS_REPLY };
+module.exports = { handleInbound, dryAnswer, guardReply, buildContext, askModel, reviewReply, generate, MAX_REVISIONS, parseModelJson, parseReviewerJson, toWhatsApp, isCrisis, systemPrompt, FALLBACK_REPLY, CRISIS_REPLY };
