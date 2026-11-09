@@ -270,3 +270,14 @@ test('historial: las respuestas anteriores van en JSON, sin los avisos fijos; y 
   assert.deepEqual(JSON.parse(sent.messages[1].content), { respuesta: '¡Hola! ¿En qué te ayudo?', escalar: false, motivo: '' });
   assert.equal(agent.parseModelJson('{ roto'), null);
 });
+
+test('parseModelJson: rescata respuestas con saltos de línea crudos o cortadas por el límite', () => {
+  const agent = require('../src/agent');
+  const crudo = '{"respuesta": "Horarios:\n- Domingos 8, 10 y 12\n- Miércoles 5:30", "escalar": false, "motivo": ""}';
+  assert.deepEqual(agent.parseModelJson(crudo), { reply: 'Horarios:\n- Domingos 8, 10 y 12\n- Miércoles 5:30', escalate: false, reason: '' });
+  const cortado = '{"respuesta": "Los domingos hay culto a las 8, 10 y 12. Los miércoles';
+  assert.equal(agent.parseModelJson(cortado).reply, 'Los domingos hay culto a las 8, 10 y 12. Los miércoles');
+  const escala = '{"respuesta": "Te paso con tu líder.\n", "escalar": true, "motivo": "consejería"}';
+  assert.deepEqual(agent.parseModelJson(escala), { reply: 'Te paso con tu líder.', escalate: true, reason: 'consejería' });
+  assert.equal(agent.parseModelJson('{"otra": 1}'), null);
+});
