@@ -118,7 +118,7 @@ test('revisor encendido: aprueba = se envía; objeta = corrige en silencio y env
   });
 });
 
-test('revisor: si sigue objetando o falla, NO se envía lo del modelo: aviso fijo y el caso pasa a una persona', async (t) => {
+test('revisor: si sigue objetando, NO se envía lo del modelo (aviso fijo y pasa a una persona); si falla, sale la respuesta filtrada', async (t) => {
   await withDb(t, async (db) => {
     await person(db);
     const c = cfg({ AGENT_REVIEWER: 'true' });
@@ -134,13 +134,13 @@ test('revisor: si sigue objetando o falla, NO se envía lo del modelo: aviso fij
     const esc = (await db.query("SELECT escalated, reason FROM agent_messages WHERE direction = 'in' ORDER BY id DESC LIMIT 1")).rows[0];
     assert.deepEqual([esc.escalated, esc.reason], [true, 'Revisión interna: sigue inventando']);
 
-    // el revisor no responde o responde algo ilegible: cerrado por seguridad
+    // el revisor no responde o responde algo ilegible: la respuesta ya pasó el filtro de enlaces y teléfonos, sale igual
     for (const bad of ['boom', { cualquier: 'cosa' }]) {
       s = sent();
       m = fakeModel({ replies: ['respuesta'], reviews: [bad] });
       r = await inbound({ db, config: c, channels: s.channels }, m.fetchImpl);
-      assert.equal(r.handledAs, 'agente_escalado');
-      assert.deepEqual(s.out.map((x) => x[1]), [agent.FALLBACK_REPLY]);
+      assert.equal(r.handledAs, 'agente');
+      assert.deepEqual(s.out.map((x) => x[1]), ['respuesta']);
     }
 
     // el filtro de enlaces sigue mandando aunque el revisor apruebe
@@ -280,4 +280,23 @@ test('parseModelJson: rescata respuestas con saltos de línea crudos o cortadas 
   const escala = '{"respuesta": "Te paso con tu líder.\n", "escalar": true, "motivo": "consejería"}';
   assert.deepEqual(agent.parseModelJson(escala), { reply: 'Te paso con tu líder.', escalate: true, reason: 'consejería' });
   assert.equal(agent.parseModelJson('{"otra": 1}'), null);
+});
+
+test('revisor: se le entiende aunque escriba raro; si no se le entiende, la respuesta filtrada sale igual', async () => {
+  const agent = require('../src/agent');
+  assert.deepEqual(agent.parseReviewerJson('{"aprobada": true, "objecion": ""}'), { ok: true, objection: '' });
+  assert.deepEqual(agent.parseReviewerJson('```json\n{"aprobada": "false", "objecion": "muy larga\ny fría"}\n```'), { ok: false, objection: 'muy larga\ny fría' });
+  assert.deepEqual(agent.parseReviewerJson('{"aprobada": false, "objecion": "suena fr'), { ok: false, objection: 'suena fr' });
+  assert.equal(agent.parseReviewerJson('No sé'), null);
+  assert.equal(agent.toWhatsApp('## Horarios\n**Domingos** 10 am'), 'Horarios\n*Domingos* 10 am');
+
+  const fetchImpl = async (url, opts) => {
+    const b = JSON.parse(opts.body);
+    const text = b.system.startsWith('Eres el revisor') ? 'no puedo revisar esto' : '{"respuesta": "Los domingos a las 10.", "escalar": false, "motivo": ""}';
+    return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text }] }) };
+  };
+  const config = { churchName: 'Iglesia de Prueba', agent: { apiKey: 'k', model: 'claude-haiku-5-5', brain: '', reviewer: true } };
+  const g = await agent.generate(config, { context: 'DATOS', history: [], message: '¿Horario?' }, fetchImpl);
+  assert.equal(g.out.reply, 'Los domingos a las 10.');
+  assert.match(g.reviewerError, /revisor no válida/);
 });
