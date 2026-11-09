@@ -38,17 +38,58 @@ function systemPrompt(config) {
   return brain.buildSystemPrompt(config);
 }
 
+/** Saltos de línea y tabulaciones escritos tal cual dentro de las comillas (JSON inválido) pasan a \n y \t. */
+function escapeRawInStrings(s) {
+  let out = '';
+  let inStr = false;
+  let esc = false;
+  for (const ch of s) {
+    if (inStr && !esc && (ch === '\n' || ch === '\r' || ch === '\t')) {
+      out += ch === '\t' ? '\\t' : ch === '\n' ? '\\n' : '';
+      continue;
+    }
+    if (esc) esc = false;
+    else if (ch === '\\') esc = true;
+    else if (ch === '"') inStr = !inStr;
+    out += ch;
+  }
+  return out;
+}
+
 function parseModelJson(text) {
   const raw = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
   const start = raw.indexOf('{');
   const end = raw.lastIndexOf('}');
+  const pack = (o) => {
+    const reply = typeof o.respuesta === 'string' ? o.respuesta.trim() : '';
+    return reply ? { reply: reply.slice(0, 900), escalate: Boolean(o.escalar), reason: String(o.motivo || '').slice(0, 300) } : null;
+  };
   if (start >= 0 && end > start) {
-    try {
-      const o = JSON.parse(raw.slice(start, end + 1));
-      const reply = typeof o.respuesta === 'string' ? o.respuesta.trim() : '';
-      if (reply) return { reply: reply.slice(0, 900), escalate: Boolean(o.escalar), reason: String(o.motivo || '').slice(0, 300) };
-    } catch {
-      /* no era JSON: se mira como texto */
+    for (const candidate of [raw.slice(start, end + 1), escapeRawInStrings(raw.slice(start, end + 1))]) {
+      try {
+        const r = pack(JSON.parse(candidate));
+        if (r) return r;
+      } catch {
+        /* se prueba la siguiente forma */
+      }
+    }
+  }
+  // JSON roto o cortado: se rescata "respuesta" (hasta su comilla de cierre o hasta donde llegó) y "escalar"
+  if (start >= 0) {
+    const body = escapeRawInStrings(raw.slice(start));
+    const m = body.match(/"respuesta"\s*:\s*"((?:[^"\\]|\\.)*)/);
+    if (m) {
+      let reply = '';
+      try {
+        reply = JSON.parse(`"${m[1].replace(/\\$/, '')}"`).trim();
+      } catch {
+        /* sin rescate */
+      }
+      if (reply) {
+        const esc = body.match(/"escalar"\s*:\s*(true|false)/);
+        const mot = body.match(/"motivo"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+        return { reply: reply.slice(0, 900), escalate: esc ? esc[1] === 'true' : false, reason: mot ? mot[1].slice(0, 300) : '' };
+      }
     }
   }
   // a veces contesta en texto normal en vez de JSON: se usa igual (sigue pasando por el filtro y el revisor), sin llaves sueltas
@@ -85,7 +126,7 @@ async function askModel(config, { context, history, message, note = '' }, fetchI
     },
     body: JSON.stringify({
       model: config.agent.model,
-      max_tokens: 500,
+      max_tokens: 900,
       system: `${systemPrompt(config)}\n\nDATOS:\n${context}`,
       messages: merged,
     }),
@@ -95,7 +136,8 @@ async function askModel(config, { context, history, message, note = '' }, fetchI
   if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(data.error && data.error.message) || 'error'}`);
   const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
   const parsed = parseModelJson(text);
-  if (!parsed) throw new Error('Respuesta del modelo no válida');
+  // el motivo dice qué forma tenía (sin el texto, que puede traer datos de la persona)
+  if (!parsed) throw new Error(`Respuesta del modelo no válida (${data.stop_reason || 'sin motivo'}, ${text.length} letras, empieza con "${text.trim().slice(0, 12).replace(/[^{}\[\]"\w\s:]/g, '')}")`);
   return parsed;
 }
 
