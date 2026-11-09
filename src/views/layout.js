@@ -62,17 +62,29 @@ pre{white-space:pre-wrap;background:#f0ebdf;padding:12px;border-radius:8px;font-
 .toolbar > *{flex:1 1 180px}
 .toolbar > button,.toolbar > .btn{flex:0 0 auto}
 @media (max-width:640px){nav a{margin-right:8px;font-size:13px}h1{font-size:21px}}
-@media screen and (min-width:900px){
-  body.con-menu{padding-right:216px}
-  body.con-menu nav{position:fixed;top:0;right:0;bottom:0;width:216px;flex-direction:column;flex-wrap:nowrap;align-items:stretch;
-    background:var(--ink);padding:14px 10px 20px;overflow-y:auto;row-gap:1px;z-index:5;border-left:1px solid rgba(255,255,255,.12)}
-  body.con-menu nav a{margin:0;padding:8px 12px;border-radius:7px;border-bottom:0;font-size:14px}
-  body.con-menu nav a.on{background:rgba(217,181,106,.22);border-bottom:0;opacity:1}
-  body.con-menu nav a:hover{background:rgba(255,255,255,.1);border-bottom:0}
-  body.con-menu nav form.inline{display:block;margin-top:10px}
-  body.con-menu nav form.inline button{width:100%;margin:0!important}
+#menu-abierto{position:absolute;opacity:0;pointer-events:none}
+.menu-btn{display:none}
+/* menú vertical: barra fija a la izquierda en computadoras; en teléfonos y tabletas se abre con las tres rayitas */
+body.con-menu nav{flex-direction:column;flex-wrap:nowrap;align-items:stretch;row-gap:1px}
+body.con-menu nav a{margin:0;padding:8px 12px;border-radius:7px;border-bottom:0;font-size:14px}
+body.con-menu nav a.on{background:rgba(217,181,106,.22);border-bottom:0;opacity:1}
+body.con-menu nav a:hover{background:rgba(255,255,255,.1);border-bottom:0}
+body.con-menu nav form.inline{display:block;margin-top:10px}
+body.con-menu nav form.inline button{width:100%;margin:0!important}
+@media screen and (min-width:1025px){
+  body.con-menu{padding-left:216px}
+  body.con-menu nav{position:fixed;top:0;left:0;bottom:0;width:216px;background:var(--ink);padding:14px 10px 20px;overflow-y:auto;z-index:5;
+    border-right:1px solid rgba(255,255,255,.12)}
 }
-@media print{nav{display:none!important}body.con-menu{padding-right:0}}
+@media screen and (max-width:1024px){
+  body.con-menu .menu-btn{display:inline-flex;align-items:center;justify-content:center;width:42px;height:38px;border-radius:7px;cursor:pointer;
+    background:rgba(255,255,255,.1);font-size:22px;line-height:1;color:#f5f2eb;user-select:none}
+  body.con-menu nav{display:none;flex-basis:100%;padding:6px 0 4px;border-top:1px solid rgba(255,255,255,.15)}
+  body.con-menu #menu-abierto:checked ~ nav{display:flex}
+  body.con-menu #menu-abierto:focus-visible + .menu-btn{outline:2px solid #d9b56a}
+  body.con-menu nav a{padding:11px 12px;font-size:15px}
+}
+@media print{nav,.menu-btn{display:none!important}body.con-menu{padding-left:0}}
 ${CHARTS_CSS}
 `;
 
@@ -141,7 +153,8 @@ function layout({ title, active, body, config, query, bare = false }) {
   const church = config ? config.churchName : '';
   const nav = bare
     ? ''
-    : `<nav>${NAV.map(([href, label]) => `<a href="${href}" class="${active === href ? 'on' : ''}">${label}</a>`).join('')}
+    : `<input type="checkbox" id="menu-abierto" aria-label="Abrir o cerrar el menú"><label for="menu-abierto" class="menu-btn" aria-hidden="true">☰</label>
+       <nav>${NAV.map(([href, label]) => `<a href="${href}" class="${active === href ? 'on' : ''}">${label}</a>`).join('')}
        <form class="inline" method="post" action="/salir"><button class="small sec" style="margin-left:6px">Salir</button></form></nav>`;
   const dryBanner =
     !bare && config && config.dryRun
