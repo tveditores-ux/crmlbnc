@@ -36,7 +36,8 @@ test('el prompt: asistente del CRM y ERP, solo la iglesia, nada inventado y mens
   assert.match(p, /no confiable/);
   assert.match(p, /datos de otras personas/i);
   assert.match(p, /INFORMACIÓN DE LA IGLESIA/);
-  assert.match(p, /textualmente en DATOS/);
+  assert.match(p, /horarios que no estén en DATOS/);
+  assert.match(p, /nunca agregar uno que no esté/);
   assert.match(p, /Nunca hables de otros grupos/);
 });
 
