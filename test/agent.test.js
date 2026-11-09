@@ -49,7 +49,8 @@ test('detecta mensajes de crisis sin importar tildes ni mayúsculas', () => {
 test('parseModelJson acepta bloques de código y rechaza respuestas vacías', () => {
   const ok = agent.parseModelJson('```json\n{"respuesta":"Hola","escalar":true,"motivo":"pide pastor"}\n```');
   assert.deepEqual(ok, { reply: 'Hola', escalate: true, reason: 'pide pastor' });
-  assert.equal(agent.parseModelJson('no es json'), null);
+  assert.deepEqual(agent.parseModelJson('no es json'), { reply: 'no es json', escalate: false, reason: '' }); // texto normal: se usa igual
+  assert.equal(agent.parseModelJson(''), null);
   assert.equal(agent.parseModelJson('{"respuesta":"","escalar":false}'), null);
 });
 

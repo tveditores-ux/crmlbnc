@@ -248,3 +248,25 @@ test('panel: el revisor se enciende desde Configuración; solo administración t
     await s.close();
   }
 });
+
+test('historial: las respuestas anteriores van en JSON, sin los avisos fijos; y si contesta en texto normal se usa igual', async () => {
+  const agent = require('../src/agent');
+  let sent;
+  const fetchImpl = async (url, opts) => {
+    sent = JSON.parse(opts.body);
+    return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'Los domingos hay culto a las 10.' }] }) };
+  };
+  const config = { churchName: 'Iglesia de Prueba', agent: { apiKey: 'k', model: 'claude-haiku-5-5', brain: '' } };
+  const history = [
+    { direction: 'in', body: 'Hola' },
+    { direction: 'out', body: agent.FALLBACK_REPLY },
+    { direction: 'in', body: 'Hola de nuevo' },
+    { direction: 'out', body: '¡Hola! ¿En qué te ayudo?' },
+  ];
+  const out = await agent.askModel(config, { context: 'DATOS', history, message: '¿Horario?' }, fetchImpl);
+  assert.equal(out.reply, 'Los domingos hay culto a las 10.');
+  assert.ok(!JSON.stringify(sent.messages).includes('Voy a pasar tu mensaje'));
+  assert.equal(sent.messages[0].role, 'user');
+  assert.deepEqual(JSON.parse(sent.messages[1].content), { respuesta: '¡Hola! ¿En qué te ayudo?', escalar: false, motivo: '' });
+  assert.equal(agent.parseModelJson('{ roto'), null);
+});

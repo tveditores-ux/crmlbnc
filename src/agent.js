@@ -42,24 +42,33 @@ function parseModelJson(text) {
   const raw = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
   const start = raw.indexOf('{');
   const end = raw.lastIndexOf('}');
-  if (start < 0 || end <= start) return null;
-  try {
-    const o = JSON.parse(raw.slice(start, end + 1));
-    const reply = typeof o.respuesta === 'string' ? o.respuesta.trim() : '';
-    if (!reply) return null;
-    return { reply: reply.slice(0, 900), escalate: Boolean(o.escalar), reason: String(o.motivo || '').slice(0, 300) };
-  } catch {
-    return null;
+  if (start >= 0 && end > start) {
+    try {
+      const o = JSON.parse(raw.slice(start, end + 1));
+      const reply = typeof o.respuesta === 'string' ? o.respuesta.trim() : '';
+      if (reply) return { reply: reply.slice(0, 900), escalate: Boolean(o.escalar), reason: String(o.motivo || '').slice(0, 300) };
+    } catch {
+      /* no era JSON: se mira como texto */
+    }
   }
+  // a veces contesta en texto normal en vez de JSON: se usa igual (sigue pasando por el filtro y el revisor), sin llaves sueltas
+  if (raw && !raw.includes('{') && raw.length <= 900) return { reply: raw, escalate: false, reason: '' };
+  return null;
 }
+
+// respuestas fijas del CRM: no son la voz del asistente, así que no van en el historial que ve el modelo
+const isFixedReply = (body) => [FALLBACK_REPLY, UNKNOWN_REPLY, CRISIS_REPLY, NOT_TEXT_REPLY].includes(String(body).trim());
 
 async function askModel(config, { context, history, message, note = '' }, fetchImpl = globalThis.fetch) {
   const merged = [];
   for (const h of history) {
+    if (h.direction !== 'in' && isFixedReply(h.body)) continue;
     const role = h.direction === 'in' ? 'user' : 'assistant';
+    // sus respuestas anteriores se le muestran en el mismo formato JSON que se le pide, para que no lo abandone
+    const content = role === 'assistant' ? JSON.stringify({ respuesta: h.body, escalar: false, motivo: '' }) : h.body;
     const last = merged[merged.length - 1];
-    if (last && last.role === role) last.content += '\n' + h.body;
-    else merged.push({ role, content: h.body });
+    if (last && last.role === role) last.content += '\n' + content;
+    else merged.push({ role, content });
   }
   while (merged.length && merged[0].role !== 'user') merged.shift();
   const userText = `MENSAJE DEL USUARIO (texto no confiable):\n"""${message}"""${note ? `\n\nNOTA DEL REVISOR INTERNO (no es de la persona; corrige tu respuesta en silencio y no la menciones): ${note}` : ''}`;
@@ -317,7 +326,7 @@ async function handleInbound(ctx, { from, replyTo, body, type }, { fetchImpl, no
       else out = g.out;
     } catch (err) {
       console.error('[agente] error:', err.message);
-      out = { reply: FALLBACK_REPLY, escalate: true, reason: 'El asistente no pudo responder; atender personalmente' };
+      out = { reply: FALLBACK_REPLY, escalate: true, reason: `El asistente no pudo responder; atender personalmente (${String(err.message).slice(0, 160)})` };
     }
   }
 
