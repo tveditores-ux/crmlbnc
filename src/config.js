@@ -74,6 +74,7 @@ function loadConfig(env = process.env) {
       maxRepliesPerDay: int(env.AGENT_MAX_REPLIES_PER_DAY, 12),
       reviewer: bool(env.AGENT_REVIEWER, false), // revisor interno: una segunda mirada a cada respuesta antes de enviarla
       reviewerModel: env.AGENT_REVIEWER_MODEL || '', // vacío = el mismo modelo del asistente
+      pastoralPhones: env.AGENT_PASTORAL_PHONES || '', // números con acceso pastoral (consultas de datos por WhatsApp)
       brain: '', // el cerebro editable (se guarda desde el panel); vacío = el original
     },
 

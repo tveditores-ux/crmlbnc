@@ -22,6 +22,7 @@ const FIELDS = {
   agentReviewer: { env: 'AGENT_REVIEWER', label: 'Revisor interno', secret: false },
   agentReviewerModel: { env: 'AGENT_REVIEWER_MODEL', label: 'Modelo del revisor', secret: false },
   agentBrain: { env: '', label: 'Cerebro del asistente', secret: false },
+  agentPastoralPhones: { env: 'AGENT_PASTORAL_PHONES', label: 'Números con acceso pastoral', secret: false },
 };
 const PROVIDERS = ['meta', 'wecall'];
 const MAX_SECRET = 300;
@@ -91,6 +92,15 @@ function parseSecret(v, label) {
   return { value: s };
 }
 
+/** '584125111555,58…' → '0412-5111555, …' para mostrarlo en el panel. */
+function formatPhones(list) {
+  return String(list || '')
+    .split(',')
+    .filter(Boolean)
+    .map((p) => (/^58\d{10}$/.test(p) ? `0${p.slice(2, 5)}-${p.slice(5)}` : p))
+    .join(', ');
+}
+
 /* ---------------------------- almacenamiento ---------------------------- */
 async function loadStored(db, sessionSecret) {
   const { rows } = await db.query('SELECT key, value, secret FROM app_settings');
@@ -142,6 +152,8 @@ async function apply(ctx) {
   config.agent.reviewer = rv === 'si' ? true : rv === 'no' ? false : a.reviewer;
   config.agent.reviewerModel = pick('agentReviewerModel', a.reviewerModel);
   config.agent.brain = pick('agentBrain', a.brain);
+  const pp = require('./agent-pastoral').parsePhones(pick('agentPastoralPhones', a.pastoralPhones || ''), config.defaultCountryCode);
+  config.agent.pastoralPhones = pp.value || '';
   // el canal se reconstruye con la configuración nueva; quien lo usa lo lee de ctx.channels en cada envío
   const fresh = createChannels(config, { fetchImpl: ctx.fetchImpl });
   ctx.channels.whatsapp = fresh.whatsapp;
@@ -166,6 +178,7 @@ function sourceOf(key, stored, config) {
     agentReviewer: env.agent.reviewer ? 'si' : '',
     agentReviewerModel: env.agent.reviewerModel,
     agentBrain: env.agent.brain,
+    agentPastoralPhones: env.agent.pastoralPhones,
   }[key];
   return v ? 'railway' : 'falta';
 }
@@ -209,4 +222,4 @@ async function testAnthropic(agent, fetchImpl = globalThis.fetch) {
   }
 }
 
-module.exports = { FIELDS, PROVIDERS, encrypt, decrypt, parseBaseUrl, parseSecret, parseModel, parseMaxReplies, loadStored, setValue, removeValue, apply, sourceOf, testWeCall, testAnthropic };
+module.exports = { formatPhones, FIELDS, PROVIDERS, encrypt, decrypt, parseBaseUrl, parseSecret, parseModel, parseMaxReplies, loadStored, setValue, removeValue, apply, sourceOf, testWeCall, testAnthropic };

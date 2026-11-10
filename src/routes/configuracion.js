@@ -4,6 +4,7 @@ const { layout } = require('../views/layout');
 const { esc } = require('../util');
 const auth = require('../auth');
 const settings = require('../settings');
+const pastoral = require('../agent-pastoral');
 const brain = require('../agent-brain');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -99,6 +100,9 @@ function configuracionRouter(ctx) {
                 <select id="agent_reviewer" name="reviewer"><option value="no" ${config.agent.reviewer ? '' : 'selected'}>Apagado</option><option value="si" ${config.agent.reviewer ? 'selected' : ''}>Encendido: revisa cada respuesta antes de enviarla</option></select></div>
               <div><label for="agent_rmodel">Modelo del revisor (opcional) ${SOURCE[src('agentReviewerModel')]}</label><input id="agent_rmodel" type="text" name="reviewer_model" value="${esc(config.agent.reviewerModel)}" placeholder="el mismo del asistente" spellcheck="false"></div></div>
             <p class="muted" style="margin:4px 0 0;font-size:13px">El revisor es una segunda mirada: antes de enviar, comprueba la respuesta contra los valores del cerebro. Si la objeta, el asistente la corrige (hasta 2 veces); si sigue mal, pasa el caso a una persona. Usa una consulta más por mensaje.</p>
+            <div style="margin-top:14px"><label for="agent_pastoral">Números con acceso pastoral ${SOURCE[src('agentPastoralPhones')]}</label>
+              <input id="agent_pastoral" type="text" name="pastoral_phones" value="${esc(settings.formatPhones(config.agent.pastoralPhones))}" placeholder="Ej.: 0412-5111555 (separa varios con comas)" spellcheck="false" autocomplete="off">
+              <p class="muted" style="margin:4px 0 0;font-size:13px">Solo el pastor principal o el súper administrador. Desde estos números (y solo estos) Grace consulta y responde por WhatsApp la asistencia a los servicios, los grupos de cuidado y sus reportes, los nuevos creyentes, los bautizos, los eventos y los datos generales de las personas. Es solo lectura y nunca da teléfonos, direcciones ni cédulas. Déjalo vacío para que nadie tenga ese acceso.</p></div>
             <div class="actions"><button>Guardar</button></div>
             <p class="muted" style="font-size:13px;margin:8px 0 0">Solo responde a personas registradas y activas, solo sobre la iglesia, nunca escribe primero, y pasa a un líder o pastor lo que no sabe. Lo que no es de la iglesia lo rechaza con amabilidad.</p>
           </form>
@@ -180,6 +184,11 @@ function configuracionRouter(ctx) {
       const max = settings.parseMaxReplies(b.max_replies);
       if (max.error) errors.push(max.error);
       else if (max.value) changes.push(['agentMaxReplies', max.value]);
+      if (b.pastoral_phones !== undefined) {
+        const ph = pastoral.parsePhones(b.pastoral_phones, config.defaultCountryCode);
+        if (ph.error) errors.push(ph.error);
+        else changes.push(['agentPastoralPhones', ph.value || null]); // vacío = nadie tiene acceso pastoral
+      }
       if (errors.length) return go(res, { err: errors.join(' ') });
       for (const [k, value] of changes) {
         if (value === null) await settings.removeValue(db, k);

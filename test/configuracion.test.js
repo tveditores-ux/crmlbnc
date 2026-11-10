@@ -289,6 +289,7 @@ test('asistente: el bot responde de verdad solo con todo conectado, y contesta p
     const sig = 'sha256=' + crypto.createHmac('sha256', WH).update(body).digest('hex');
     const hook = await fetch(`${s.base}/webhooks/wecall`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-WeCall-Signature': sig }, body });
     assert.equal(hook.status, 200);
+    await s.ctx.lastWebhook; // el mensaje se atiende después de contestarle 200 a WeCall
     assert.equal(modelCalls.length, 1);
     const sent = s.calls.filter((c) => c.url === 'https://wecall.ejemplo.com/api/v1/mensajes/enviar/');
     assert.equal(sent.length, 1);
