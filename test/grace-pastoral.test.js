@@ -58,6 +58,23 @@ test('números autorizados: se normalizan, se validan y solo esos tienen modo pa
   assert.equal(settings.formatPhones('584125550001,584145550002'), '0412-5550001, 0414-5550002');
 });
 
+test('asistencia por día: los pastores (equipo de 7) cuentan una vez y los servidores salen como rango, sin sumarse entre servicios', async (t) => {
+  await withDb(t, async (db) => {
+    await db.query(`INSERT INTO service_attendance (service_date, sede, horario, att_start, att_mid, att_end, servers, pastors) VALUES
+      ('2026-11-08', 'Principal', '08:00', 100, 150, 140, 30, 7),
+      ('2026-11-08', 'Principal', '10:00', 200, 260, 250, 35, 7),
+      ('2026-11-08', 'Principal', '12:00', 180, 200, 190, 28, 6)`);
+    const r = await pastoral.runTool(db, cfg(), 'asistencia_servicios', {}, NOW);
+    const d = r.por_dia[0];
+    assert.deepEqual([d.fecha, d.servicios, d.asistencia_sumada], ['2026-11-08', 3, 150 + 260 + 200]);
+    assert.equal(d.pastores_del_dia, 7); // no 20
+    assert.deepEqual(d.servidores_del_dia, { minimo: 35, maximo: 93 }); // no 93 a secas
+    // 610 personas contadas − 13 pastores repetidos − hasta 58 servidores repetidos
+    assert.deepEqual(d.personas_distintas_aprox, { minimo: 610 - 13 - 58, maximo: 610 - 13 });
+    assert.match(r.nota, /NO se suman/);
+  });
+});
+
 test('herramientas: traen asistencia, grupos, reportes, nuevos creyentes, bautizos y personas, nunca teléfonos, direcciones, cédulas ni referencias de pago', async (t) => {
   await withDb(t, async (db) => {
     await seed(db);
@@ -70,6 +87,9 @@ test('herramientas: traen asistencia, grupos, reportes, nuevos creyentes, bautiz
     assert.equal(asis.totales.conversiones, 5);
     assert.equal(asis.servicios[0].fecha, '2026-11-08');
     assert.equal((await run('asistencia_servicios', { desde: '2026-01-01', hasta: '2026-12-31' })).servicios_encontrados, 3);
+    assert.equal(asis.totales.servidores, undefined); // los servidores no se suman entre servicios
+    assert.equal(asis.por_dia.length, 1);
+    assert.equal(asis.por_dia[0].servicios, 2);
 
     const grupos = await run('grupos_cuidado');
     assert.equal(grupos.grupos_encontrados, 2);

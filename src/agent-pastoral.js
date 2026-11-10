@@ -70,7 +70,7 @@ const TOOLS = [
   {
     name: 'asistencia_servicios',
     description:
-      'Asistencia a los servicios (cultos) por fecha, sede y horario: asistencia al inicio, a la mitad y al final, invitados, conversiones, servidores, pastores, niños, preadolescentes y adolescentes, con totales. Sin fechas: últimos 30 días. Úsala también para saber cuál fue el último servicio.',
+      'Asistencia a los servicios (cultos) por fecha, sede y horario: asistencia al inicio, a la mitad y al final, invitados, conversiones, servidores, pastores, niños, preadolescentes y adolescentes, con totales y un resumen por día (por_dia) donde servidores y pastores no se repiten. Sin fechas: últimos 30 días. Úsala también para saber cuál fue el último servicio.',
     input_schema: { type: 'object', properties: { ...DATES, sede: { type: 'string', description: 'Filtrar por sede (opcional).' } } },
   },
   {
@@ -126,6 +126,32 @@ const TOOLS = [
 
 const like = (s) => `%${String(s || '').trim().toLowerCase().slice(0, 60)}%`;
 
+// El equipo pastoral son siempre las mismas 7 personas: aunque estén en los tres servicios, cuentan una sola vez al día.
+const EQUIPO_PASTORAL = 7;
+const NOTA_ASISTENCIA =
+  'Servidores y pastores NO se suman entre servicios del mismo día. Pastores: el equipo pastoral son las mismas 7 personas, así que en el día cuentan una sola vez (el mayor número registrado en un servicio, máximo 7). Servidores: pueden ser los mismos en varios servicios y variar algunos, así que en el día son un rango: como mínimo el mayor número de un servicio y como máximo la suma; dilo así, como rango. personas_distintas_aprox descuenta esas repeticiones de la suma de asistencias, suponiendo que el conteo de asistencia incluye a servidores y pastores. Para un solo servicio usa sus cifras tal cual.';
+
+/** Resumen por fecha: asistencia sumada, pastores sin repetir (máx. 7) y servidores como rango, porque se repiten entre servicios. */
+function porDia(servicios, sum) {
+  const byDate = new Map();
+  for (const s of servicios) byDate.set(s.fecha, [...(byDate.get(s.fecha) || []), s]);
+  return [...byDate].map(([fecha, list]) => {
+    const max = (k) => Math.max(0, ...list.map((s) => Number(s[k]) || 0));
+    const asistencia = sum('asistencia_maxima', list);
+    const pastores = Math.min(EQUIPO_PASTORAL, max('pastores'));
+    const servMin = max('servidores');
+    const servMax = sum('servidores', list);
+    const repPastores = sum('pastores', list) - pastores;
+    return {
+      fecha, servicios: list.length, asistencia_sumada: asistencia,
+      pastores_del_dia: pastores,
+      servidores_del_dia: { minimo: servMin, maximo: servMax },
+      personas_distintas_aprox: { minimo: Math.max(0, asistencia - repPastores - (servMax - servMin)), maximo: Math.max(0, asistencia - repPastores) },
+      invitados: sum('invitados', list), conversiones: sum('conversiones', list),
+    };
+  });
+}
+
 async function runTool(db, config, name, input = {}, now = new Date()) {
   const tz = config.timezone || 'America/Caracas';
   switch (name) {
@@ -149,10 +175,13 @@ async function runTool(db, config, name, input = {}, now = new Date()) {
           ninos: r.kids, preadolescentes: r.preteens, adolescentes: r.teens, notas: clip(r.notes, 160),
         };
       });
-      const sum = (k) => servicios.reduce((a, s) => a + (Number(s[k]) || 0), 0);
+      const sum = (k, list = servicios) => list.reduce((a, s) => a + (Number(s[k]) || 0), 0);
       return {
         rango: { desde, hasta }, servicios_encontrados: servicios.length,
-        totales: { asistencia_maxima: sum('asistencia_maxima'), invitados: sum('invitados'), conversiones: sum('conversiones'), servidores: sum('servidores'), ninos: sum('ninos'), preadolescentes: sum('preadolescentes'), adolescentes: sum('adolescentes') },
+        // servidores y pastores no se suman entre servicios: suelen ser las mismas personas (ver porDia)
+        totales: { asistencia_maxima: sum('asistencia_maxima'), invitados: sum('invitados'), conversiones: sum('conversiones'), ninos: sum('ninos'), preadolescentes: sum('preadolescentes'), adolescentes: sum('adolescentes') },
+        por_dia: porDia(servicios, sum),
+        nota: NOTA_ASISTENCIA,
         servicios,
       };
     }
