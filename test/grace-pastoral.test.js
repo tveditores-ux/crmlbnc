@@ -192,3 +192,30 @@ test('panel: solo administración guarda los números con acceso pastoral; se va
     await h.close();
   }
 });
+
+test('panel: el aviso diario de cumpleaños se enciende, con hora y plantilla validadas', async (t) => {
+  const h = await openTestDb();
+  if (!h) return t.skip('sin base de datos de prueba (instala @electric-sql/pglite o define DATABASE_URL_TEST)');
+  const config = cfg();
+  const ctx = { db: h.db, config, channels: createChannels(config) };
+  const server = createApp(ctx).listen(0);
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const login = await fetch(`${base}/entrar`, { method: 'POST', headers: FORM, body: new URLSearchParams({ password: 'clave-de-prueba-123' }).toString(), redirect: 'manual' });
+    const admin = { Cookie: login.headers.get('set-cookie').split(';')[0] };
+    const post = (f) => fetch(`${base}/configuracion/agente`, { method: 'POST', headers: { ...FORM, ...admin }, body: new URLSearchParams(f), redirect: 'manual' });
+    const msg = (r) => decodeURIComponent((r.headers.get('location') || '').replaceAll('+', ' '));
+    assert.match(msg(await post({ birthday_brief: 'si', brief_hour: '25' })), /de 0 a 23/);
+    assert.match(msg(await post({ brief_template: 'Cumple Hoy!' })), /minúsculas/);
+    assert.equal(config.agent.birthdayBrief, false);
+    await post({ birthday_brief: 'si', brief_hour: '6', brief_template: 'cumpleanos_hoy' });
+    assert.deepEqual([config.agent.birthdayBrief, config.agent.briefHour, config.agent.briefTemplate], [true, 6, 'cumpleanos_hoy']);
+    const page = await (await fetch(`${base}/configuracion`, { headers: admin })).text();
+    assert.match(page, /Aviso diario de cumpleaños/);
+    await post({ birthday_brief: 'no', brief_template: '' });
+    assert.deepEqual([config.agent.birthdayBrief, config.agent.briefTemplate], [false, '']);
+  } finally {
+    server.close();
+    await h.close();
+  }
+});

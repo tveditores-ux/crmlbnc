@@ -103,6 +103,12 @@ function configuracionRouter(ctx) {
             <div style="margin-top:14px"><label for="agent_pastoral">Números con acceso pastoral ${SOURCE[src('agentPastoralPhones')]}</label>
               <input id="agent_pastoral" type="text" name="pastoral_phones" value="${esc(settings.formatPhones(config.agent.pastoralPhones))}" placeholder="Ej.: 0412-5111555 (separa varios con comas)" spellcheck="false" autocomplete="off">
               <p class="muted" style="margin:4px 0 0;font-size:13px">Solo el pastor principal o el súper administrador. Desde estos números (y solo estos) Grace consulta y responde por WhatsApp la asistencia a los servicios, los grupos de cuidado y sus reportes, los nuevos creyentes, los bautizos, los eventos y los datos generales de las personas. Es solo lectura y nunca da teléfonos, direcciones ni cédulas. Déjalo vacío para que nadie tenga ese acceso.</p></div>
+            <div class="row" style="margin-top:14px">
+              <div><label for="brief_on">Aviso diario de cumpleaños ${SOURCE[src('birthdayBrief')]}</label>
+                <select id="brief_on" name="birthday_brief"><option value="no" ${config.agent.birthdayBrief ? '' : 'selected'}>Apagado</option><option value="si" ${config.agent.birthdayBrief ? 'selected' : ''}>Encendido: cada mañana, quién cumple años</option></select></div>
+              <div><label for="brief_hour">Hora del aviso ${SOURCE[src('briefHour')]}</label><input id="brief_hour" type="number" name="brief_hour" min="0" max="23" value="${esc(config.agent.briefHour ?? 7)}"></div>
+              <div><label for="brief_tpl">Plantilla aprobada (opcional) ${SOURCE[src('briefTemplate')]}</label><input id="brief_tpl" type="text" name="brief_template" value="${esc(config.agent.briefTemplate || '')}" placeholder="ej.: cumpleanos_hoy" spellcheck="false"></div></div>
+            <p class="muted" style="margin:4px 0 0;font-size:13px">Se envía a los números con acceso pastoral. WhatsApp solo deja escribir texto libre si escribiste al número en las últimas 24 horas; para que llegue siempre, registra en WeCall/Meta una plantilla con una variable para los nombres (por ejemplo: «Hoy cumplen años: {{1}}. ¡Bendícelos!») y pon aquí su nombre.</p>
             <div class="actions"><button>Guardar</button></div>
             <p class="muted" style="font-size:13px;margin:8px 0 0">Solo responde a personas registradas y activas, solo sobre la iglesia, nunca escribe primero, y pasa a un líder o pastor lo que no sabe. Lo que no es de la iglesia lo rechaza con amabilidad.</p>
           </form>
@@ -184,6 +190,20 @@ function configuracionRouter(ctx) {
       const max = settings.parseMaxReplies(b.max_replies);
       if (max.error) errors.push(max.error);
       else if (max.value) changes.push(['agentMaxReplies', max.value]);
+      if (b.birthday_brief !== undefined) {
+        if (!['si', 'no'].includes(b.birthday_brief)) errors.push('Elige si el aviso de cumpleaños va encendido o apagado.');
+        else changes.push(['birthdayBrief', b.birthday_brief]);
+      }
+      if (b.brief_hour !== undefined && String(b.brief_hour).trim() !== '') {
+        const h = String(b.brief_hour).trim();
+        if (!/^\d{1,2}$/.test(h) || +h > 23) errors.push('La hora del aviso debe ser un número de 0 a 23.');
+        else changes.push(['briefHour', String(+h)]);
+      }
+      if (b.brief_template !== undefined) {
+        const tpl = String(b.brief_template).trim();
+        if (tpl && !/^[a-z0-9_]{1,60}$/.test(tpl)) errors.push('El nombre de la plantilla solo lleva minúsculas, números y guion bajo (como en Meta).');
+        else changes.push(['briefTemplate', tpl || null]);
+      }
       if (b.pastoral_phones !== undefined) {
         const ph = pastoral.parsePhones(b.pastoral_phones, config.defaultCountryCode);
         if (ph.error) errors.push(ph.error);

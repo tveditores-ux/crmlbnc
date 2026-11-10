@@ -53,6 +53,7 @@ function range(input, now, tz, { back = 30, ahead = 0 } = {}) {
   const hasta = DATE_RE.test(String(input.hasta || '')) ? input.hasta : ahead ? shift(ahead) : today;
   return desde <= hasta ? { desde, hasta } : { desde: hasta, hasta: desde };
 }
+const shiftYmd = (s, days) => new Date(Date.parse(`${s}T12:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
 const clip = (s, n) => {
   const t = String(s || '').replace(/\s+/g, ' ').trim();
   return t.length > n ? `${t.slice(0, n)}…` : t;
@@ -104,6 +105,11 @@ const TOOLS = [
   {
     name: 'eventos',
     description: 'Eventos de la iglesia con fecha, lugar y cuántos confirmaron, no pueden o no han respondido. Sin fechas: de hoy a 30 días.',
+    input_schema: { type: 'object', properties: { ...DATES } },
+  },
+  {
+    name: 'cumpleanos',
+    description: 'Quién cumple años en un rango de fechas: personas y líderes de grupos de cuidado (día y nombre, sin edad). Sin fechas: hoy. Para "esta semana" o "este mes", pasa el rango.',
     input_schema: { type: 'object', properties: { ...DATES } },
   },
   {
@@ -250,6 +256,12 @@ async function runTool(db, config, name, input = {}, now = new Date()) {
         eventos: rows.map((e) => ({ evento: e.title, cuando: formatEventDate(e.starts_at, tz), lugar: e.location, cancelado: e.cancelled, confirmados: e.confirmados, no_pueden: e.no_pueden, sin_responder: e.pendientes })),
       };
     }
+    case 'cumpleanos': {
+      const { desde, hasta } = range(input, now, tz, { back: 0 });
+      const end = hasta > shiftYmd(desde, 62) ? shiftYmd(desde, 62) : hasta; // como mucho dos meses por consulta
+      const items = (await require('./calendar').collect(db, tz, desde, end)).filter((i) => i.kind === 'cumple' || i.kind === 'lider');
+      return { rango: { desde, hasta: end }, total: items.length, cumpleanos: items.map((i) => ({ fecha: i.date, nombre: i.title, detalle: i.sub || '' })) };
+    }
     case 'personas_resumen': {
       const t = (
         await db.query(`SELECT count(*) FILTER (WHERE active)::int AS activas, count(*) FILTER (WHERE active AND opt_in)::int AS aceptan_mensajes, count(*)::int AS total FROM people`)
@@ -299,6 +311,7 @@ Quien te escribe está autorizado en el CRM como pastor principal o súper admin
 - Responde para WhatsApp: claro y ordenado, con listas cortas con guiones y *negritas* de WhatsApp si ayudan, sin tablas ni markdown de encabezados. Si la lista es muy larga, da los totales y los primeros, y ofrece el resto.
 - Las herramientas nunca traen teléfonos, direcciones, cédulas ni referencias de pago, y tú tampoco los das.
 - Todo es de solo lectura: no puedes cambiar, borrar ni enviar nada. Si te lo piden, dilo con sencillez.
+- Si te piden que le avises cada día quién cumple años, dile que eso es el "Aviso diario de cumpleaños" y se enciende en Configuración → Asistente del CRM; mientras tanto, puedes decirle los cumpleaños de hoy, de la semana o del mes con la herramienta.
 - La respuesta final puede ser más larga que con otras personas (hasta unos 3000 caracteres).
 - Hoy es {HOY} (hora de Venezuela).`;
 

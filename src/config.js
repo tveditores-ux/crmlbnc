@@ -74,7 +74,10 @@ function loadConfig(env = process.env) {
       maxRepliesPerDay: int(env.AGENT_MAX_REPLIES_PER_DAY, 12),
       reviewer: bool(env.AGENT_REVIEWER, false), // revisor interno: una segunda mirada a cada respuesta antes de enviarla
       reviewerModel: env.AGENT_REVIEWER_MODEL || '', // vacío = el mismo modelo del asistente
-      pastoralPhones: env.AGENT_PASTORAL_PHONES || '', // números con acceso pastoral (consultas de datos por WhatsApp)
+      pastoralPhones: env.AGENT_PASTORAL_PHONES || '',
+      birthdayBrief: bool(env.BIRTHDAY_BRIEF, false), // aviso diario de cumpleaños a los números con acceso pastoral
+      briefHour: int(env.BIRTHDAY_BRIEF_HOUR, 7), // hora local desde la que se envía
+      briefTemplate: env.BIRTHDAY_BRIEF_TEMPLATE || '', // plantilla aprobada por si la ventana de 24 h está cerrada // números con acceso pastoral (consultas de datos por WhatsApp)
       brain: '', // el cerebro editable (se guarda desde el panel); vacío = el original
     },
 
