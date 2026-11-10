@@ -101,6 +101,7 @@ const NAV = [
   ['/consolidacion', 'Consolidación'],
   ['/bautizados', 'Bautizados'],
   ['/grupos', 'Grupos de cuidado'],
+  ['/oracion', 'Buzón de oración'],
   ['/guia', 'Guía del líder'],
   ['/reunion-equipo', 'Reunión de equipo'],
   ['/redil/libreta', 'Libretica REDIL'],

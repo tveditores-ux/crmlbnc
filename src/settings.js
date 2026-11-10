@@ -26,6 +26,7 @@ const FIELDS = {
   birthdayBrief: { env: 'BIRTHDAY_BRIEF', label: 'Aviso diario de cumpleaños', secret: false },
   briefHour: { env: 'BIRTHDAY_BRIEF_HOUR', label: 'Hora del aviso', secret: false },
   briefTemplate: { env: 'BIRTHDAY_BRIEF_TEMPLATE', label: 'Plantilla del aviso', secret: false },
+  prayerTemplate: { env: 'PRAYER_TEMPLATE', label: 'Plantilla del buzón de oración', secret: false },
 };
 const PROVIDERS = ['meta', 'wecall'];
 const MAX_SECRET = 300;
@@ -162,6 +163,7 @@ async function apply(ctx) {
   const bh = Number(pick('briefHour', null));
   config.agent.briefHour = Number.isInteger(bh) && bh >= 0 && bh <= 23 && pick('briefHour', null) !== null ? bh : a.briefHour ?? 7;
   config.agent.briefTemplate = pick('briefTemplate', a.briefTemplate || '');
+  config.agent.prayerTemplate = pick('prayerTemplate', a.prayerTemplate || '');
   // el canal se reconstruye con la configuración nueva; quien lo usa lo lee de ctx.channels en cada envío
   const fresh = createChannels(config, { fetchImpl: ctx.fetchImpl });
   ctx.channels.whatsapp = fresh.whatsapp;
@@ -190,6 +192,7 @@ function sourceOf(key, stored, config) {
     birthdayBrief: env.agent.birthdayBrief ? 'si' : '',
     briefHour: env.agent.briefHour !== undefined && env.agent.briefHour !== 7 ? String(env.agent.briefHour) : '',
     briefTemplate: env.agent.briefTemplate,
+    prayerTemplate: env.agent.prayerTemplate,
   }[key];
   return v ? 'railway' : 'falta';
 }
