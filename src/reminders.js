@@ -206,6 +206,13 @@ function startScheduler(ctx, logger = console) {
       if (!rows[0].ok) return; // otra instancia está trabajando
       try {
         const summary = await runReminders({ ...ctx, now: new Date() });
+        // aviso diario de cumpleaños al pastor (una vez al día, desde la hora elegida); no frena los recordatorios si falla
+        try {
+          const brief = await require('./daily-brief').runDailyBrief(ctx, new Date());
+          if (brief.sent || brief.failed) logger.log('[aviso de cumpleaños]', JSON.stringify(brief));
+        } catch (err) {
+          logger.error('[aviso de cumpleaños] error:', err);
+        }
         await db.query(
           `INSERT INTO system_state (key, value, updated_at) VALUES ('last_run', $1, now())
            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,

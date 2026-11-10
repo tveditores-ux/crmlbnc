@@ -23,6 +23,9 @@ const FIELDS = {
   agentReviewerModel: { env: 'AGENT_REVIEWER_MODEL', label: 'Modelo del revisor', secret: false },
   agentBrain: { env: '', label: 'Cerebro del asistente', secret: false },
   agentPastoralPhones: { env: 'AGENT_PASTORAL_PHONES', label: 'Números con acceso pastoral', secret: false },
+  birthdayBrief: { env: 'BIRTHDAY_BRIEF', label: 'Aviso diario de cumpleaños', secret: false },
+  briefHour: { env: 'BIRTHDAY_BRIEF_HOUR', label: 'Hora del aviso', secret: false },
+  briefTemplate: { env: 'BIRTHDAY_BRIEF_TEMPLATE', label: 'Plantilla del aviso', secret: false },
 };
 const PROVIDERS = ['meta', 'wecall'];
 const MAX_SECRET = 300;
@@ -154,6 +157,11 @@ async function apply(ctx) {
   config.agent.brain = pick('agentBrain', a.brain);
   const pp = require('./agent-pastoral').parsePhones(pick('agentPastoralPhones', a.pastoralPhones || ''), config.defaultCountryCode);
   config.agent.pastoralPhones = pp.value || '';
+  const bb = pick('birthdayBrief', null);
+  config.agent.birthdayBrief = bb === 'si' ? true : bb === 'no' ? false : Boolean(a.birthdayBrief);
+  const bh = Number(pick('briefHour', null));
+  config.agent.briefHour = Number.isInteger(bh) && bh >= 0 && bh <= 23 && pick('briefHour', null) !== null ? bh : a.briefHour ?? 7;
+  config.agent.briefTemplate = pick('briefTemplate', a.briefTemplate || '');
   // el canal se reconstruye con la configuración nueva; quien lo usa lo lee de ctx.channels en cada envío
   const fresh = createChannels(config, { fetchImpl: ctx.fetchImpl });
   ctx.channels.whatsapp = fresh.whatsapp;
@@ -179,6 +187,9 @@ function sourceOf(key, stored, config) {
     agentReviewerModel: env.agent.reviewerModel,
     agentBrain: env.agent.brain,
     agentPastoralPhones: env.agent.pastoralPhones,
+    birthdayBrief: env.agent.birthdayBrief ? 'si' : '',
+    briefHour: env.agent.briefHour !== undefined && env.agent.briefHour !== 7 ? String(env.agent.briefHour) : '',
+    briefTemplate: env.agent.briefTemplate,
   }[key];
   return v ? 'railway' : 'falta';
 }
