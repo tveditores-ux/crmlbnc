@@ -13,6 +13,9 @@ function publicRouter(ctx) {
   const { db, config } = ctx;
   const r = express.Router();
   const tz = config.timezone;
+  // mensajes de WeCall que se están atendiendo ahora mismo (para no atender dos veces un aviso repetido)
+  const inFlight = new Set();
+  const msgKey = (body) => body.entry.flatMap((e) => e.changes.flatMap((c) => (c.value.messages || []).map((m) => m.id))).join(',');
 
   /* ---------- Página de confirmación (enlaces de correo) ---------- */
   function confirmPage(p, { done, preselect } = {}) {
@@ -115,23 +118,39 @@ function publicRouter(ctx) {
         await wecall.recordDelivery(db, { result: 'firma_invalida', evento, detail: sigHeader ? 'llegó una firma, pero no coincide con el secreto de Railway' : 'llegó sin firma' });
         return res.sendStatus(401);
       }
-      // Responder rápido: WeCall espera pocos segundos y no reintenta. Los errores quedan en el registro.
+      // Se contesta 200 enseguida y el mensaje se atiende después: una respuesta de Grace (sobre todo en modo pastoral, con
+      // consultas) puede tardar más de lo que WeCall espera, y si WeCall repite el aviso mientras tanto, no se atiende dos veces.
+      let body = null;
       try {
-        const body = wecall.toMetaWebhook(req.body, config.defaultCountryCode);
+        body = wecall.toMetaWebhook(req.body, config.defaultCountryCode);
         if (!body) await wecall.recordDelivery(db, { result: 'ignorado', evento, detail: 'no es un mensaje entrante que el CRM entienda' });
-        else if (await wecall.alreadySeen(db, body)) await wecall.recordDelivery(db, { result: 'repetido', evento });
-        else {
-          await responses.handleWhatsAppWebhook(ctx, body);
-          // el formato del teléfono, con los dígitos tapados (p. ej. "+dddddddddddd"), para saber cómo lo escribe WeCall
-          const c = (req.body && (req.body.contacto || req.body.contact)) || {};
-          const tel = String(c.telefono || c.phone || '');
-          await wecall.recordDelivery(db, { result: 'recibido', evento, detail: tel ? `teléfono en formato ${tel.replace(/\d/g, 'd').slice(0, 24)}` : '' });
+        else if (inFlight.has(msgKey(body)) || (await wecall.alreadySeen(db, body))) {
+          await wecall.recordDelivery(db, { result: 'repetido', evento });
+          body = null;
         }
       } catch (err) {
         console.error('[webhook wecall] error procesando:', err);
         await wecall.recordDelivery(db, { result: 'error', evento, detail: err.message });
+        body = null;
       }
       res.sendStatus(200);
+      if (!body) return;
+      const key = msgKey(body);
+      inFlight.add(key);
+      // el formato del teléfono, con los dígitos tapados (p. ej. "+dddddddddddd"), para saber cómo lo escribe WeCall
+      const c = (req.body && (req.body.contacto || req.body.contact)) || {};
+      const tel = String(c.telefono || c.phone || '');
+      ctx.lastWebhook = (async () => {
+        try {
+          await responses.handleWhatsAppWebhook(ctx, body);
+          await wecall.recordDelivery(db, { result: 'recibido', evento, detail: tel ? `teléfono en formato ${tel.replace(/\d/g, 'd').slice(0, 24)}` : '' });
+        } catch (err) {
+          console.error('[webhook wecall] error procesando:', err);
+          await wecall.recordDelivery(db, { result: 'error', evento, detail: err.message });
+        } finally {
+          inFlight.delete(key);
+        }
+      })();
     })
   );
 

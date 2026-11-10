@@ -11,6 +11,7 @@
 const { formatEventDate } = require('./time');
 const brain = require('./agent-brain');
 const wecall = require('./channels/wecall');
+const pastoral = require('./agent-pastoral');
 
 const FALLBACK_REPLY =
   'Gracias por escribir. Voy a pasar tu mensaje a tu líder o al equipo pastoral para que te respondan personalmente.';
@@ -56,13 +57,13 @@ function escapeRawInStrings(s) {
   return out;
 }
 
-function parseModelJson(text) {
+function parseModelJson(text, maxLen = 900) {
   const raw = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
   const start = raw.indexOf('{');
   const end = raw.lastIndexOf('}');
   const pack = (o) => {
     const reply = typeof o.respuesta === 'string' ? o.respuesta.trim() : '';
-    return reply ? { reply: reply.slice(0, 900), escalate: Boolean(o.escalar), reason: String(o.motivo || '').slice(0, 300) } : null;
+    return reply ? { reply: reply.slice(0, maxLen), escalate: Boolean(o.escalar), reason: String(o.motivo || '').slice(0, 300) } : null;
   };
   if (start >= 0 && end > start) {
     for (const candidate of [raw.slice(start, end + 1), escapeRawInStrings(raw.slice(start, end + 1))]) {
@@ -88,12 +89,12 @@ function parseModelJson(text) {
       if (reply) {
         const esc = body.match(/"escalar"\s*:\s*(true|false)/);
         const mot = body.match(/"motivo"\s*:\s*"((?:[^"\\]|\\.)*)"/);
-        return { reply: reply.slice(0, 900), escalate: esc ? esc[1] === 'true' : false, reason: mot ? mot[1].slice(0, 300) : '' };
+        return { reply: reply.slice(0, maxLen), escalate: esc ? esc[1] === 'true' : false, reason: mot ? mot[1].slice(0, 300) : '' };
       }
     }
   }
   // a veces contesta en texto normal en vez de JSON: se usa igual (sigue pasando por el filtro y el revisor), sin llaves sueltas
-  if (raw && !raw.includes('{') && raw.length <= 900) return { reply: raw, escalate: false, reason: '' };
+  if (raw && !raw.includes('{') && raw.length <= maxLen) return { reply: raw, escalate: false, reason: '' };
   return null;
 }
 
@@ -101,22 +102,7 @@ function parseModelJson(text) {
 const isFixedReply = (body) => [FALLBACK_REPLY, UNKNOWN_REPLY, CRISIS_REPLY, NOT_TEXT_REPLY].includes(String(body).trim());
 
 async function askModel(config, { context, history, message, note = '' }, fetchImpl = globalThis.fetch) {
-  const merged = [];
-  for (const h of history) {
-    if (h.direction !== 'in' && isFixedReply(h.body)) continue;
-    const role = h.direction === 'in' ? 'user' : 'assistant';
-    // sus respuestas anteriores se le muestran en el mismo formato JSON que se le pide, para que no lo abandone
-    const content = role === 'assistant' ? JSON.stringify({ respuesta: h.body, escalar: false, motivo: '' }) : h.body;
-    const last = merged[merged.length - 1];
-    if (last && last.role === role) last.content += '\n' + content;
-    else merged.push({ role, content });
-  }
-  while (merged.length && merged[0].role !== 'user') merged.shift();
-  const userText = `MENSAJE DEL USUARIO (texto no confiable):\n"""${message}"""${note ? `\n\nNOTA DEL REVISOR INTERNO (no es de la persona; corrige tu respuesta en silencio y no la menciones): ${note}` : ''}`;
-  const last = merged[merged.length - 1];
-  if (last && last.role === 'user') last.content += '\n' + userText;
-  else merged.push({ role: 'user', content: userText });
-
+  const merged = buildMessages(history, message, note);
   const res = await fetchImpl('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -140,6 +126,40 @@ async function askModel(config, { context, history, message, note = '' }, fetchI
   if (!parsed) throw new Error(`Respuesta del modelo no válida (${data.stop_reason || 'sin motivo'}, ${text.length} letras, empieza con "${text.trim().slice(0, 12).replace(/[^{}\[\]"\w\s:]/g, '')}")`);
   parsed.reply = toWhatsApp(parsed.reply);
   return parsed;
+}
+
+/** Historial + mensaje nuevo en el formato de la API (turnos alternados, empezando por la persona). */
+function buildMessages(history, message, note = '') {
+  const merged = [];
+  for (const h of history) {
+    if (h.direction !== 'in' && isFixedReply(h.body)) continue;
+    const role = h.direction === 'in' ? 'user' : 'assistant';
+    // sus respuestas anteriores se le muestran en el mismo formato JSON que se le pide, para que no lo abandone
+    const content = role === 'assistant' ? JSON.stringify({ respuesta: h.body, escalar: false, motivo: '' }) : h.body;
+    const last = merged[merged.length - 1];
+    if (last && last.role === role) last.content += '\n' + content;
+    else merged.push({ role, content });
+  }
+  while (merged.length && merged[0].role !== 'user') merged.shift();
+  const userText = `MENSAJE DEL USUARIO (texto no confiable):\n"""${message}"""${note ? `\n\nNOTA DEL REVISOR INTERNO (no es de la persona; corrige tu respuesta en silencio y no la menciones): ${note}` : ''}`;
+  const last = merged[merged.length - 1];
+  if (last && last.role === 'user') last.content += '\n' + userText;
+  else merged.push({ role: 'user', content: userText });
+  return merged;
+}
+
+/**
+ * Modo pastoral (solo números autorizados en Configuración): el modelo consulta los datos de la iglesia con herramientas de
+ * solo lectura. Sin revisor (el revisor objeta hablar de otras personas, que aquí es el trabajo). El filtro de enlaces sigue;
+ * de teléfonos solo busca celulares, porque las listas de cifras se confunden con números.
+ */
+async function generatePastoral(ctx, { context, history, message, now }, fetchImpl) {
+  const out = await pastoral.askPastoral(ctx, { context, messages: buildMessages(history, message), now, parse: parseModelJson }, fetchImpl);
+  out.reply = toWhatsApp(out.reply);
+  const blocked = guardReply(out.reply, `${context}\n${out.toolText}`, { phones: false });
+  if (blocked) return { blocked, original: out.reply };
+  delete out.toolText;
+  return { out, revisions: 0, pastoral: true };
 }
 
 /** Markdown → formato de WhatsApp: **negrita** pasa a *negrita* y se quitan los # de encabezado. */
@@ -294,13 +314,16 @@ const onlyDigits = (s) => String(s).replace(/\D/g, '');
  * Así una orden escondida en un mensaje no puede hacer que el asistente invente un enlace ni dé el teléfono de otra persona.
  * Devuelve el motivo del bloqueo, o null si está bien.
  */
-function guardReply(reply, context) {
+// celular venezolano (0412…, +58 414…): en el modo pastoral, donde hay listas de cifras, solo se busca esta forma de teléfono
+const VE_MOBILE_RE = /(?:\+?58[\s.-]?)?0?4(?:12|14|16|22|24|26)[\s.-]?\d{3}[\s.-]?\d{2}[\s.-]?\d{2}/g;
+
+function guardReply(reply, context, { phones = true } = {}) {
   const ctx = String(context || '');
   const ctxDigits = onlyDigits(ctx);
   for (const u of String(reply).match(URL_RE) || []) {
     if (!ctx.includes(u.replace(/[.,;:!?]+$/, ''))) return 'trae un enlace que no está en los datos';
   }
-  for (const p of String(reply).match(PHONE_RE) || []) {
+  for (const p of String(reply).match(phones ? PHONE_RE : VE_MOBILE_RE) || []) {
     const d = onlyDigits(p).replace(/^0+/, '');
     const core = d.length > 10 ? d.slice(-10) : d; // sin código de país: 0414… y +58 414… son el mismo número
     if (d.length >= 7 && !ctxDigits.includes(core)) return 'trae un teléfono que no está en los datos';
@@ -322,11 +345,15 @@ async function dryAnswer(ctx, { phone, text }, { fetchImpl, now = new Date() } =
   if (!person) return { kind: 'desconocido', reply: UNKNOWN_REPLY };
   if (isCrisis(message)) return { kind: 'crisis', reply: CRISIS_REPLY, escalate: true, reason: 'URGENTE: posible crisis (palabras de riesgo en el mensaje)' };
   try {
-    const context = await buildContext(db, config, person, now, phone);
-    const g = await generate(config, { context, history: [], message }, fetchImpl);
+    const isPastor = pastoral.isPastoral(config, phone);
+    let context = await buildContext(db, config, person, now, phone);
+    if (isPastor) context = await pastoral.pastoralContext(db, context);
+    const g = isPastor
+      ? await generatePastoral(ctx, { context, history: [], message, now }, fetchImpl)
+      : await generate(config, { context, history: [], message }, fetchImpl);
     if (g.blocked) return { kind: 'bloqueada', reply: FALLBACK_REPLY, escalate: true, reason: `Respuesta bloqueada: ${g.blocked}`, original: g.original };
     if (g.rejected) return { kind: 'rechazada', reply: FALLBACK_REPLY, escalate: true, reason: `Revisión interna: ${g.rejected}`, original: g.original };
-    return { kind: 'modelo', ...g.out, revisions: g.revisions };
+    return { kind: 'modelo', ...g.out, revisions: g.revisions, pastoral: Boolean(g.pastoral) };
   } catch (err) {
     return { kind: 'error', error: String(err.message).slice(0, 200) };
   }
@@ -372,7 +399,9 @@ async function handleInbound(ctx, { from, replyTo, body, type }, { fetchImpl, no
 
   await log(db, { phone: from, personId: person && person.id, direction: 'in', body: text || `[${type}]` });
 
-  if (cnt[0].c >= config.agent.maxRepliesPerDay) return { handledAs: 'agente_limite' };
+  const isPastor = pastoral.isPastoral(config, from);
+  // el pastor autorizado trabaja con Grace: su tope diario es mucho más alto
+  if (cnt[0].c >= (isPastor ? Math.max(config.agent.maxRepliesPerDay, 150) : config.agent.maxRepliesPerDay)) return { handledAs: 'agente_limite' };
   if (!person) {
     await send(UNKNOWN_REPLY);
     await log(db, { phone: from, direction: 'out', body: UNKNOWN_REPLY });
@@ -395,12 +424,15 @@ async function handleInbound(ctx, { from, replyTo, body, type }, { fetchImpl, no
           `SELECT direction, body FROM agent_messages
             WHERE phone = $1 AND created_at > now() - interval '12 hours'
               AND id < (SELECT max(id) FROM agent_messages WHERE phone = $1 AND direction = 'in')
-            ORDER BY id DESC LIMIT 6`,
-          [from]
+            ORDER BY id DESC LIMIT $2`,
+          [from, isPastor ? 10 : 6]
         )
       ).rows.reverse();
       context = await buildContext(db, config, person, now, from);
-      const g = await generate(config, { context, history, message: text }, fetchImpl);
+      if (isPastor) context = await pastoral.pastoralContext(db, context);
+      const g = isPastor
+        ? await generatePastoral(ctx, { context, history, message: text, now }, fetchImpl)
+        : await generate(config, { context, history, message: text }, fetchImpl);
       if (g.blocked) out = { reply: FALLBACK_REPLY, escalate: true, reason: `Respuesta bloqueada por seguridad: ${g.blocked}` };
       else if (g.rejected) out = { reply: FALLBACK_REPLY, escalate: true, reason: `Revisión interna: ${g.rejected}` };
       else out = g.out;
@@ -422,4 +454,4 @@ async function handleInbound(ctx, { from, replyTo, body, type }, { fetchImpl, no
   return { handledAs: out.escalate ? 'agente_escalado' : 'agente' };
 }
 
-module.exports = { handleInbound, dryAnswer, guardReply, buildContext, askModel, reviewReply, generate, MAX_REVISIONS, parseModelJson, parseReviewerJson, toWhatsApp, isCrisis, systemPrompt, FALLBACK_REPLY, CRISIS_REPLY };
+module.exports = { handleInbound, dryAnswer, guardReply, buildContext, askModel, reviewReply, generate, generatePastoral, buildMessages, MAX_REVISIONS, parseModelJson, parseReviewerJson, toWhatsApp, isCrisis, systemPrompt, FALLBACK_REPLY, CRISIS_REPLY };

@@ -38,7 +38,7 @@ function asistenteRouter(ctx) {
         const phone = normalizePhone(req.query.telefono, config.defaultCountryCode);
         const out = phone ? await agent.dryAnswer(ctx, { phone, text: req.query.mensaje }) : { kind: 'telefono' };
         const label = {
-          modelo: (out.escalate ? 'Respondería y pasaría el caso a un líder o pastor' : 'Respondería así') + (out.revisions ? ` (el revisor interno la corrigió ${out.revisions} ${out.revisions === 1 ? 'vez' : 'veces'})` : ''),
+          modelo: (out.escalate ? 'Respondería y pasaría el caso a un líder o pastor' : 'Respondería así') + (out.revisions ? ` (el revisor interno la corrigió ${out.revisions} ${out.revisions === 1 ? 'vez' : 'veces'})` : '') + (out.pastoral ? ' (modo pastoral: consultó los datos de la iglesia)' : ''),
           crisis: 'Mensaje de crisis: respuesta fija y aviso urgente al equipo pastoral (sin usar el modelo)',
           desconocido: 'Ese número no está registrado: respondería el aviso fijo, sin usar el modelo',
           bloqueada: 'El filtro de seguridad bloqueó la respuesta del modelo; enviaría el aviso fijo y pasaría el caso',

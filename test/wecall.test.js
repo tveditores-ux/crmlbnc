@@ -96,7 +96,8 @@ test('webhook: firma obligatoria, el mensaje queda registrado una sola vez aunqu
   const h = await openTestDb();
   if (!h) return t.skip('sin base de datos de prueba (instala @electric-sql/pglite o define DATABASE_URL_TEST)');
   const dead = { whatsapp: { available: false }, email: { available: false } };
-  const app = createApp({ db: h.db, config: loadConfig(env()), channels: dead });
+  const ctxW = { db: h.db, config: loadConfig(env()), channels: dead };
+  const app = createApp(ctxW);
   const meta = createApp({ db: h.db, config: loadConfig(env({ WHATSAPP_PROVIDER: 'meta' })), channels: dead });
   const s1 = app.listen(0);
   const s2 = meta.listen(0);
@@ -108,6 +109,7 @@ test('webhook: firma obligatoria, el mensaje queda registrado una sola vez aunqu
     assert.equal((await post(s1, body, sign(body, 'otro'))).status, 401);
     assert.equal((await h.db.query('SELECT count(*)::int AS n FROM inbound_messages')).rows[0].n, 0);
     assert.equal((await post(s1, body, sign(body))).status, 200);
+    await ctxW.lastWebhook; // se atiende después de contestar 200
     assert.equal((await post(s1, body, sign(body))).status, 200); // el mismo aviso repetido
     const rows = (await h.db.query('SELECT from_phone, body FROM inbound_messages')).rows;
     assert.deepEqual(rows, [{ from_phone: '584145551212', body: 'Hola, ¿a qué hora es el culto?' }]);
