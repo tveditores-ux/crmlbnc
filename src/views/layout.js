@@ -107,6 +107,7 @@ const NAV = [
   ['/redil/preguntas', 'Preguntas REDIL'],
   ['/conversaciones', 'Conversaciones'],
   ['/asistente', 'Asistente'],
+  ['/grace', 'Grace (control remoto)'],
   ['/configuracion', 'Configuración'],
   ['/pruebas', 'Pruebas'],
 ];

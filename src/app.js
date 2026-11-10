@@ -28,6 +28,7 @@ const { redilPreguntasRouter } = require('./routes/redil-preguntas');
 const { libretaRemotaRouter } = require('./routes/libreta-remota');
 const { configuracionRouter } = require('./routes/configuracion');
 const { calendarRouter } = require('./routes/calendar');
+const { graceRemotoRouter } = require('./routes/grace-remoto');
 const { layout } = require('./views/layout');
 const { esc } = require('./util');
 const auth = require('./auth');
@@ -149,6 +150,7 @@ function createApp(ctx) {
   app.use(careGroupsRouter(ctx));
   app.use(redilPreguntasRouter(ctx));
   app.use(calendarRouter(ctx));
+  app.use(graceRemotoRouter(ctx));
   app.use(configuracionRouter(ctx));
   app.use(adminRouter(ctx));
 
