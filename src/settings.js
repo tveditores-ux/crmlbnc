@@ -26,6 +26,9 @@ const FIELDS = {
   birthdayBrief: { env: 'BIRTHDAY_BRIEF', label: 'Aviso diario de cumpleaños', secret: false },
   briefHour: { env: 'BIRTHDAY_BRIEF_HOUR', label: 'Hora del aviso', secret: false },
   briefTemplate: { env: 'BIRTHDAY_BRIEF_TEMPLATE', label: 'Plantilla del aviso', secret: false },
+  reportReminder: { env: 'REPORT_REMINDER', label: 'Recordatorio de reporte de GdC', secret: false },
+  reportReminderHour: { env: 'REPORT_REMINDER_HOUR', label: 'Hora del recordatorio', secret: false },
+  reportReminderTemplate: { env: 'REPORT_REMINDER_TEMPLATE', label: 'Plantilla del recordatorio', secret: false },
 };
 const PROVIDERS = ['meta', 'wecall'];
 const MAX_SECRET = 300;
@@ -162,6 +165,11 @@ async function apply(ctx) {
   const bh = Number(pick('briefHour', null));
   config.agent.briefHour = Number.isInteger(bh) && bh >= 0 && bh <= 23 && pick('briefHour', null) !== null ? bh : a.briefHour ?? 7;
   config.agent.briefTemplate = pick('briefTemplate', a.briefTemplate || '');
+  const rb = pick('reportReminder', null);
+  config.agent.reportReminder = rb === 'si' ? true : rb === 'no' ? false : Boolean(a.reportReminder);
+  const rh = Number(pick('reportReminderHour', null));
+  config.agent.reportReminderHour = Number.isInteger(rh) && rh >= 0 && rh <= 23 && pick('reportReminderHour', null) !== null ? rh : a.reportReminderHour ?? 9;
+  config.agent.reportReminderTemplate = pick('reportReminderTemplate', a.reportReminderTemplate || '');
   // el canal se reconstruye con la configuración nueva; quien lo usa lo lee de ctx.channels en cada envío
   const fresh = createChannels(config, { fetchImpl: ctx.fetchImpl });
   ctx.channels.whatsapp = fresh.whatsapp;
@@ -190,6 +198,9 @@ function sourceOf(key, stored, config) {
     birthdayBrief: env.agent.birthdayBrief ? 'si' : '',
     briefHour: env.agent.briefHour !== undefined && env.agent.briefHour !== 7 ? String(env.agent.briefHour) : '',
     briefTemplate: env.agent.briefTemplate,
+    reportReminder: env.agent.reportReminder ? 'si' : '',
+    reportReminderHour: env.agent.reportReminderHour !== undefined && env.agent.reportReminderHour !== 9 ? String(env.agent.reportReminderHour) : '',
+    reportReminderTemplate: env.agent.reportReminderTemplate,
   }[key];
   return v ? 'railway' : 'falta';
 }

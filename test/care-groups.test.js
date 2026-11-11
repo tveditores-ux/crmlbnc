@@ -105,6 +105,20 @@ test('crear grupo, abrir su enlace, reportar y ver el reporte en el panel', asyn
   });
 });
 
+test('barra del líder: sin «Datos del grupo» y con REDIL de último; la ruta /datos sigue viva para correcciones', async (t) => {
+  await withApp(t, async ({ db, get, post }) => {
+    const g = await newGroup(post, db);
+    const html = await (await get(`/g/${g.token}`)).text();
+    assert.ok(!html.includes('Datos del grupo'), 'la pestaña de datos no se ofrece');
+    assert.ok(!html.includes(`/g/${g.token}/datos`), 'ningún enlace de la barra lleva a /datos');
+    const labels = ['>Reporte</a>', '>Planificador</a>', '>Ruta de crecimiento</a>', '>F.O.D.A.</a>', '>Trimestral</a>', '>Guía</a>', '>REDIL</a>'];
+    const pos = labels.map((l) => html.indexOf(l));
+    assert.ok(pos.every((p) => p >= 0), 'están todas las demás pestañas');
+    assert.deepEqual(pos, [...pos].sort((a, b) => a - b), 'REDIL queda de último');
+    assert.equal((await get(`/g/${g.token}/datos`)).status, 200, 'la ruta /datos sigue abriendo si se entra directo');
+  });
+});
+
 test('el reporte rechaza datos malos con 400 y no guarda nada; el texto se escapa', async (t) => {
   await withApp(t, async ({ db, get, post }) => {
     const g = await newGroup(post, db);

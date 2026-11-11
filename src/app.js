@@ -26,6 +26,7 @@ const { memberRequestsRouter } = require('./routes/member-requests');
 const { careGroupsRouter } = require('./routes/care-groups');
 const { redilPreguntasRouter } = require('./routes/redil-preguntas');
 const { libretaRemotaRouter } = require('./routes/libreta-remota');
+const { reporteComunRouter } = require('./routes/reporte-comun');
 const { configuracionRouter } = require('./routes/configuracion');
 const { calendarRouter } = require('./routes/calendar');
 const { graceRemotoRouter } = require('./routes/grace-remoto');
@@ -99,6 +100,7 @@ function createApp(ctx) {
   app.use(reunionRemotaRouter(ctx)); // libreta de la reunión de equipo: enlace secreto, sin sesión
   app.use(libretaRemotaRouter(ctx)); // libretica del REDIL por enlace común (control remoto): enlace secreto, sin sesión
   app.use(careRemoteRouter(ctx)); // reporte del líder de grupo de cuidado: igual, enlace secreto
+  app.use(reporteComunRouter(ctx)); // reporte semanal APARTE: un solo enlace para todos los líderes, solo con su nombre
 
   app.get('/entrar', (req, res) => res.send(loginPage()));
 

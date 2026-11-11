@@ -109,6 +109,12 @@ function configuracionRouter(ctx) {
               <div><label for="brief_hour">Hora del aviso ${SOURCE[src('briefHour')]}</label><input id="brief_hour" type="number" name="brief_hour" min="0" max="23" value="${esc(config.agent.briefHour ?? 7)}"></div>
               <div><label for="brief_tpl">Plantilla aprobada (opcional) ${SOURCE[src('briefTemplate')]}</label><input id="brief_tpl" type="text" name="brief_template" value="${esc(config.agent.briefTemplate || '')}" placeholder="ej.: cumpleanos_hoy" spellcheck="false"></div></div>
             <p class="muted" style="margin:4px 0 0;font-size:13px">Se envía a los números con acceso pastoral. WhatsApp solo deja escribir texto libre si escribiste al número en las últimas 24 horas; para que llegue siempre, registra en WeCall/Meta una plantilla con una variable para los nombres (por ejemplo: «Hoy cumplen años: {{1}}. ¡Bendícelos!») y pon aquí su nombre.</p>
+            <div class="row" style="margin-top:14px">
+              <div><label for="report_on">Recordatorio de reporte de GdC ${SOURCE[src('reportReminder')]}</label>
+                <select id="report_on" name="report_reminder"><option value="no" ${config.agent.reportReminder ? '' : 'selected'}>Apagado</option><option value="si" ${config.agent.reportReminder ? 'selected' : ''}>Encendido: recuerda a cada líder el reporte que le falta</option></select></div>
+              <div><label for="report_hour">Hora del recordatorio ${SOURCE[src('reportReminderHour')]}</label><input id="report_hour" type="number" name="report_reminder_hour" min="0" max="23" value="${esc(config.agent.reportReminderHour ?? 9)}"></div>
+              <div><label for="report_tpl">Plantilla aprobada (opcional) ${SOURCE[src('reportReminderTemplate')]}</label><input id="report_tpl" type="text" name="report_reminder_template" value="${esc(config.agent.reportReminderTemplate || '')}" placeholder="ej.: recordatorio_reporte_gdc" spellcheck="false"></div></div>
+            <p class="muted" style="margin:4px 0 0;font-size:13px">Una vez al día, a partir de esa hora: a cada líder cuyo grupo ya se reunió y no ha enviado el reporte de esa reunión se le recuerda una sola vez (con su enlace para reportar), y a los números con acceso pastoral llega el resumen de los grupos sin reporte. Solo se escribe a líderes que están en Personas, activos y que aceptaron mensajes. Como WhatsApp solo deja texto libre dentro de las 24 horas, registra la plantilla en WeCall/Meta con cuatro variables (nombre, grupo, fecha de la reunión y enlace) y pon aquí su nombre.</p>
             <div class="actions"><button>Guardar</button></div>
             <p class="muted" style="font-size:13px;margin:8px 0 0">Solo responde a personas registradas y activas, solo sobre la iglesia, nunca escribe primero, y pasa a un líder o pastor lo que no sabe. Lo que no es de la iglesia lo rechaza con amabilidad.</p>
           </form>
@@ -203,6 +209,20 @@ function configuracionRouter(ctx) {
         const tpl = String(b.brief_template).trim();
         if (tpl && !/^[a-z0-9_]{1,60}$/.test(tpl)) errors.push('El nombre de la plantilla solo lleva minúsculas, números y guion bajo (como en Meta).');
         else changes.push(['briefTemplate', tpl || null]);
+      }
+      if (b.report_reminder !== undefined) {
+        if (!['si', 'no'].includes(b.report_reminder)) errors.push('Elige si el recordatorio de reporte va encendido o apagado.');
+        else changes.push(['reportReminder', b.report_reminder]);
+      }
+      if (b.report_reminder_hour !== undefined && String(b.report_reminder_hour).trim() !== '') {
+        const h = String(b.report_reminder_hour).trim();
+        if (!/^\d{1,2}$/.test(h) || +h > 23) errors.push('La hora del recordatorio debe ser un número de 0 a 23.');
+        else changes.push(['reportReminderHour', String(+h)]);
+      }
+      if (b.report_reminder_template !== undefined) {
+        const tpl = String(b.report_reminder_template).trim();
+        if (tpl && !/^[a-z0-9_]{1,60}$/.test(tpl)) errors.push('El nombre de la plantilla solo lleva minúsculas, números y guion bajo (como en Meta).');
+        else changes.push(['reportReminderTemplate', tpl || null]);
       }
       if (b.pastoral_phones !== undefined) {
         const ph = pastoral.parsePhones(b.pastoral_phones, config.defaultCountryCode);

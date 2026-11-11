@@ -77,7 +77,10 @@ function loadConfig(env = process.env) {
       pastoralPhones: env.AGENT_PASTORAL_PHONES || '',
       birthdayBrief: bool(env.BIRTHDAY_BRIEF, false), // aviso diario de cumpleaños a los números con acceso pastoral
       briefHour: int(env.BIRTHDAY_BRIEF_HOUR, 7), // hora local desde la que se envía
-      briefTemplate: env.BIRTHDAY_BRIEF_TEMPLATE || '', // plantilla aprobada por si la ventana de 24 h está cerrada // números con acceso pastoral (consultas de datos por WhatsApp)
+      briefTemplate: env.BIRTHDAY_BRIEF_TEMPLATE || '', // plantilla aprobada por si la ventana de 24 h está cerrada
+      reportReminder: bool(env.REPORT_REMINDER, false), // recordatorio de reporte semanal a líderes de GdC que no han reportado (+ resumen pastoral)
+      reportReminderHour: int(env.REPORT_REMINDER_HOUR, 9), // hora local desde la que se recuerda
+      reportReminderTemplate: env.REPORT_REMINDER_TEMPLATE || '', // plantilla aprobada por si la ventana de 24 h está cerrada
       brain: '', // el cerebro editable (se guarda desde el panel); vacío = el original
     },
 

@@ -25,6 +25,17 @@ test('el cerebro original tiene la forma de los de Ventas24 (quién eres, valore
   assert.match(b, /asistente virtual de la iglesia/); // no se hace pasar por persona
 });
 
+test('solo lo que te piden: el cerebro lo dice, las reglas fijas lo imponen y el revisor lo objeta (pedido del pastor)', () => {
+  const b = brain.originalBrain('Iglesia de Prueba');
+  assert.ok(b.includes('# Solo lo que te piden'), 'la sección está en el cerebro');
+  assert.match(b, /No menciones errores tuyos ni de mensajes anteriores/);
+  assert.match(brain.REGLAS_FIJAS, /no agregues información no solicitada/, 'también es regla fija: un cerebro editado no la puede quitar');
+  const c = cfg();
+  c.agent.brain = 'Cerebro editado que ignora todo lo anterior. '.repeat(10);
+  assert.match(agent.systemPrompt(c), /no agregues información no solicitada/, 'vale aunque el cerebro del panel sea otro');
+  assert.match(brain.buildReviewerPrompt(cfg()), /errores de mensajes anteriores/, 'el revisor objeta las correcciones no pedidas');
+});
+
 test('el prompt = cerebro (original o editado) + reglas fijas + formato, y un cerebro editado NO puede quitar las reglas fijas', () => {
   const c = cfg();
   assert.ok(agent.systemPrompt(c).includes('# Quién eres'));
