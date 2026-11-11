@@ -8,6 +8,7 @@ const charts = require('../views/charts');
 const cg = require('../care-groups');
 const fmt = require('../care-formats');
 const intake = require('../care-intake');
+const reportLink = require('../care-report-link');
 const views = require('../views/care-formats');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -106,7 +107,7 @@ function careGroupsRouter(ctx) {
           <div class="card"><div class="stat">${totals.att}</div><div class="stat-label">asistentes (30 días)</div></div>
           <div class="card"><div class="stat">${stale.length}</div><div class="stat-label">sin reportar hace más de ${STALE_DAYS} días</div></div>
         </div>
-        <p class="toolbar"><a class="btn" href="/grupos/nuevo">Agregar grupo</a> <a class="btn sec" href="/grupos/solicitud">Pedir datos a los líderes</a> <a class="btn sec" href="/grupos/importar">Importar grupos (CSV)</a> <a class="btn sec" href="/grupos/reportes.csv">Descargar reportes</a></p>
+        <p class="toolbar"><a class="btn" href="/grupos/nuevo">Agregar grupo</a> <a class="btn sec" href="/grupos/solicitud">Pedir datos a los líderes</a> <a class="btn sec" href="/grupos/reporte-comun">Reporte semanal (enlace común)</a> <a class="btn sec" href="/grupos/importar">Importar grupos (CSV)</a> <a class="btn sec" href="/grupos/reportes.csv">Descargar reportes</a></p>
         ${birthdays.length ? `<div class="card"><h3>Próximos cumpleaños de líderes (45 días)</h3><div class="table-scroll"><table>${birthdays
           .map((b) => `<tr><td>${b.inDays === 0 ? '<span class="badge b-ok">Hoy</span>' : `${String(b.day).padStart(2, '0')}/${String(b.month).padStart(2, '0')}`}</td><td>${esc(b.who)}</td><td>${esc(b.group)}</td><td class="muted">cumple ${b.turns}</td></tr>`)
           .join('')}</table></div></div>` : ''}
@@ -247,6 +248,69 @@ function careGroupsRouter(ctx) {
       }
       await intake.setActive(db, req.params.accion === 'activar');
       go(res, '/grupos/solicitud', { ok: req.params.accion === 'activar' ? 'Enlace encendido.' : 'Enlace apagado.' });
+    })
+  );
+
+  /* ------------- Reporte semanal: remoto aparte, un solo enlace para todos ------------- */
+  r.get(
+    '/grupos/reporte-comun',
+    ah(async (req, res) => {
+      const link = await reportLink.ensureLink(db);
+      const url = `${String(config.publicUrl || '').replace(/\/$/, '')}/reportes/${link.token}`;
+      const groups = (await db.query('SELECT id, name, leader_name FROM care_groups WHERE active ORDER BY lower(name)')).rows;
+      const pending = await reportLink.listPending(db);
+      const cards = pending
+        .map(
+          (s) => `<div class="card"><h3 style="margin-top:0">${esc(s.leader_name)} <span class="badge b-warn">Sin grupo claro</span></h3>
+            <p class="muted" style="font-size:13px">Reunión del ${esc(short(typeof s.meeting_date === 'string' ? s.meeting_date : new Date(s.meeting_date).toLocaleDateString('en-CA', { timeZone: 'UTC' })))} · Asistentes: ${s.attendance ?? '—'}${s.guests_count ? ` · Invitados: ${s.guests_count}` : ''}${s.offering ? ` · Ofrenda: ${esc(s.offering)}` : ''}</p>
+            ${s.notes ? `<p style="margin:6px 0">${esc(s.notes)}</p>` : ''}
+            <p class="toolbar" style="margin:10px 0 0"><form class="inline" method="post" action="/grupos/reporte-comun/pendientes/${s.id}/aplicar"><select name="group_id" style="max-width:280px">${groups.map((g) => `<option value="${g.id}">${esc(g.name)}${g.leader_name ? ` · ${esc(g.leader_name)}` : ''}</option>`).join('')}</select> <button class="small">Asignar a este grupo</button></form>
+              <form class="inline" method="post" action="/grupos/reporte-comun/pendientes/${s.id}/descartar"><button class="small danger">Descartar</button></form></p></div>`
+        )
+        .join('');
+      page(
+        req,
+        res,
+        'Reporte semanal (enlace común)',
+        `<p><a href="/grupos">← Grupos de cuidado</a></p><h1>Reporte semanal: enlace común</h1>
+        <p class="sub">Este es el remoto de reporte <strong>aparte</strong> del enlace de cada grupo: un solo enlace para todos los líderes, sin pestañas ni nada más. El líder lo guarda en su teléfono como «Reporte», escribe su nombre y envía cada semana; no hay que generar ni mandar enlaces nuevos. Si su nombre coincide con el de su grupo, el reporte entra solo; si no, queda aquí abajo para asignarlo.</p>
+        <div class="card"><h3>Enlace del reporte para todos los líderes</h3>
+          <input type="text" id="reportUrl" readonly value="${esc(url)}" onclick="this.select()" style="font-size:13px" ${link.active ? '' : 'disabled'}>
+          <p class="toolbar" style="margin-top:8px"><button type="button" class="small sec" id="copyReportUrl">Copiar enlace</button>
+            <form class="inline" method="post" action="/grupos/reporte-comun/enlace/${link.active ? 'apagar' : 'encender'}"><button class="small ${link.active ? 'danger' : 'sec'}">${link.active ? 'Apagar enlace' : 'Encender enlace'}</button></form>
+            <form class="inline" method="post" action="/grupos/reporte-comun/enlace/regenerar" onsubmit="return confirm('El enlace anterior dejará de funcionar y los líderes tendrán que guardar el nuevo. ¿Generar uno nuevo?')"><button class="small sec">Generar enlace nuevo</button></form></p>
+          <p class="muted" style="font-size:13px;margin:0">Compártelo solo con los líderes de grupo de cuidado. Está en Grupos de cuidado → «Reporte semanal (enlace común)».</p></div>
+        <h2>Reportes por asignar (${pending.length})</h2>
+        ${cards || '<p class="muted">No hay reportes esperando asignación.</p>'}
+        <script>document.getElementById('copyReportUrl').addEventListener('click', function(){ var b = this, f = document.getElementById('reportUrl'); (navigator.clipboard ? navigator.clipboard.writeText(f.value) : Promise.reject()).then(function(){ b.textContent = '¡Copiado!'; setTimeout(function(){ b.textContent = 'Copiar enlace'; }, 1500); }, function(){ f.select(); b.textContent = 'Selecciona y copia'; }); });</script>`
+      );
+    })
+  );
+
+  r.post(
+    '/grupos/reporte-comun/enlace/:accion(encender|apagar|regenerar)',
+    ah(async (req, res) => {
+      if (req.params.accion === 'regenerar') {
+        await reportLink.regenerateLink(db);
+        return go(res, '/grupos/reporte-comun', { ok: 'Enlace nuevo generado. El anterior ya no funciona; vuelve a enviarlo.' });
+      }
+      await reportLink.setLinkActive(db, req.params.accion === 'encender');
+      go(res, '/grupos/reporte-comun', { ok: req.params.accion === 'encender' ? 'Enlace encendido.' : 'Enlace apagado.' });
+    })
+  );
+
+  r.post(
+    '/grupos/reporte-comun/pendientes/:id/aplicar',
+    ah(async (req, res) => {
+      const ok = await reportLink.applySubmission(db, Number(req.params.id), Number(req.body.group_id));
+      go(res, '/grupos/reporte-comun', ok ? { ok: 'Reporte asignado a su grupo.' } : { err: 'No pude asignar ese reporte. Revisa que el grupo esté activo.' });
+    })
+  );
+  r.post(
+    '/grupos/reporte-comun/pendientes/:id/descartar',
+    ah(async (req, res) => {
+      await reportLink.discardSubmission(db, Number(req.params.id));
+      go(res, '/grupos/reporte-comun', { ok: 'Reporte descartado.' });
     })
   );
 
