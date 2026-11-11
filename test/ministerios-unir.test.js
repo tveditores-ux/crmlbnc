@@ -27,7 +27,7 @@ test('grupos de ministerios repetidos: solo los que se llaman casi igual', () =>
 });
 
 test('la lista de congregaciones incluye Preadolescentes entre Niños y Adolescentes', () => {
-  assert.deepEqual(CONGREGATIONS, ['Niños', 'Preadolescentes', 'Adolescentes', 'Jóvenes', 'Jóvenes adultos', 'Matrimonios', 'Mujeres', 'Hombres']);
+  assert.deepEqual(CONGREGATIONS, ['Niños', 'Preadolescentes', 'Adolescentes', 'Jóvenes', 'Jóvenes adultos', 'Matrimonios', 'Mujeres', 'Hombres', 'General']);
 });
 
 async function withDb(t, fn) {

@@ -38,6 +38,8 @@ test('validación: la función manda y la ficha es la del líder más el estado 
   assert.ok(parse({ civil_status: '' }).errors.includes('Elige tu estado civil.'));
   assert.ok(parse({ civil_status: 'Inventado' }).errors.includes('Elige tu estado civil.'));
   assert.ok(parse({ congregation: '' }).errors.includes('Elige tu congregación.'));
+  assert.deepEqual(parse({ congregation: 'General' }).errors, []); // los pastores pueden ser de la congregación general
+  assert.equal(parse({ congregation: 'General' }).value.congregation, 'General');
   assert.ok(parse({ full_name: 'Solonombre' }).errors.includes('Escribe tu nombre y tu apellido.'));
   assert.equal(parse({ photo_data: '' }).photo.buffer, null); // la foto es opcional
   assert.ok(parse({ photo_data: 'data:image/png;base64,AAAA' }).errors.length);
