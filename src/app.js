@@ -27,6 +27,8 @@ const { careGroupsRouter } = require('./routes/care-groups');
 const { redilPreguntasRouter } = require('./routes/redil-preguntas');
 const { libretaRemotaRouter } = require('./routes/libreta-remota');
 const { reporteComunRouter } = require('./routes/reporte-comun');
+const { pastorIntakeRouter } = require('./routes/pastor-intake');
+const { pastorRequestsRouter } = require('./routes/pastor-requests');
 const { configuracionRouter } = require('./routes/configuracion');
 const { calendarRouter } = require('./routes/calendar');
 const { graceRemotoRouter } = require('./routes/grace-remoto');
@@ -95,6 +97,7 @@ function createApp(ctx) {
   app.use(googleRouter(ctx));
   app.use(remoteRouter(ctx)); // formulario del teléfono: protegido por enlace secreto, sin sesión
   app.use(memberIntakeRouter(ctx)); // "Mis datos": enlace común para toda la gente, sin sesión
+  app.use(pastorIntakeRouter(ctx)); // registro pastoral: enlace común para los pastores, sin sesión
   app.use(cartasRouter()); // la carta de bienvenida se lee sin sesión: el enlace se manda por WhatsApp
   app.use(careIntakeRouter(ctx)); // enlace común para todos los líderes: también por enlace secreto
   app.use(reunionRemotaRouter(ctx)); // libreta de la reunión de equipo: enlace secreto, sin sesión
@@ -141,6 +144,7 @@ function createApp(ctx) {
   app.use(leaderGuideRouter(ctx));
   app.use(ministriesMergeRouter(ctx));
   app.use(memberRequestsRouter(ctx));
+  app.use(pastorRequestsRouter(ctx));
   app.use(attendanceRouter(ctx));
   app.use(membersRouter(ctx));
   app.use(duplicatesRouter(ctx));
