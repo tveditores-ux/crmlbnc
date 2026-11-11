@@ -213,6 +213,13 @@ function startScheduler(ctx, logger = console) {
         } catch (err) {
           logger.error('[aviso de cumpleaños] error:', err);
         }
+        // recordatorio de reporte a líderes de GdC sin reporte + resumen pastoral (una vez al día, desde la hora elegida); tampoco frena los recordatorios si falla
+        try {
+          const rr = await require('./report-reminders').runReportReminders(ctx, new Date());
+          if (rr.sent || rr.failed || rr.briefSent) logger.log('[recordatorio de reportes]', JSON.stringify(rr));
+        } catch (err) {
+          logger.error('[recordatorio de reportes] error:', err);
+        }
         await db.query(
           `INSERT INTO system_state (key, value, updated_at) VALUES ('last_run', $1, now())
            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,

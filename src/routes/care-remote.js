@@ -71,7 +71,11 @@ function careRemoteRouter(ctx) {
   const invalid = () =>
     shell('Enlace no válido', '<div class="card"><h1>Enlace no válido</h1><p class="muted">Este enlace ya no está activo. Pídele uno nuevo a quien administra el panel.</p></div>', 404);
 
-  const TABS = [['/redil', 'REDIL'], ['/datos', 'Datos del grupo'], ['', 'Reporte'], ['/planificador', 'Planificador'], ['/gente', 'Ruta de crecimiento'], ['/foda', 'F.O.D.A.'], ['/trimestral', 'Trimestral'], ['/guia', 'Guía']];
+  // Barra del líder (pedido del pastor, 2026-11-10): el reporte abre primero y REDIL va de último, con su libretica,
+  // para releerla. «Datos del grupo» NO va en la barra: el líder ya envió sus datos una vez (enlace común) y no
+  // tiene que volver a enviarlos; la ruta /datos sigue viva solo para una corrección puntual (p. ej. el enlace
+  // que el asistente le da a un líder), pero no se le ofrece en la navegación del reporte.
+  const TABS = [['', 'Reporte'], ['/planificador', 'Planificador'], ['/gente', 'Ruta de crecimiento'], ['/foda', 'F.O.D.A.'], ['/trimestral', 'Trimestral'], ['/guia', 'Guía'], ['/redil', 'REDIL']];
   const tabKey = { '/redil': 'redil', '/datos': 'datos', '': 'reporte', '/planificador': 'planificador', '/gente': 'gente', '/foda': 'foda', '/trimestral': 'trimestral', '/guia': 'guia' };
   const tabs = (token, on) =>
     `<div class="tabs">${TABS.map(([p, l]) => `<a href="/g/${esc(token)}${p}" class="${tabKey[p] === on ? 'on' : ''}">${l}</a>`).join('')}</div>`;
