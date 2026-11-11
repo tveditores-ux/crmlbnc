@@ -227,6 +227,7 @@ function adminRouter(ctx) {
           <a class="btn sec" href="/personas/importar-grupo">Importar lista del grupo</a>
           <a class="btn sec" href="/personas/duplicados">Unir duplicados</a>
           <a class="btn sec" href="/personas/solicitud">Pedir datos a las personas</a>
+          <a class="btn sec" href="/personas/pastores">Registro pastoral</a>
           <a class="btn sec" href="/personas/exportar.csv${esc(members.viewQuery(v))}">Descargar lista${filtered ? ' (con estos filtros)' : ''}</a></div>
         <div class="grid">
           <div class="card"><div class="stat" style="color:var(--ok)">${counts.miembro}</div><div class="stat-label">miembros</div></div>

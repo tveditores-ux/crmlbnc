@@ -5,6 +5,7 @@ const express = require('express');
 const intake = require('../src/pastor-intake');
 const { pastorIntakeRouter } = require('../src/routes/pastor-intake');
 const { pastorRequestsRouter } = require('../src/routes/pastor-requests');
+const { adminRouter } = require('../src/routes/admin');
 const { openTestDb } = require('./helpers/db');
 
 // Todos los datos de estas pruebas son inventados.
@@ -151,6 +152,25 @@ test('una función distinta a su rol actual espera revisión; al aprobar, el rol
     assert.equal((await person(db, '584140000011')).role, 'Pastor');
     assert.equal((await person(db, '584140000011')).opt_in, true); // su consentimiento previo no se toca
   });
+});
+
+test('la página de Personas tiene el botón «Registro pastoral» que lleva a la página del enlace', async (t) => {
+  const h = await openTestDb();
+  if (!h) return t.skip('sin base de datos de prueba (instala @electric-sql/pglite o define DATABASE_URL_TEST)');
+  const app = express();
+  app.use(express.urlencoded({ extended: true }));
+  app.use(adminRouter({ db: h.db, config, channels: { whatsapp: { available: false }, email: { available: false } } }));
+  app.use(pastorRequestsRouter({ db: h.db, config }));
+  const server = app.listen(0);
+  try {
+    const b = `http://127.0.0.1:${server.address().port}`;
+    const html = await (await fetch(b + '/personas')).text();
+    assert.match(html, /<a class="btn sec" href="\/personas\/pastores">Registro pastoral<\/a>/);
+    assert.equal((await fetch(b + '/personas/pastores')).status, 200);
+  } finally {
+    server.close();
+    await h.close();
+  }
 });
 
 test('envíos malos: 400 y nada se guarda; robots no guardan nada', async (t) => {
