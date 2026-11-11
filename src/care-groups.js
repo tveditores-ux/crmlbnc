@@ -5,7 +5,7 @@ const { parseCsv, normalizeHeader } = require('./csv');
 const { tx } = require('./db');
 
 const STAGES = ['Equipo', 'Conquista', 'Consolidación', 'Multiplicación'];
-const CONGREGATIONS = ['Niños', 'Preadolescentes', 'Adolescentes', 'Jóvenes', 'Jóvenes adultos', 'Matrimonios', 'Mujeres', 'Hombres'];
+const CONGREGATIONS = ['Niños', 'Preadolescentes', 'Adolescentes', 'Jóvenes', 'Jóvenes adultos', 'Matrimonios', 'Mujeres', 'Hombres', 'General'];
 const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 const COUNTS = ['members_count', 'guests_count', 'attendance', 'recent_guests'];
 const TEXTS = ['snack', 'dynamics', 'testimonies', 'songs', 'key_element', 'notes', 'followup'];

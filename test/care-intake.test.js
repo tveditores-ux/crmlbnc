@@ -57,7 +57,7 @@ test('reconocer el grupo por el teléfono: uno solo, varios (desempata la congre
 });
 
 test('la congregación es obligatoria y solo vale una de la lista', () => {
-  assert.deepEqual(CONGREGATIONS, ['Niños', 'Preadolescentes', 'Adolescentes', 'Jóvenes', 'Jóvenes adultos', 'Matrimonios', 'Mujeres', 'Hombres']);
+  assert.deepEqual(CONGREGATIONS, ['Niños', 'Preadolescentes', 'Adolescentes', 'Jóvenes', 'Jóvenes adultos', 'Matrimonios', 'Mujeres', 'Hombres', 'General']);
   const parse = (extra) => intake.parseSubmission({ ...base, ...extra }, [], '58', TODAY);
   assert.deepEqual(parse({}).errors, []);
   assert.ok(parse({ congregation: '' }).errors.includes('Elige tu congregación.'));
