@@ -30,8 +30,12 @@ test('validación: la función manda y la ficha es la del líder más el estado 
   assert.equal(ok.value.funcion, 'Pastor');
   assert.equal(parse({ funcion: 'Pastor asistente' }).value.funcion, 'Pastor asistente');
 
-  assert.ok(parse({ funcion: '' }).errors.includes('Elige tu función: Pastor o Pastor asistente.'));
-  assert.ok(parse({ funcion: 'Obispo' }).errors.includes('Elige tu función: Pastor o Pastor asistente.'));
+  assert.ok(parse({ funcion: '' }).errors.includes('Elige tu función o tu ministerio.'));
+  assert.ok(parse({ funcion: 'Obispo' }).errors.includes('Elige tu función o tu ministerio.'));
+  // no solo pastores: diaconado, Nueva Vida y los ministerios; y "Otro ministerio" escrito a mano
+  for (const f of ['Diácono', 'Diaconisa', 'Nueva Vida', 'Consolidación', 'Alabanza']) assert.equal(parse({ funcion: f }).value.funcion, f);
+  assert.equal(parse({ funcion: intake.OTRO, funcion_otro: '  Evangelismo ' }).value.funcion, 'Evangelismo');
+  assert.ok(parse({ funcion: intake.OTRO, funcion_otro: '' }).errors.includes('Escribe el nombre de tu ministerio.'));
   assert.ok(parse({ cedula: '' }).errors.includes('Escribe tu cédula de identidad.'));
   assert.ok(parse({ cedula: 'abc' }).errors.some((e) => /cédula/i.test(e)));
   assert.ok(parse({ address: '' }).errors.includes('Escribe tu dirección.'));
@@ -75,8 +79,12 @@ test('el formulario público: pide función, cédula y estado civil; enlaces mal
     assert.equal(r.status, 200);
     assert.equal(r.headers.get('cache-control'), 'no-store');
     const html = await r.text();
-    assert.match(html, /Registro pastoral/);
-    assert.match(html, /¿Cuál es tu función\?/);
+    assert.match(html, /Registro ministerial/);
+    assert.match(html, /¿Cuál es tu función o en qué ministerio sirves\?/);
+    assert.match(html, /<option[^>]*>Diácono<\/option>/);
+    assert.match(html, /<option[^>]*>Nueva Vida<\/option>/);
+    assert.match(html, /<option[^>]*>Otro ministerio<\/option>/);
+    assert.equal((await get(`/ministerio/${token}`)).status, 200); // el enlace nuevo; /pastores/ sigue sirviendo
     assert.match(html, /<option[^>]*>Pastor<\/option>/);
     assert.match(html, /Pastor asistente/);
     assert.match(html, /Cédula de identidad \(C\.I\.\)/);
@@ -122,7 +130,8 @@ test('un pastor nuevo queda pendiente; al aprobar entra a Personas con su funci�
     const done = (await db.query('SELECT * FROM pastor_submissions')).rows[0];
     assert.deepEqual([done.status, done.cedula, done.address, done.birth_date, done.photo], ['aplicada', '', '', '', null]);
     const panel = await (await get('/personas/pastores')).text();
-    assert.match(panel, new RegExp(`/pastores/${token}`));
+    assert.match(panel, new RegExp(`/ministerio/${token}`));
+    assert.match(panel, /Fichas activas por función/);
   });
 });
 
@@ -156,7 +165,7 @@ test('una función distinta a su rol actual espera revisión; al aprobar, el rol
   });
 });
 
-test('la página de Personas tiene el botón «Registro pastoral» que lleva a la página del enlace', async (t) => {
+test('la página de Personas tiene el botón «Registro ministerial» que lleva a la página del enlace', async (t) => {
   const h = await openTestDb();
   if (!h) return t.skip('sin base de datos de prueba (instala @electric-sql/pglite o define DATABASE_URL_TEST)');
   const app = express();
@@ -167,7 +176,7 @@ test('la página de Personas tiene el botón «Registro pastoral» que lleva a l
   try {
     const b = `http://127.0.0.1:${server.address().port}`;
     const html = await (await fetch(b + '/personas')).text();
-    assert.match(html, /<a class="btn sec" href="\/personas\/pastores">Registro pastoral<\/a>/);
+    assert.match(html, /<a class="btn sec" href="\/personas\/pastores">Registro ministerial<\/a>/);
     assert.equal((await fetch(b + '/personas/pastores')).status, 200);
   } finally {
     server.close();
@@ -184,5 +193,18 @@ test('envíos malos: 400 y nada se guarda; robots no guardan nada', async (t) =>
     assert.equal(await count(db, 'pastor_submissions'), 0);
     assert.equal((await post(`/pastores/${token}`, { ...base, web: 'x' })).status, 200);
     assert.equal(await count(db, 'pastor_submissions'), 0);
+  });
+});
+
+test('un servidor de un ministerio (escrito a mano) entra con esa función y queda en el ministerio del mismo nombre', async (t) => {
+  await withApp(t, async ({ db, post }) => {
+    const m = (await db.query("INSERT INTO ministries (name) VALUES ('Evangelismo') RETURNING id")).rows[0].id;
+    const token = await tokenOf(db);
+    await post(`/ministerio/${token}`, { ...base, funcion: intake.OTRO, funcion_otro: 'evangelismo' });
+    const id = (await db.query('SELECT id FROM pastor_submissions')).rows[0].id;
+    await post(`/personas/pastores/respuestas/${id}/aplicar`);
+    const p = await person(db, '584140000011');
+    assert.equal(p.role, 'evangelismo');
+    assert.equal(await count(db, 'person_ministries', `WHERE person_id = ${p.id} AND ministry_id = ${m}`), 1);
   });
 });
