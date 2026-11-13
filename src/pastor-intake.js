@@ -5,16 +5,37 @@ const { normalizePhone, normalizeEmail } = require('./phone');
 const { CIVIL_STATUS } = require('./member-intake');
 
 /**
- * Registro pastoral: un solo enlace para que los pastores se registren ellos mismos, como los líderes
- * de grupo de cuidado con su enlace, pero su destino es la ficha de Personas con su función como rol.
+ * Registro ministerial: un solo enlace para que los pastores y los servidores de los ministerios se
+ * registren ellos mismos, como los líderes de grupo de cuidado con su enlace, pero su destino es la
+ * ficha de Personas con su función como rol.
  * Pide lo mismo que la ficha del líder (nombre, nacimiento, cédula, dirección, teléfono, correo,
- * congregación y foto) más el estado civil, y primero que nada la función: Pastor o Pastor asistente.
+ * congregación y foto) más el estado civil, y primero que nada la función: Pastor, Pastor asistente
+ * o un ministerio (Nueva Vida, Alabanza, etc.; también los que existan en Ministerios).
  *  - Si su teléfono ya está en Personas y no trae nada distinto, la ficha se completa sola (solo llena
  *    lo vacío, y el rol solo si estaba vacío).
  *  - Si es alguien nuevo, o trae un dato distinto (también una función distinta a su rol), espera revisión.
  * Nunca cambia el consentimiento (opt_in) por sí solo: "quiero recibir recordatorios" queda como aviso.
  */
-const FUNCIONES = ['Pastor', 'Pastor asistente'];
+const FUNCIONES_BASE = ['Pastor', 'Pastor asistente'];
+const MINISTERIOS_BASE = ['Nueva Vida', 'Alabanza', 'Diáconos'];
+const FUNCIONES = [...FUNCIONES_BASE, ...MINISTERIOS_BASE];
+
+/**
+ * Opciones de la función: pastores, luego los ministerios base y los que ya existen en la base
+ * (tabla `ministries`), sin repetir nombres (sin distinguir mayúsculas).
+ */
+async function functionOptions(db) {
+  const { rows } = await db.query('SELECT name FROM ministries ORDER BY name');
+  const seen = new Set();
+  const out = [];
+  for (const name of [...FUNCIONES_BASE, ...MINISTERIOS_BASE, ...rows.map((r) => String(r.name).trim())]) {
+    const key = keyOf(name);
+    if (!name || seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out;
+}
 const FIELDS = ['full_name', 'email', 'birth_date', 'cedula', 'address', 'civil_status', 'congregation'];
 const LABELS = {
   funcion: 'Función', full_name: 'Nombre y apellido', email: 'Correo', birth_date: 'Nacimiento', cedula: 'Cédula (C.I.)',
@@ -55,10 +76,10 @@ async function tokenIsValid(db, token) {
  * Valida el envío. Obligatorios: función, nombre y apellido, teléfono, fecha de nacimiento, cédula,
  * dirección, estado civil y congregación (la ficha del líder, más el estado civil). Correo y foto, opcionales.
  */
-function parseSubmission(body, countryCode, today) {
+function parseSubmission(body, countryCode, today, funciones = FUNCIONES) {
   const errors = [];
   const funcion = String(body.funcion ?? '').trim();
-  if (!FUNCIONES.includes(funcion)) errors.push('Elige tu función: Pastor o Pastor asistente.');
+  if (!funciones.includes(funcion)) errors.push('Elige tu función o ministerio.');
 
   const full_name = clean(body.full_name, 120);
   if (!full_name) errors.push('Escribe tu nombre y apellido.');
@@ -102,7 +123,7 @@ function parseSubmission(body, countryCode, today) {
   if (photo.error) errors.push(photo.error);
 
   return {
-    value: { funcion: FUNCIONES.includes(funcion) ? funcion : '', full_name, phone, email, birth_date, cedula: ci.value, address, civil_status: CIVIL_STATUS.includes(civil) ? civil : '', congregation, wants_messages: body.wants_messages === '1' },
+    value: { funcion: funciones.includes(funcion) ? funcion : '', full_name, phone, email, birth_date, cedula: ci.value, address, civil_status: CIVIL_STATUS.includes(civil) ? civil : '', congregation, wants_messages: body.wants_messages === '1' },
     photo,
     errors: [...new Set(errors)],
   };
@@ -207,4 +228,4 @@ async function listPending(db) {
 }
 const countPending = async (db) => (await db.query("SELECT count(*)::int AS n FROM pastor_submissions WHERE status = 'pendiente'")).rows[0].n;
 
-module.exports = { FUNCIONES, FIELDS, LABELS, SENSITIVE, getSettings, ensureToken, regenerateToken, setActive, tokenIsValid, parseSubmission, conflictsWith, submit, apply, discard, listPending, countPending };
+module.exports = { FUNCIONES, FUNCIONES_BASE, MINISTERIOS_BASE, functionOptions, FIELDS, LABELS, SENSITIVE, getSettings, ensureToken, regenerateToken, setActive, tokenIsValid, parseSubmission, conflictsWith, submit, apply, discard, listPending, countPending };
