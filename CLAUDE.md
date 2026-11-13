@@ -168,3 +168,8 @@ Recordatorios y confirmaciones por WhatsApp y correo. Node 22, Express, PostgreS
 - Desde cada una, quien administra la envía por WhatsApp **al líder de su grupo de cuidado** (`care_groups.leader_phone`) y/o **al pastor de su congregación** (`congregation_pastors`, se editan en la misma pantalla). Nada se envía solo. Cada envío queda en `prayer_sends` **sin teléfono**; la petición pasa a "enviada" si al menos uno llegó. Estados: nueva, enviada, archivada.
 - Ventana de 24 h cerrada: usa la plantilla `prayerTemplate` (`PRAYER_TEMPLATE`, se guarda en la misma pantalla; una sola variable en una línea); sin plantilla lo dice. Respeta DRY_RUN (lo hace el canal).
 - Solo administración (como `/grace`: coordinador 403, POST solo del mismo origen). La pantalla no muestra teléfonos de líderes.
+
+## Modo guía (`src/views/guide.js`)
+- Botón "? Guía" fijo en todas las pantallas del panel (no en las públicas `bare`). Encendido, explica al pasar el ratón (o al tocar) cada pestaña del menú (`NAV_HELP`), la pantalla (`PAGE_HELP`), los botones por su texto (`BUTTON_RULES`), los campos por su etiqueta, tablas, gráficas y etiquetas. Una pantalla puede explicar algo propio con `data-ayuda="…"`.
+- Mientras está encendido, clics y envíos de formularios **no hacen nada** (solo explican); el ☰ sí abre el menú. Esc o "Salir de la guía" lo apaga. Recuerda el estado en `localStorage` de ese navegador. Solo navegador: no consulta ni cambia nada.
+- Si agregas una pestaña al menú, agrega su explicación en `NAV_HELP` (hay una prueba que lo exige).
