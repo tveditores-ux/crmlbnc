@@ -11,7 +11,7 @@ const { CSS } = require('./care-remote');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
-/** Registro pastoral: un enlace para todos los pastores. Sin sesión; el enlace es el secreto. */
+/** Registro ministerial: un enlace para pastores y servidores de los ministerios. Sin sesión; el enlace es el secreto. */
 function pastorIntakeRouter(ctx) {
   const { db, config } = ctx;
   const r = express.Router();
@@ -26,20 +26,20 @@ function pastorIntakeRouter(ctx) {
   const invalid = () =>
     shell('Enlace no válido', '<div class="card"><h1>Enlace no válido</h1><p class="muted">Este enlace ya no está activo. Pídele uno nuevo a la iglesia.</p></div>', 404);
 
-  function form(v = {}, errors = []) {
+  function form(v = {}, errors = [], funciones = intake.FUNCIONES) {
     const st = 'font-size:18px;padding:12px;width:100%;border-radius:10px;border:1px solid var(--line)';
     const sel = (name, label, options, first, required = false) =>
       `<label for="${name}">${label}</label><select id="${name}" name="${name}" ${required ? 'required' : ''} style="${st}"><option value="">${first}</option>${options
         .map((o) => `<option ${v[name] === o ? 'selected' : ''}>${esc(o)}</option>`)
         .join('')}</select>`;
     const t = (name, label, extra = '') => `<label for="${name}">${label}</label><input id="${name}" type="text" name="${name}" value="${esc(v[name] || '')}" ${extra}>`;
-    return `<h1>Registro pastoral</h1>
-      <p class="muted" style="font-size:14px">Llena esta planilla una sola vez para registrar tu ficha pastoral en <strong>${esc(config.churchName)}</strong>. Toma unos dos minutos. Tus datos solo los ve el equipo de la iglesia.</p>
+    return `<h1>Registro ministerial</h1>
+      <p class="muted" style="font-size:14px">Llena esta planilla una sola vez para registrar tu ficha ministerial en <strong>${esc(config.churchName)}</strong>. Toma unos dos minutos. Tus datos solo los ve el equipo de la iglesia.</p>
       ${errors.length ? `<div class="flash err">${errors.map(esc).join('<br>')}</div>` : ''}
       <form method="post" autocomplete="off">
         <div class="hp" aria-hidden="true"><label>No llenar<input type="text" name="web" tabindex="-1"></label></div>
         <h2>Tu función</h2>
-        ${sel('funcion', '¿Cuál es tu función?', intake.FUNCIONES, 'Elige…', true)}
+        ${sel('funcion', '¿Cuál es tu función o ministerio?', funciones, 'Elige…', true)}
         <h2>Tus datos</h2>
         ${t('full_name', 'Nombre y apellido', 'maxlength="120" required placeholder="Nombre y apellido"')}
         <label for="phone">Teléfono (WhatsApp)</label><input id="phone" type="tel" inputmode="tel" name="phone" required value="${esc(v.phone || '')}" placeholder="0414-000.00.00">
@@ -69,7 +69,7 @@ function pastorIntakeRouter(ctx) {
     '/pastores/:token',
     ah(async (req, res) => {
       if (!(await intake.tokenIsValid(db, req.params.token))) return send(res, invalid());
-      send(res, shell('Registro pastoral', form()));
+      send(res, shell('Registro ministerial', form({}, [], await intake.functionOptions(db))));
     })
   );
 
@@ -81,10 +81,11 @@ function pastorIntakeRouter(ctx) {
       if (!limiter.take(`${req.ip}|${req.params.token}`)) {
         return send(res, shell('Demasiados envíos', '<div class="card"><h1>Demasiados envíos</h1><p class="muted">Espera un rato antes de enviar otro.</p></div>', 429));
       }
-      const sub = intake.parseSubmission(req.body, config.defaultCountryCode, today());
+      const funciones = await intake.functionOptions(db);
+      const sub = intake.parseSubmission(req.body, config.defaultCountryCode, today(), funciones);
       if (sub.errors.length) {
         const keep = sub.photo.error ? {} : { photo_data: req.body.photo_data };
-        return send(res, shell('Registro pastoral', form({ ...req.body, ...keep }, sub.errors), 400));
+        return send(res, shell('Registro ministerial', form({ ...req.body, ...keep }, sub.errors, funciones), 400));
       }
       const out = await intake.submit(db, sub);
       send(

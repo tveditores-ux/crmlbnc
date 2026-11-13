@@ -20,7 +20,7 @@ const base = {
   cedula: 'V-11222333', address: 'Casa pastoral, calle 2', civil_status: 'Casado(a)', congregation: 'Hombres',
 };
 
-test('validación: la función manda y la ficha es la del líder más el estado civil', () => {
+test('validación: la función manda (pastor o ministerio) y la ficha es la del líder más el estado civil', () => {
   const parse = (extra) => intake.parseSubmission({ ...base, ...extra }, '58', TODAY);
   const ok = parse({});
   assert.deepEqual(ok.errors, []);
@@ -29,9 +29,15 @@ test('validación: la función manda y la ficha es la del líder más el estado 
   assert.equal(ok.value.cedula, 'V-11222333');
   assert.equal(ok.value.funcion, 'Pastor');
   assert.equal(parse({ funcion: 'Pastor asistente' }).value.funcion, 'Pastor asistente');
+  assert.equal(parse({ funcion: 'Alabanza' }).value.funcion, 'Alabanza');
+  assert.equal(parse({ funcion: 'Nueva Vida' }).value.funcion, 'Nueva Vida');
+  assert.ok(parse({ funcion: 'Coro Juvenil' }).errors.includes('Elige tu función o ministerio.')); // no está en la lista: se rechaza
+  const conCoro = intake.parseSubmission({ ...base, funcion: 'Coro Juvenil' }, '58', TODAY, ['Pastor', 'Coro Juvenil']);
+  assert.deepEqual(conCoro.errors, []);
+  assert.equal(conCoro.value.funcion, 'Coro Juvenil');
 
-  assert.ok(parse({ funcion: '' }).errors.includes('Elige tu función: Pastor o Pastor asistente.'));
-  assert.ok(parse({ funcion: 'Obispo' }).errors.includes('Elige tu función: Pastor o Pastor asistente.'));
+  assert.ok(parse({ funcion: '' }).errors.includes('Elige tu función o ministerio.'));
+  assert.ok(parse({ funcion: 'Obispo' }).errors.includes('Elige tu función o ministerio.'));
   assert.ok(parse({ cedula: '' }).errors.includes('Escribe tu cédula de identidad.'));
   assert.ok(parse({ cedula: 'abc' }).errors.some((e) => /cédula/i.test(e)));
   assert.ok(parse({ address: '' }).errors.includes('Escribe tu dirección.'));
@@ -75,10 +81,12 @@ test('el formulario público: pide función, cédula y estado civil; enlaces mal
     assert.equal(r.status, 200);
     assert.equal(r.headers.get('cache-control'), 'no-store');
     const html = await r.text();
-    assert.match(html, /Registro pastoral/);
-    assert.match(html, /¿Cuál es tu función\?/);
+    assert.match(html, /Registro ministerial/);
+    assert.match(html, /¿Cuál es tu función o ministerio\?/);
     assert.match(html, /<option[^>]*>Pastor<\/option>/);
     assert.match(html, /Pastor asistente/);
+    assert.match(html, /<option[^>]*>Nueva Vida<\/option>/);
+    assert.match(html, /<option[^>]*>Alabanza<\/option>/);
     assert.match(html, /Cédula de identidad \(C\.I\.\)/);
     assert.match(html, /Estado civil/);
     assert.match(html, /Casado\(a\)/);
@@ -156,7 +164,7 @@ test('una función distinta a su rol actual espera revisión; al aprobar, el rol
   });
 });
 
-test('la página de Personas tiene el botón «Registro pastoral» que lleva a la página del enlace', async (t) => {
+test('la página de Personas tiene el botón «Registro ministerial» que lleva a la página del enlace', async (t) => {
   const h = await openTestDb();
   if (!h) return t.skip('sin base de datos de prueba (instala @electric-sql/pglite o define DATABASE_URL_TEST)');
   const app = express();
@@ -167,7 +175,7 @@ test('la página de Personas tiene el botón «Registro pastoral» que lleva a l
   try {
     const b = `http://127.0.0.1:${server.address().port}`;
     const html = await (await fetch(b + '/personas')).text();
-    assert.match(html, /<a class="btn sec" href="\/personas\/pastores">Registro pastoral<\/a>/);
+    assert.match(html, /<a class="btn sec" href="\/personas\/pastores">Registro ministerial<\/a>/);
     assert.equal((await fetch(b + '/personas/pastores')).status, 200);
   } finally {
     server.close();

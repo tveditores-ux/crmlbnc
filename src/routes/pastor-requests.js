@@ -8,7 +8,7 @@ const intake = require('../pastor-intake');
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const short = (iso) => String(iso).slice(0, 10).split('-').reverse().join('/');
 
-/** Registro pastoral: compartir el enlace con los pastores y revisar lo que llega. */
+/** Registro ministerial: compartir el enlace con los pastores y ministerios, y revisar lo que llega. */
 function pastorRequestsRouter(ctx) {
   const { db, config } = ctx;
   const r = express.Router();
@@ -38,9 +38,9 @@ function pastorRequestsRouter(ctx) {
       page(
         req,
         res,
-        'Registro pastoral',
-        `<p><a href="/personas">← Personas</a></p><h1>Registro pastoral</h1>
-        <p class="sub">Un solo enlace para todos los pastores: cada uno lo abre, elige su función (Pastor o Pastor asistente), llena su ficha —la misma de los líderes de grupo de cuidado, con el estado civil— y la envía. Si su teléfono ya está en Personas y no trae nada distinto, su ficha se completa sola y la función queda como su rol; si es alguien nuevo o trae un dato distinto, queda en <a href="/personas/pastores/respuestas">Respuestas del registro pastoral</a> para que tú lo apruebes.</p>
+        'Registro ministerial',
+        `<p><a href="/personas">← Personas</a></p><h1>Registro ministerial</h1>
+        <p class="sub">Un solo enlace para pastores y servidores de los ministerios: cada uno lo abre, elige su función (Pastor, Pastor asistente o su ministerio, como Nueva Vida o Alabanza), llena su ficha —la misma de los líderes de grupo de cuidado, con el estado civil— y la envía. Si su teléfono ya está en Personas y no trae nada distinto, su ficha se completa sola y la función queda como su rol; si es alguien nuevo o trae un dato distinto, queda en <a href="/personas/pastores/respuestas">Respuestas del registro ministerial</a> para que tú lo apruebes.</p>
         ${waiting ? `<div class="flash ok"><a href="/personas/pastores/respuestas">${waiting} registro${waiting === 1 ? '' : 's'} por revisar →</a></div>` : ''}
         <div class="grid">
           <div class="card"><div class="stat">${st.pastores}</div><div class="stat-label">pastores con ficha (rol Pastor)</div></div>
@@ -51,7 +51,7 @@ function pastorRequestsRouter(ctx) {
           <p class="toolbar" style="margin-top:8px"><button type="button" class="small sec" id="copyLink">Copiar enlace</button>
             <form class="inline" method="post" action="/personas/pastores/enlace/${settings.active ? 'desactivar' : 'activar'}"><button class="small ${settings.active ? 'danger' : 'sec'}">${settings.active ? 'Apagar enlace' : 'Encender enlace'}</button></form>
             <form class="inline" method="post" action="/personas/pastores/enlace/nuevo"><button class="small sec">Generar enlace nuevo</button></form></p>
-          <p class="muted" style="font-size:13px;margin:0">Quien tenga el enlace puede enviar un registro diciendo que es pastor: compártelo solo con el equipo pastoral. Las fichas nuevas siempre pasan por tu revisión antes de entrar a Personas.</p></div>
+          <p class="muted" style="font-size:13px;margin:0">Quien tenga el enlace puede enviar un registro diciendo que es pastor o servidor de un ministerio: compártelo solo con el equipo pastoral. Las fichas nuevas siempre pasan por tu revisión antes de entrar a Personas.</p></div>
         <div class="card"><label>Mensaje (puedes cambiarlo; {enlace} se rellena solo)</label>
           <textarea id="tpl" style="min-height:100px">${esc(DEFAULT_ASK)}</textarea>
           <p class="toolbar" style="margin:8px 0 0"><a class="btn small" id="share" target="_blank" rel="noopener" href="#">Elegir chat en WhatsApp</a>
@@ -112,8 +112,8 @@ function pastorRequestsRouter(ctx) {
       page(
         req,
         res,
-        'Respuestas del registro pastoral',
-        `<p><a href="/personas/pastores">← Registro pastoral</a></p><h1>Registros pastorales por revisar</h1>
+        'Respuestas del registro ministerial',
+        `<p><a href="/personas/pastores">← Registro ministerial</a></p><h1>Registros ministeriales por revisar</h1>
         <p class="sub">Lo que coincide con una ficha y no trae nada distinto se guarda solo y no pasa por aquí. Al aprobar, la función que declaró queda como el <strong>rol</strong> de su ficha, y la persona se crea <strong>sin consentimiento</strong> (salvo que marques la casilla si lo pidió en la planilla).</p>
         ${cards || '<p class="muted">No hay registros pendientes.</p>'}`
       );
@@ -137,7 +137,7 @@ function pastorRequestsRouter(ctx) {
       }
       const out = await intake.apply(db, id, { consent: req.body.consent === '1' });
       if (out.error) return go(res, '/personas/pastores/respuestas', { err: out.error });
-      go(res, `/personas/${out.personId}`, { ok: out.created ? 'Persona creada con su función pastoral.' : 'Datos guardados en la ficha, con su función.' });
+      go(res, `/personas/${out.personId}`, { ok: out.created ? 'Persona creada con su función ministerial.' : 'Datos guardados en la ficha, con su función.' });
     })
   );
 
