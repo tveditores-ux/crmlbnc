@@ -41,8 +41,11 @@ const counts = async (db, groupId) =>
 test('el esquema: toda tabla con clave foránea a care_groups borra en cascada (si agregas una nueva sin cascada, esta prueba falla)', async (t) => {
   await withDb(t, async (db) => {
     const fks = (await db.query("SELECT conrelid::regclass::text AS tabla, confdeltype AS regla FROM pg_constraint WHERE contype = 'f' AND confrelid = 'care_groups'::regclass")).rows;
-    assert.deepEqual(fks.map((f) => f.tabla).sort(), [...DEPENDENTS].sort()); // son exactamente las que borra la función
-    for (const f of fks) assert.equal(f.regla, 'c', `${f.tabla} debe ser ON DELETE CASCADE`);
+    // los reportes del enlace común sin asignar no se pierden si se borra el grupo: vuelven a quedar sin grupo (SET NULL)
+    const SET_NULL = ['care_group_report_submissions'];
+    const CASCADE = [...DEPENDENTS, 'care_report_reminders'];
+    assert.deepEqual(fks.map((f) => f.tabla).sort(), [...CASCADE, ...SET_NULL].sort());
+    for (const f of fks) assert.equal(f.regla, SET_NULL.includes(f.tabla) ? 'n' : 'c', `${f.tabla} debe ser ON DELETE ${SET_NULL.includes(f.tabla) ? 'SET NULL' : 'CASCADE'}`);
   });
 });
 
