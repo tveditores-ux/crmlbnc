@@ -5,16 +5,22 @@ const { normalizePhone, normalizeEmail } = require('./phone');
 const { CIVIL_STATUS } = require('./member-intake');
 
 /**
- * Registro pastoral: un solo enlace para que los pastores se registren ellos mismos, como los líderes
- * de grupo de cuidado con su enlace, pero su destino es la ficha de Personas con su función como rol.
- * Pide lo mismo que la ficha del líder (nombre, nacimiento, cédula, dirección, teléfono, correo,
- * congregación y foto) más el estado civil, y primero que nada la función: Pastor o Pastor asistente.
+ * Registro ministerial: un solo enlace para que pastores, diáconos y servidores de los ministerios (Nueva Vida,
+ * Consolidación, Alabanza…) se registren ellos mismos, como los líderes de grupo de cuidado con su enlace, pero su
+ * destino es la ficha de Personas con su función como rol. Pide lo mismo que la ficha del líder (nombre, nacimiento,
+ * cédula, dirección, teléfono, correo, congregación y foto) más el estado civil, y primero que nada la función o el
+ * ministerio (de la lista, u "Otro ministerio" escrito a mano). Si la función tiene el mismo nombre que un ministerio
+ * de la pestaña Ministerios, al aplicarse la persona queda también en ese ministerio.
  *  - Si su teléfono ya está en Personas y no trae nada distinto, la ficha se completa sola (solo llena
  *    lo vacío, y el rol solo si estaba vacío).
  *  - Si es alguien nuevo, o trae un dato distinto (también una función distinta a su rol), espera revisión.
  * Nunca cambia el consentimiento (opt_in) por sí solo: "quiero recibir recordatorios" queda como aviso.
  */
-const FUNCIONES = ['Pastor', 'Pastor asistente'];
+const FUNCIONES = [
+  'Pastor', 'Pastor asistente', 'Diácono', 'Diaconisa', 'Nueva Vida', 'Consolidación', 'Líder asesor', 'Líder de grupo de cuidado',
+  'Coordinador de ministerio', 'Alabanza', 'Intercesión', 'Iglesia de niños', 'Protocolo y ujieres', 'Medios y sonido',
+];
+const OTRO = 'Otro ministerio'; // con el nombre escrito a mano en funcion_otro
 const FIELDS = ['full_name', 'email', 'birth_date', 'cedula', 'address', 'civil_status', 'congregation'];
 const LABELS = {
   funcion: 'Función', full_name: 'Nombre y apellido', email: 'Correo', birth_date: 'Nacimiento', cedula: 'Cédula (C.I.)',
@@ -57,8 +63,14 @@ async function tokenIsValid(db, token) {
  */
 function parseSubmission(body, countryCode, today) {
   const errors = [];
-  const funcion = String(body.funcion ?? '').trim();
-  if (!FUNCIONES.includes(funcion)) errors.push('Elige tu función: Pastor o Pastor asistente.');
+  let funcion = String(body.funcion ?? '').trim();
+  if (funcion === OTRO) {
+    funcion = clean(body.funcion_otro, 60);
+    if (!funcion) errors.push('Escribe el nombre de tu ministerio.');
+  } else if (!FUNCIONES.includes(funcion)) {
+    funcion = '';
+    errors.push('Elige tu función o tu ministerio.');
+  }
 
   const full_name = clean(body.full_name, 120);
   if (!full_name) errors.push('Escribe tu nombre y apellido.');
@@ -102,7 +114,7 @@ function parseSubmission(body, countryCode, today) {
   if (photo.error) errors.push(photo.error);
 
   return {
-    value: { funcion: FUNCIONES.includes(funcion) ? funcion : '', full_name, phone, email, birth_date, cedula: ci.value, address, civil_status: CIVIL_STATUS.includes(civil) ? civil : '', congregation, wants_messages: body.wants_messages === '1' },
+    value: { funcion, full_name, phone, email, birth_date, cedula: ci.value, address, civil_status: CIVIL_STATUS.includes(civil) ? civil : '', congregation, wants_messages: body.wants_messages === '1' },
     photo,
     errors: [...new Set(errors)],
   };
@@ -172,6 +184,9 @@ async function apply(pool, submissionId, { auto = false, consent = false } = {})
       sets.push('profile_updated_at = now()', 'updated_at = now()');
       if (consent && sub.wants_messages) sets.push('opt_in = TRUE');
       await db.query(`UPDATE people SET ${sets.join(', ')} WHERE id = $1`, params);
+      // si la función es un ministerio de la pestaña Ministerios, la persona queda en él
+      const min = (await db.query('SELECT id FROM ministries WHERE lower(name) = lower($1)', [sub.funcion])).rows[0];
+      if (min) await db.query('INSERT INTO person_ministries (person_id, ministry_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [person.id, min.id]);
       if (sub.photo) {
         await db.query('INSERT INTO people_photos (person_id, data) VALUES ($1, $2) ON CONFLICT (person_id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()', [person.id, Buffer.from(sub.photo)]);
       }
@@ -207,4 +222,4 @@ async function listPending(db) {
 }
 const countPending = async (db) => (await db.query("SELECT count(*)::int AS n FROM pastor_submissions WHERE status = 'pendiente'")).rows[0].n;
 
-module.exports = { FUNCIONES, FIELDS, LABELS, SENSITIVE, getSettings, ensureToken, regenerateToken, setActive, tokenIsValid, parseSubmission, conflictsWith, submit, apply, discard, listPending, countPending };
+module.exports = { FUNCIONES, OTRO, FIELDS, LABELS, SENSITIVE, getSettings, ensureToken, regenerateToken, setActive, tokenIsValid, parseSubmission, conflictsWith, submit, apply, discard, listPending, countPending };

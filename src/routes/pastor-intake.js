@@ -11,7 +11,7 @@ const { CSS } = require('./care-remote');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
-/** Registro pastoral: un enlace para todos los pastores. Sin sesión; el enlace es el secreto. */
+/** Registro ministerial: un enlace para pastores, diáconos y servidores. Sin sesión; el enlace es el secreto. */
 function pastorIntakeRouter(ctx) {
   const { db, config } = ctx;
   const r = express.Router();
@@ -33,13 +33,14 @@ function pastorIntakeRouter(ctx) {
         .map((o) => `<option ${v[name] === o ? 'selected' : ''}>${esc(o)}</option>`)
         .join('')}</select>`;
     const t = (name, label, extra = '') => `<label for="${name}">${label}</label><input id="${name}" type="text" name="${name}" value="${esc(v[name] || '')}" ${extra}>`;
-    return `<h1>Registro pastoral</h1>
-      <p class="muted" style="font-size:14px">Llena esta planilla una sola vez para registrar tu ficha pastoral en <strong>${esc(config.churchName)}</strong>. Toma unos dos minutos. Tus datos solo los ve el equipo de la iglesia.</p>
+    return `<h1>Registro ministerial</h1>
+      <p class="muted" style="font-size:14px">Llena esta planilla una sola vez para registrar tu ficha de servicio en <strong>${esc(config.churchName)}</strong>. Toma unos dos minutos. Tus datos solo los ve el equipo de la iglesia.</p>
       ${errors.length ? `<div class="flash err">${errors.map(esc).join('<br>')}</div>` : ''}
       <form method="post" autocomplete="off">
         <div class="hp" aria-hidden="true"><label>No llenar<input type="text" name="web" tabindex="-1"></label></div>
-        <h2>Tu función</h2>
-        ${sel('funcion', '¿Cuál es tu función?', intake.FUNCIONES, 'Elige…', true)}
+        <h2>Tu función o ministerio</h2>
+        ${sel('funcion', '¿Cuál es tu función o en qué ministerio sirves?', [...intake.FUNCIONES, intake.OTRO], 'Elige…', true)}
+        <div id="otro_box" ${v.funcion === intake.OTRO ? '' : 'style="display:none"'}>${t('funcion_otro', '¿Cuál ministerio?', 'maxlength="60" placeholder="Ej.: Evangelismo"')}</div>
         <h2>Tus datos</h2>
         ${t('full_name', 'Nombre y apellido', 'maxlength="120" required placeholder="Nombre y apellido"')}
         <label for="phone">Teléfono (WhatsApp)</label><input id="phone" type="tel" inputmode="tel" name="phone" required value="${esc(v.phone || '')}" placeholder="0414-000.00.00">
@@ -62,19 +63,20 @@ function pastorIntakeRouter(ctx) {
         <label class="check"><input type="checkbox" name="wants_messages" value="1" ${v.wants_messages === '1' ? 'checked' : ''}> Quiero recibir recordatorios de la iglesia por WhatsApp</label>
         <p class="muted" style="font-size:13px;margin:4px 0 0">Es opcional. La iglesia te lo confirmará antes de escribirte.</p>
         <button class="go">Enviar mi registro</button>
-      </form>${photoScript({ required: false })}`;
+      </form>${photoScript({ required: false })}
+      <script>(function(){var s=document.getElementById('funcion'),b=document.getElementById('otro_box');function f(){b.style.display=s.value===${JSON.stringify(intake.OTRO)}?'':'none';}s.addEventListener('change',f);f();})();</script>`;
   }
 
   r.get(
-    '/pastores/:token',
+    ['/ministerio/:token', '/pastores/:token'],
     ah(async (req, res) => {
       if (!(await intake.tokenIsValid(db, req.params.token))) return send(res, invalid());
-      send(res, shell('Registro pastoral', form()));
+      send(res, shell('Registro ministerial', form()));
     })
   );
 
   r.post(
-    '/pastores/:token',
+    ['/ministerio/:token', '/pastores/:token'],
     ah(async (req, res) => {
       if (!(await intake.tokenIsValid(db, req.params.token))) return send(res, invalid());
       if (req.body.web) return send(res, shell('Gracias', '<div class="ok">Gracias.</div>')); // trampa para robots
@@ -84,7 +86,7 @@ function pastorIntakeRouter(ctx) {
       const sub = intake.parseSubmission(req.body, config.defaultCountryCode, today());
       if (sub.errors.length) {
         const keep = sub.photo.error ? {} : { photo_data: req.body.photo_data };
-        return send(res, shell('Registro pastoral', form({ ...req.body, ...keep }, sub.errors), 400));
+        return send(res, shell('Registro ministerial', form({ ...req.body, ...keep }, sub.errors), 400));
       }
       const out = await intake.submit(db, sub);
       send(
