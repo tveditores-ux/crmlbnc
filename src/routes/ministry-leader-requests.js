@@ -54,7 +54,7 @@ function ministryLeaderRequestsRouter(ctx) {
         res,
         'Líderes de ministerios de desarrollo',
         `<p><a href="/personas">← Personas</a> · <a href="/ministerios">Ministerios</a></p><h1>Líderes de ministerios de desarrollo</h1>
-        <p class="sub">Un solo enlace para los líderes de los ministerios de desarrollo, que son solo los seis cargados en Ministerios (Alabanza, Anfitriones, Diaconado, Nueva Vida, Medios e Intercesión): cada líder lo abre, elige su ministerio y su cargo, llena su ficha —la misma de los líderes de grupo de cuidado, con el estado civil— y la envía. Los ministerios congregacionales (Niños, Jóvenes, Matrimonios, Mujeres, Hombres…) ya van como congregación en la planilla. Si su teléfono ya está en Personas y no trae nada distinto, su ficha se completa sola; si es alguien nuevo o trae un dato distinto, queda en <a href="/personas/ministerios-desarrollo/respuestas">Respuestas de líderes de desarrollo</a> para que tú lo apruebes. Al guardarse, la persona queda en su ministerio y, si es el líder y el ministerio no tenía coordinador, queda como coordinador.</p>
+        <p class="sub">Un solo enlace para los líderes de los ministerios de desarrollo, que son solo los seis cargados en Ministerios (Alabanza, Anfitriones, Diaconado, Nueva Vida, Medios e Intercesión): cada líder lo abre, elige su ministerio, dice a qué grupo de cuidado pertenece o asiste, llena su ficha —la misma de los líderes de grupo de cuidado, con el estado civil— y la envía. Los ministerios congregacionales (Niños, Jóvenes, Matrimonios, Mujeres, Hombres…) ya van como congregación en la planilla. Si su teléfono ya está en Personas y no trae nada distinto, su ficha se completa sola; si es alguien nuevo o trae un dato distinto, queda en <a href="/personas/ministerios-desarrollo/respuestas">Respuestas de líderes de desarrollo</a> para que tú lo apruebes. Al guardarse, la persona queda en su ministerio y, si es el líder y el ministerio no tenía coordinador, queda como coordinador.</p>
         ${waiting ? `<div class="flash ok"><a href="/personas/ministerios-desarrollo/respuestas">${waiting} registro${waiting === 1 ? '' : 's'} por revisar →</a></div>` : ''}
         ${cards ? `<h3>Personas por ministerio de desarrollo</h3><div class="grid">${cards}</div>` : ''}
         <div class="card"><h3>Enlace de líderes de ministerios de desarrollo</h3>
@@ -102,16 +102,16 @@ function ministryLeaderRequestsRouter(ctx) {
       const cards = pending
         .map((s) => {
           const rows = [
-            ...(['ministerio', 'cargo', ...intake.FIELDS].map((f) => {
+            ...(['ministerio', 'grupo_cuidado', ...intake.FIELDS].map((f) => {
               const cur = s['cur_' + f];
               const val = s[f];
               if (!val || (cur !== undefined && val === (cur ?? ''))) return '';
-              if ((f === 'ministerio' || f === 'cargo') && cur === undefined) return `<tr><td class="muted">${esc(intake.LABELS[f])}</td><td><span class="muted">—</span></td><td><strong>${esc(val)}</strong></td></tr>`;
+              if ((f === 'ministerio' || f === 'grupo_cuidado') && cur === undefined) return `<tr><td class="muted">${esc(intake.LABELS[f])}</td><td><span class="muted">—</span></td><td><strong>${esc(val)}</strong></td></tr>`;
               return `<tr><td class="muted">${esc(intake.LABELS[f])}</td><td>${cur ? esc(showVal(f, cur)) : '<span class="muted">—</span>'}</td><td><strong>${esc(showVal(f, val))}</strong></td></tr>`;
             })),
           ].join('');
           return `<div class="card">
-            <h3 style="margin-top:0">${esc(s.full_name)} <span class="badge">${esc(s.ministerio)}</span> <span class="badge">${esc(s.cargo)}</span> ${s.person_id ? '<span class="badge b-warn">Ya está en Personas, con datos distintos</span>' : '<span class="badge b-warn">Persona nueva</span>'}</h3>
+            <h3 style="margin-top:0">${esc(s.full_name)} <span class="badge">${esc(s.ministerio)}</span> ${s.grupo_cuidado ? `<span class="badge">${esc(s.grupo_cuidado)}</span>` : ''} ${s.person_id ? '<span class="badge b-warn">Ya está en Personas, con datos distintos</span>' : '<span class="badge b-warn">Persona nueva</span>'}</h3>
             <p class="muted" style="font-size:13px">${esc(displayPhone(s.phone))} · recibido ${esc(short(new Date(s.created_at).toLocaleDateString('en-CA', { timeZone: config.timezone })))}</p>
             ${s.has_photo ? `<img src="/personas/ministerios-desarrollo/respuestas/${s.id}/foto" alt="Foto enviada" width="96" height="96" style="border-radius:16px;object-fit:cover;float:right;margin:0 0 8px 12px">` : ''}
             <div class="table-scroll"><table><tr><th></th><th>Ahora</th><th>Envió</th></tr>${rows || '<tr><td colspan="3" class="muted">No trae cambios.</td></tr>'}</table></div>
@@ -126,7 +126,7 @@ function ministryLeaderRequestsRouter(ctx) {
         res,
         'Respuestas de líderes de desarrollo',
         `<p><a href="/personas/ministerios-desarrollo">← Líderes de ministerios de desarrollo</a></p><h1>Registros de líderes de desarrollo por revisar</h1>
-        <p class="sub">Lo que coincide con una ficha y no trae nada distinto se guarda solo y no pasa por aquí. Al aprobar, la persona queda en su <strong>ministerio</strong> (y como coordinadora si es la líder y el ministerio no tenía coordinador), y se crea <strong>sin consentimiento</strong> (salvo que marques la casilla si lo pidió en la planilla).</p>
+        <p class="sub">Lo que coincide con una ficha y no trae nada distinto se guarda solo y no pasa por aquí. Al aprobar, la persona queda en su <strong>ministerio</strong> (y como coordinadora si el ministerio no tenía coordinador) y en la lista de gente de su <strong>grupo de cuidado</strong>, si dijo a cuál asiste; y se crea <strong>sin consentimiento</strong> (salvo que marques la casilla si lo pidió en la planilla).</p>
         ${cards || '<p class="muted">No hay registros pendientes.</p>'}`
       );
     })
