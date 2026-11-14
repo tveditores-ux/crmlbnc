@@ -39,8 +39,7 @@ function ministryLeaderIntakeRouter(ctx) {
       <form method="post" autocomplete="off">
         <div class="hp" aria-hidden="true"><label>No llenar<input type="text" name="web" tabindex="-1"></label></div>
         <h2>Tu ministerio de desarrollo</h2>
-        ${sel('ministerio', '¿Qué ministerio de desarrollo lideras?', [...options, intake.OTRO], 'Elige…', true)}
-        <div id="otro_box" ${v.ministerio === intake.OTRO ? '' : 'style="display:none"'}>${t('ministerio_otro', '¿Cuál ministerio?', 'maxlength="60" placeholder="Ej.: Evangelismo"')}</div>
+        ${sel('ministerio', '¿Qué ministerio de desarrollo lideras?', options, 'Elige…', true)}
         ${sel('cargo', '¿Cuál es tu cargo en el ministerio?', intake.CARGOS, 'Elige…', true)}
         <h2>Tus datos</h2>
         ${t('full_name', 'Nombre y apellido', 'maxlength="120" required placeholder="Nombre y apellido"')}
@@ -64,8 +63,7 @@ function ministryLeaderIntakeRouter(ctx) {
         <label class="check"><input type="checkbox" name="wants_messages" value="1" ${v.wants_messages === '1' ? 'checked' : ''}> Quiero recibir recordatorios de la iglesia por WhatsApp</label>
         <p class="muted" style="font-size:13px;margin:4px 0 0">Es opcional. La iglesia te lo confirmará antes de escribirte.</p>
         <button class="go">Enviar mi registro</button>
-      </form>${photoScript({ required: false })}
-      <script>(function(){var s=document.getElementById('ministerio'),b=document.getElementById('otro_box');function f(){b.style.display=s.value===${JSON.stringify(intake.OTRO)}?'':'none';}s.addEventListener('change',f);f();})();</script>`;
+      </form>${photoScript({ required: false })}`;
   }
 
   r.get(

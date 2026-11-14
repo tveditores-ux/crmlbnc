@@ -7,14 +7,17 @@ const { CIVIL_STATUS } = require('./member-intake');
 
 /**
  * Líderes de ministerios de desarrollo: un solo enlace para que los líderes de los ministerios de
- * desarrollo (Alabanza, Diaconado, Nueva Vida, Anfitriones, Medios y sonido, Intercesión,
- * Consolidación, Protocolo y ujieres…) envíen ellos mismos su ficha, como los pastores con el
- * registro ministerial, pero con un enlace y una bandeja aparte, solo para ellos.
+ * desarrollo envíen ellos mismos su ficha, como los pastores con el registro ministerial, pero
+ * con un enlace y una bandeja aparte, solo para ellos.
+ * Los ministerios de desarrollo son SOLO los seis cargados en la pestaña Ministerios del CRM
+ * (confirmados por Eliezer, 2026-11-14): Alabanza, Anfitriones, Diaconado, Nueva Vida, Medios e
+ * Intercesión («Oración» es este mismo ministerio). Nada más: ni Consolidación ni Protocolo y
+ * ujieres (esos salen de las funciones del registro ministerial, no de Ministerios), ni Iglesia
+ * en línea (quedó fuera por decisión de Eliezer), y tampoco «Otro ministerio».
  * Los ministerios congregacionales (Niños, Preadolescentes, Adolescentes, Jóvenes, Matrimonios,
  * Mujeres, Hombres…) NO van aquí: ya van como «congregación» en esta misma planilla.
- * La lista de ministerios a elegir sale de la pestaña Ministerios del panel (los que la iglesia
- * tenga creados), completada con los de desarrollo de siempre (DESARROLLO) que aún no estén,
- * más «Otro ministerio» escrito a mano.
+ * Al elegir, se usa el nombre tal como está cargado en Ministerios si coincide por raíz sin
+ * tildes (p. ej. si estuviera «Diáconos» en vez de «Diaconado»), para enlazar con ese ministerio.
  * Pide lo mismo que la ficha del líder de grupo de cuidado (nombre, nacimiento, cédula, dirección,
  * teléfono, correo, congregación y foto) más el estado civil, y primero el ministerio y el cargo.
  *  - Si su teléfono ya está en Personas y no trae nada distinto, la ficha se completa sola (solo
@@ -24,10 +27,7 @@ const { CIVIL_STATUS } = require('./member-intake');
  * el líder del ministerio y ese ministerio aún no tiene coordinador, queda como su coordinador.
  * Nunca cambia el consentimiento (opt_in) por sí solo: "quiero recibir recordatorios" queda como aviso.
  */
-const DESARROLLO = [
-  'Alabanza', 'Anfitriones', 'Consolidación', 'Diaconado', 'Intercesión', 'Medios y sonido', 'Nueva Vida', 'Protocolo y ujieres',
-];
-const OTRO = 'Otro ministerio'; // con el nombre escrito a mano en ministerio_otro
+const DESARROLLO = ['Alabanza', 'Anfitriones', 'Diaconado', 'Intercesión', 'Medios', 'Nueva Vida'];
 const CARGOS = ['Líder del ministerio', 'Sublíder / asistente'];
 const FIELDS = ['full_name', 'email', 'birth_date', 'cedula', 'address', 'civil_status', 'congregation'];
 const LABELS = {
@@ -38,7 +38,7 @@ const SENSITIVE = ['birth_date', 'cedula', 'address']; // se borran de la respue
 
 const clean = (v, n) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
 const keyOf = (s) => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
-/** Primera palabra sin tildes: «Diaconado» y «Diáconos» comparten raíz («diacon…»), «Medios» y «Medios y sonido» también. */
+/** Primera palabra sin tildes: «Diaconado» y «Diáconos» comparten raíz («diacon…»). */
 const stemOf = (s) => keyOf(s).split(' ')[0] || '';
 const sameMinistry = (a, b) => {
   const x = stemOf(a);
@@ -73,15 +73,14 @@ async function tokenIsValid(db, token) {
 
 /* --------------------------- Ministerios a elegir --------------------------- */
 /**
- * Los ministerios de desarrollo que el líder puede elegir: los de la pestaña Ministerios del panel
- * más los de desarrollo de siempre que todavía no estén creados (con la raíz comparada sin tildes,
- * para no ofrecer «Diaconado» si ya existe «Diáconos», ni «Medios y sonido» si ya existe «Medios»).
+ * Los ministerios de desarrollo que el líder puede elegir: SOLO los seis de DESARROLLO, tal como
+ * están cargados en la pestaña Ministerios. Si el nombre cargado difiere por tildes o por la raíz
+ * (p. ej. «Diáconos» por «Diaconado»), se ofrece el nombre cargado, para enlazar con ese ministerio
+ * y no crear uno repetido. Ningún otro ministerio del panel entra aquí.
  */
 async function ministryOptions(db) {
   const rows = (await db.query('SELECT name FROM ministries ORDER BY name')).rows.map((r) => r.name).filter(Boolean);
-  const out = [...rows];
-  for (const name of DESARROLLO) if (!out.some((m) => sameMinistry(m, name))) out.push(name);
-  return out.sort((a, b) => a.localeCompare(b, 'es'));
+  return DESARROLLO.map((name) => rows.find((m) => sameMinistry(m, name)) || name);
 }
 
 /* ------------------------------ Validación ------------------------------ */
@@ -93,10 +92,7 @@ async function ministryOptions(db) {
 function parseSubmission(body, ministryNames, countryCode, today) {
   const errors = [];
   let ministerio = String(body.ministerio ?? '').trim();
-  if (ministerio === OTRO) {
-    ministerio = clean(body.ministerio_otro, 60);
-    if (!ministerio) errors.push('Escribe el nombre de tu ministerio.');
-  } else if (!ministryNames.includes(ministerio)) {
+  if (!ministryNames.includes(ministerio)) {
     ministerio = '';
     errors.push('Elige tu ministerio de desarrollo.');
   }
@@ -255,4 +251,4 @@ async function listPending(db) {
 }
 const countPending = async (db) => (await db.query("SELECT count(*)::int AS n FROM ministry_leader_submissions WHERE status = 'pendiente'")).rows[0].n;
 
-module.exports = { DESARROLLO, OTRO, CARGOS, FIELDS, LABELS, SENSITIVE, getSettings, ensureToken, regenerateToken, setActive, tokenIsValid, ministryOptions, sameMinistry, parseSubmission, conflictsWith, submit, apply, discard, listPending, countPending };
+module.exports = { DESARROLLO, CARGOS, FIELDS, LABELS, SENSITIVE, getSettings, ensureToken, regenerateToken, setActive, tokenIsValid, ministryOptions, sameMinistry, parseSubmission, conflictsWith, submit, apply, discard, listPending, countPending };

@@ -24,7 +24,7 @@ function ministryLeaderRequestsRouter(ctx) {
     res.send(Buffer.from(buf));
   };
 
-  const DEFAULT_ASK = `Hola, la paz del Señor. Estamos registrando la ficha de los líderes de los ministerios de desarrollo de ${config.churchName || 'la iglesia'} (Alabanza, Diaconado, Nueva Vida, Anfitriones, Medios…). ¿Me ayudas llenando esta planilla desde tu teléfono? Son dos minutos: {enlace}`;
+  const DEFAULT_ASK = `Hola, la paz del Señor. Estamos registrando la ficha de los líderes de los ministerios de desarrollo de ${config.churchName || 'la iglesia'} (Alabanza, Anfitriones, Diaconado, Nueva Vida, Medios e Intercesión). ¿Me ayudas llenando esta planilla desde tu teléfono? Son dos minutos: {enlace}`;
 
   r.get(
     '/personas/ministerios-desarrollo',
@@ -54,7 +54,7 @@ function ministryLeaderRequestsRouter(ctx) {
         res,
         'Líderes de ministerios de desarrollo',
         `<p><a href="/personas">← Personas</a> · <a href="/ministerios">Ministerios</a></p><h1>Líderes de ministerios de desarrollo</h1>
-        <p class="sub">Un solo enlace para los líderes de los ministerios de desarrollo (Alabanza, Diaconado, Nueva Vida, Anfitriones, Medios y sonido, Intercesión, Consolidación, Protocolo y ujieres, y los demás que estén en la pestaña Ministerios): cada líder lo abre, elige su ministerio y su cargo, llena su ficha —la misma de los líderes de grupo de cuidado, con el estado civil— y la envía. Los ministerios congregacionales (Niños, Jóvenes, Matrimonios, Mujeres, Hombres…) ya van como congregación en la planilla. Si su teléfono ya está en Personas y no trae nada distinto, su ficha se completa sola; si es alguien nuevo o trae un dato distinto, queda en <a href="/personas/ministerios-desarrollo/respuestas">Respuestas de líderes de desarrollo</a> para que tú lo apruebes. Al guardarse, la persona queda en su ministerio y, si es el líder y el ministerio no tenía coordinador, queda como coordinador.</p>
+        <p class="sub">Un solo enlace para los líderes de los ministerios de desarrollo, que son solo los seis cargados en Ministerios (Alabanza, Anfitriones, Diaconado, Nueva Vida, Medios e Intercesión): cada líder lo abre, elige su ministerio y su cargo, llena su ficha —la misma de los líderes de grupo de cuidado, con el estado civil— y la envía. Los ministerios congregacionales (Niños, Jóvenes, Matrimonios, Mujeres, Hombres…) ya van como congregación en la planilla. Si su teléfono ya está en Personas y no trae nada distinto, su ficha se completa sola; si es alguien nuevo o trae un dato distinto, queda en <a href="/personas/ministerios-desarrollo/respuestas">Respuestas de líderes de desarrollo</a> para que tú lo apruebes. Al guardarse, la persona queda en su ministerio y, si es el líder y el ministerio no tenía coordinador, queda como coordinador.</p>
         ${waiting ? `<div class="flash ok"><a href="/personas/ministerios-desarrollo/respuestas">${waiting} registro${waiting === 1 ? '' : 's'} por revisar →</a></div>` : ''}
         ${cards ? `<h3>Personas por ministerio de desarrollo</h3><div class="grid">${cards}</div>` : ''}
         <div class="card"><h3>Enlace de líderes de ministerios de desarrollo</h3>

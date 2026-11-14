@@ -12,7 +12,7 @@ const config = { timezone: 'America/Caracas', defaultCountryCode: '58', churchNa
 const TODAY = new Date().toLocaleDateString('en-CA', { timeZone: config.timezone });
 const fakeJpeg = (fill = 7) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(400, fill), Buffer.from([0xff, 0xd9])]);
 const dataUrl = (buf) => `data:image/jpeg;base64,${buf.toString('base64')}`;
-const OPTIONS = ['Alabanza', 'Diaconado', 'Medios', 'Nueva Vida'];
+const OPTIONS = ['Alabanza', 'Anfitriones', 'Diaconado', 'Intercesión', 'Medios', 'Nueva Vida'];
 
 // ministerio + cargo + la ficha del líder + estado civil: todo obligatorio menos correo y foto
 const base = {
@@ -31,8 +31,9 @@ test('validación: el ministerio de desarrollo y el cargo mandan; la ficha es la
   assert.ok(parse({ ministerio: '' }).errors.includes('Elige tu ministerio de desarrollo.'));
   assert.ok(parse({ ministerio: 'Matrimonios' }).errors.includes('Elige tu ministerio de desarrollo.')); // congregacional: no va aquí
   assert.ok(parse({ ministerio: 'Niños' }).errors.includes('Elige tu ministerio de desarrollo.'));
-  assert.equal(parse({ ministerio: intake.OTRO, ministerio_otro: '  Evangelismo ' }).value.ministerio, 'Evangelismo');
-  assert.ok(parse({ ministerio: intake.OTRO, ministerio_otro: '' }).errors.includes('Escribe el nombre de tu ministerio.'));
+  // solo los seis cargados en Ministerios: estos salen de las funciones del registro ministerial, no de Ministerios
+  for (const m of ['Consolidación', 'Protocolo y ujieres', 'Medios y sonido', 'Iglesia en línea', 'Oración', 'Otro ministerio', 'Evangelismo']) assert.ok(parse({ ministerio: m }).errors.includes('Elige tu ministerio de desarrollo.'), m);
+  for (const m of OPTIONS) assert.equal(parse({ ministerio: m }).value.ministerio, m);
   assert.ok(parse({ cargo: '' }).errors.includes('Elige tu cargo en el ministerio.'));
   assert.ok(parse({ cargo: 'Pastor' }).errors.includes('Elige tu cargo en el ministerio.'));
   assert.ok(parse({ cedula: '' }).errors.includes('Escribe tu cédula de identidad.'));
@@ -43,13 +44,13 @@ test('validación: el ministerio de desarrollo y el cargo mandan; la ficha es la
   assert.equal(parse({ photo_data: '' }).photo.buffer, null); // la foto es opcional
 });
 
-test('los ministerios a elegir: los del panel más los de desarrollo que falten, sin repetir por raíz', () => {
+test('los ministerios a elegir: solo los seis de desarrollo cargados en el CRM', () => {
+  assert.deepEqual(intake.DESARROLLO, ['Alabanza', 'Anfitriones', 'Diaconado', 'Intercesión', 'Medios', 'Nueva Vida']); // confirmados por Eliezer, 2026-11-14
   assert.equal(intake.sameMinistry('Diáconos', 'Diaconado'), true);
-  assert.equal(intake.sameMinistry('Medios', 'Medios y sonido'), true);
   assert.equal(intake.sameMinistry('Anfitriónes', 'Anfitriones'), true);
   assert.equal(intake.sameMinistry('Alabanza', 'Nueva Vida'), false);
-  assert.ok(intake.DESARROLLO.includes('Alabanza') && intake.DESARROLLO.includes('Nueva Vida') && intake.DESARROLLO.includes('Anfitriones'));
   for (const c of ['Niños', 'Jóvenes', 'Adolescentes', 'Hombres', 'Mujeres', 'Matrimonios']) assert.ok(!intake.DESARROLLO.includes(c), c); // congregacionales fuera
+  for (const x of ['Consolidación', 'Protocolo y ujieres', 'Medios y sonido', 'Iglesia en línea', 'Oración']) assert.ok(!intake.DESARROLLO.includes(x), x); // no van: no están en Ministerios o quedaron fuera
 });
 
 async function withApp(t, fn) {
@@ -84,8 +85,8 @@ test('el formulario público: pide ministerio, cargo, cédula y estado civil; en
     const html = await r.text();
     assert.match(html, /Líderes de ministerios de desarrollo/);
     assert.match(html, /¿Qué ministerio de desarrollo lideras\?/);
-    for (const m of ['Alabanza', 'Diaconado', 'Nueva Vida', 'Anfitriones', 'Intercesión']) assert.match(html, new RegExp(`<option[^>]*>${m}</option>`), m);
-    assert.match(html, /<option[^>]*>Otro ministerio<\/option>/);
+    for (const m of ['Alabanza', 'Anfitriones', 'Diaconado', 'Intercesión', 'Medios', 'Nueva Vida']) assert.match(html, new RegExp(`<option[^>]*>${m}</option>`), m);
+    for (const x of ['Iglesia en línea', 'Consolidación', 'Protocolo y ujieres', 'Otro ministerio']) assert.ok(!html.includes(`>${x}</option>`), x);
     assert.match(html, /Líder del ministerio/);
     assert.match(html, /Cédula de identidad \(C\.I\.\)/);
     assert.match(html, /Estado civil/);
