@@ -18,6 +18,7 @@ const LABELS = {
   consolidation: 'registros de consolidación (con su seguimiento y llamadas)',
   people_photos: 'fotos de personas',
   member_submissions: 'respuestas del enlace "Mis datos"',
+  ministry_leader_submissions: 'respuestas del enlace de líderes de ministerios de desarrollo',
   ministries: 'ministerios que quedan sin coordinador',
   agent_messages: 'conversaciones del asistente de WhatsApp (se conservan, sin nombre)',
   nueva_vida: 'registros de Nueva Vida (se conservan, sin el vínculo a la ficha)',
