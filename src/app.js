@@ -32,6 +32,7 @@ const { pastorRequestsRouter } = require('./routes/pastor-requests');
 const { configuracionRouter } = require('./routes/configuracion');
 const { calendarRouter } = require('./routes/calendar');
 const { graceRemotoRouter } = require('./routes/grace-remoto');
+const { oracionRouter } = require('./routes/oracion');
 const { layout } = require('./views/layout');
 const { esc } = require('./util');
 const auth = require('./auth');
@@ -157,6 +158,7 @@ function createApp(ctx) {
   app.use(redilPreguntasRouter(ctx));
   app.use(calendarRouter(ctx));
   app.use(graceRemotoRouter(ctx));
+  app.use(oracionRouter(ctx));
   app.use(configuracionRouter(ctx));
   app.use(adminRouter(ctx));
 

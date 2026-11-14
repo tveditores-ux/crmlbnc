@@ -29,6 +29,7 @@ const FIELDS = {
   reportReminder: { env: 'REPORT_REMINDER', label: 'Recordatorio de reporte de GdC', secret: false },
   reportReminderHour: { env: 'REPORT_REMINDER_HOUR', label: 'Hora del recordatorio', secret: false },
   reportReminderTemplate: { env: 'REPORT_REMINDER_TEMPLATE', label: 'Plantilla del recordatorio', secret: false },
+  prayerTemplate: { env: 'PRAYER_TEMPLATE', label: 'Plantilla del buzón de oración', secret: false },
 };
 const PROVIDERS = ['meta', 'wecall'];
 const MAX_SECRET = 300;
@@ -170,6 +171,7 @@ async function apply(ctx) {
   const rh = Number(pick('reportReminderHour', null));
   config.agent.reportReminderHour = Number.isInteger(rh) && rh >= 0 && rh <= 23 && pick('reportReminderHour', null) !== null ? rh : a.reportReminderHour ?? 9;
   config.agent.reportReminderTemplate = pick('reportReminderTemplate', a.reportReminderTemplate || '');
+  config.agent.prayerTemplate = pick('prayerTemplate', a.prayerTemplate || '');
   // el canal se reconstruye con la configuración nueva; quien lo usa lo lee de ctx.channels en cada envío
   const fresh = createChannels(config, { fetchImpl: ctx.fetchImpl });
   ctx.channels.whatsapp = fresh.whatsapp;
@@ -201,6 +203,7 @@ function sourceOf(key, stored, config) {
     reportReminder: env.agent.reportReminder ? 'si' : '',
     reportReminderHour: env.agent.reportReminderHour !== undefined && env.agent.reportReminderHour !== 9 ? String(env.agent.reportReminderHour) : '',
     reportReminderTemplate: env.agent.reportReminderTemplate,
+    prayerTemplate: env.agent.prayerTemplate,
   }[key];
   return v ? 'railway' : 'falta';
 }

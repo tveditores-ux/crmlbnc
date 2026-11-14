@@ -12,6 +12,7 @@ const { formatEventDate } = require('./time');
 const brain = require('./agent-brain');
 const wecall = require('./channels/wecall');
 const pastoral = require('./agent-pastoral');
+const prayer = require('./prayer');
 
 const FALLBACK_REPLY =
   'Gracias por escribir. Voy a pasar tu mensaje a tu líder o al equipo pastoral para que te respondan personalmente.';
@@ -450,6 +451,8 @@ async function handleInbound(ctx, { from, replyTo, body, type }, { fetchImpl, no
         WHERE id = (SELECT max(id) FROM agent_messages WHERE phone = $1 AND direction = 'in')`,
       [from, out.reason || 'Pidió atención de un líder o pastor']
     );
+    // una petición de oración queda además en el buzón, para enviarla al líder del grupo o al pastor de la congregación
+    if (!isPastor) await prayer.fromAgent(db, { person, text, reason: out.reason });
   }
   return { handledAs: out.escalate ? 'agente_escalado' : 'agente' };
 }

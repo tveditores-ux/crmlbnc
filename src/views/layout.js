@@ -1,4 +1,5 @@
 'use strict';
+const { GUIDE_SCRIPT, GUIDE_CSS } = require('./guide');
 const { esc } = require('../util');
 
 const { CSS: CHARTS_CSS } = require('./charts');
@@ -101,6 +102,7 @@ const NAV = [
   ['/consolidacion', 'Consolidación'],
   ['/bautizados', 'Bautizados'],
   ['/grupos', 'Grupos de cuidado'],
+  ['/oracion', 'Buzón de oración'],
   ['/guia', 'Guía del líder'],
   ['/reunion-equipo', 'Reunión de equipo'],
   ['/redil/libreta', 'Libretica REDIL'],
@@ -167,11 +169,11 @@ function layout({ title, active, body, config, query, bare = false }) {
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<title>${esc(title)} · ${esc(church)}</title><style>${CSS}</style></head><body${bare ? '' : ' class="con-menu"'}>
+<title>${esc(title)} · ${esc(church)}</title><style>${CSS}${bare ? '' : GUIDE_CSS}</style></head><body${bare ? '' : ' class="con-menu"'}>
 ${dryBanner}
 <header class="top"><div class="wrap"><div class="brand">Comunicación<small>${esc(church)}</small></div>${nav}</div></header>
 <main><div class="wrap">${flash(query)}${body}</div></main>
-${bare ? '' : TABLE_FILTER_SCRIPT}</body></html>`;
+${bare ? '' : TABLE_FILTER_SCRIPT + GUIDE_SCRIPT}</body></html>`;
 }
 
 const STATUS_BADGE = {
