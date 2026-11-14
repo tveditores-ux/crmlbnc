@@ -31,6 +31,7 @@ const { pastorIntakeRouter } = require('./routes/pastor-intake');
 const { pastorRequestsRouter } = require('./routes/pastor-requests');
 const { ministryLeaderIntakeRouter } = require('./routes/ministry-leader-intake');
 const { ministryLeaderRequestsRouter } = require('./routes/ministry-leader-requests');
+const { registrosRouter } = require('./routes/registros');
 const { configuracionRouter } = require('./routes/configuracion');
 const { calendarRouter } = require('./routes/calendar');
 const { graceRemotoRouter } = require('./routes/grace-remoto');
@@ -150,6 +151,7 @@ function createApp(ctx) {
   app.use(memberRequestsRouter(ctx));
   app.use(pastorRequestsRouter(ctx));
   app.use(ministryLeaderRequestsRouter(ctx));
+  app.use(registrosRouter(ctx)); // «Registros»: todos los enlaces de registro en un solo lugar
   app.use(attendanceRouter(ctx));
   app.use(membersRouter(ctx));
   app.use(duplicatesRouter(ctx));
