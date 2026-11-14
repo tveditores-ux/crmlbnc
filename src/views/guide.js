@@ -15,6 +15,7 @@ const NAV_HELP = {
   '/eventos': 'Eventos: crea los eventos de la iglesia y manda los recordatorios por WhatsApp (1 mes, 1 semana y 1 día antes). Aquí ves quién confirmó y quién no puede.',
   '/calendario': 'Calendario: todo en un mes a la vista, eventos, cumpleaños de personas y de líderes, y reuniones.',
   '/personas': 'Personas: la lista de toda la gente de la iglesia. Agregar, editar, buscar, marcar si es miembro o amigo y si aceptó recibir mensajes.',
+  '/registros': 'Registros: todos los enlaces de registro en un solo lugar (ministerios de desarrollo, registro ministerial, datos de las personas, líderes de grupos de cuidado y reporte semanal). Copiarlos, enviarlos por WhatsApp, apagarlos o generar uno nuevo.',
   '/ministerios': 'Ministerios: cada ministerio, su coordinador y quiénes sirven en él.',
   '/mensajes': 'Mensajes: lo que el sistema ha enviado por WhatsApp o correo y si llegó.',
   '/asistencia': 'Asistencia: el conteo de cada servicio (inicio, mitad y final, invitados, conversiones, servidores, pastores y niños). También los enlaces para registrarlo desde el teléfono.',

@@ -94,6 +94,7 @@ const NAV = [
   ['/eventos', 'Eventos'],
   ['/calendario', 'Calendario'],
   ['/personas', 'Personas'],
+  ['/registros', 'Registros'],
   ['/ministerios', 'Ministerios'],
   ['/mensajes', 'Mensajes'],
   ['/asistencia', 'Asistencia'],
