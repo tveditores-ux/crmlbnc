@@ -228,6 +228,7 @@ function adminRouter(ctx) {
           <a class="btn sec" href="/personas/duplicados">Unir duplicados</a>
           <a class="btn sec" href="/personas/solicitud">Pedir datos a las personas</a>
           <a class="btn sec" href="/personas/pastores">Registro ministerial</a>
+          <a class="btn sec" href="/personas/ministerios-desarrollo">Líderes de ministerios de desarrollo</a>
           <a class="btn sec" href="/personas/exportar.csv${esc(members.viewQuery(v))}">Descargar lista${filtered ? ' (con estos filtros)' : ''}</a></div>
         <div class="grid">
           <div class="card"><div class="stat" style="color:var(--ok)">${counts.miembro}</div><div class="stat-label">miembros</div></div>
@@ -550,7 +551,7 @@ function adminRouter(ctx) {
           [...rows].sort((a, b) => b.members - a.members).map((m) => ({ label: m.name, value: m.members })),
           { title: 'Miembros por ministerio' }
         )}</div>
-        <p class="muted" style="font-size:13px"><a href="/ministerios/unir">Unir ministerios repetidos</a></p>
+        <p class="muted" style="font-size:13px"><a href="/ministerios/unir">Unir ministerios repetidos</a> · <a href="/personas/ministerios-desarrollo">Pedir los datos a los líderes de ministerios de desarrollo</a></p>
         <div class="table-scroll"><table><tr><th>Ministerio</th><th>Coordinador</th><th>Miembros</th></tr>${
           rows
             .map(

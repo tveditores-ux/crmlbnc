@@ -124,6 +124,7 @@ async function mergePeople(pool, idA, idB, { inheritOptIn = false } = {}) {
     // 1b) Foto y respuestas del enlace "Mis datos": pasan a la ficha conservada (la foto solo si esta no tenía).
     await db.query('INSERT INTO people_photos (person_id, data, updated_at) SELECT $1, data, updated_at FROM people_photos WHERE person_id = $2 ON CONFLICT (person_id) DO NOTHING', [keep.id, other.id]);
     await db.query('UPDATE member_submissions SET person_id = $1 WHERE person_id = $2', [keep.id, other.id]);
+    await db.query('UPDATE ministry_leader_submissions SET person_id = $1 WHERE person_id = $2', [keep.id, other.id]);
 
     // 2) Ministerios: se unen; si la otra era coordinadora, ahora lo es la conservada.
     summary.ministries = (
