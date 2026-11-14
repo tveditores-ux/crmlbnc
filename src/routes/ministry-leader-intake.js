@@ -26,12 +26,19 @@ function ministryLeaderIntakeRouter(ctx) {
   const invalid = () =>
     shell('Enlace no válido', '<div class="card"><h1>Enlace no válido</h1><p class="muted">Este enlace ya no está activo. Pídele uno nuevo a la iglesia.</p></div>', 404);
 
-  function form(options, v = {}, errors = []) {
+  function form(options, groups, v = {}, errors = []) {
     const st = 'font-size:18px;padding:12px;width:100%;border-radius:10px;border:1px solid var(--line)';
     const sel = (name, label, opts, first, required = false) =>
       `<label for="${name}">${label}</label><select id="${name}" name="${name}" ${required ? 'required' : ''} style="${st}"><option value="">${first}</option>${opts
         .map((o) => `<option ${v[name] === o ? 'selected' : ''}>${esc(o)}</option>`)
         .join('')}</select>`;
+    const groupOpts = [
+      ...groups.map((g) => ({ value: String(g.id), label: g.leader_name ? `${g.name} — líder: ${g.leader_name}` : g.name })),
+      { value: intake.SIN_GRUPO, label: 'No asisto a un grupo de cuidado' },
+    ];
+    const selGrupo = `<label for="grupo_cuidado">¿A qué grupo de cuidado perteneces o asistes?</label><select id="grupo_cuidado" name="grupo_cuidado" required style="${st}"><option value="">Elige…</option>${groupOpts
+      .map((o) => `<option value="${esc(o.value)}" ${String(v.grupo_cuidado ?? '') === o.value ? 'selected' : ''}>${esc(o.label)}</option>`)
+      .join('')}</select>`;
     const t = (name, label, extra = '') => `<label for="${name}">${label}</label><input id="${name}" type="text" name="${name}" value="${esc(v[name] || '')}" ${extra}>`;
     return `<h1>Líderes de ministerios de desarrollo</h1>
       <p class="muted" style="font-size:14px">Llena esta planilla una sola vez para registrar tu ficha como líder de ministerio en <strong>${esc(config.churchName)}</strong>. Toma unos dos minutos. Tus datos solo los ve el equipo de la iglesia.</p>
@@ -40,7 +47,7 @@ function ministryLeaderIntakeRouter(ctx) {
         <div class="hp" aria-hidden="true"><label>No llenar<input type="text" name="web" tabindex="-1"></label></div>
         <h2>Tu ministerio de desarrollo</h2>
         ${sel('ministerio', '¿Qué ministerio de desarrollo lideras?', options, 'Elige…', true)}
-        ${sel('cargo', '¿Cuál es tu cargo en el ministerio?', intake.CARGOS, 'Elige…', true)}
+        ${selGrupo}
         <h2>Tus datos</h2>
         ${t('full_name', 'Nombre y apellido', 'maxlength="120" required placeholder="Nombre y apellido"')}
         <label for="phone">Teléfono (WhatsApp)</label><input id="phone" type="tel" inputmode="tel" name="phone" required value="${esc(v.phone || '')}" placeholder="0414-000.00.00">
@@ -70,7 +77,7 @@ function ministryLeaderIntakeRouter(ctx) {
     '/desarrollo/:token',
     ah(async (req, res) => {
       if (!(await intake.tokenIsValid(db, req.params.token))) return send(res, invalid());
-      send(res, shell('Líderes de ministerios de desarrollo', form(await intake.ministryOptions(db))));
+      send(res, shell('Líderes de ministerios de desarrollo', form(await intake.ministryOptions(db), await intake.careGroupOptions(db))));
     })
   );
 
@@ -83,10 +90,11 @@ function ministryLeaderIntakeRouter(ctx) {
         return send(res, shell('Demasiados envíos', '<div class="card"><h1>Demasiados envíos</h1><p class="muted">Espera un rato antes de enviar otro.</p></div>', 429));
       }
       const options = await intake.ministryOptions(db);
-      const sub = intake.parseSubmission(req.body, options, config.defaultCountryCode, today());
+      const groups = await intake.careGroupOptions(db);
+      const sub = intake.parseSubmission(req.body, options, groups, config.defaultCountryCode, today());
       if (sub.errors.length) {
         const keep = sub.photo.error ? {} : { photo_data: req.body.photo_data };
-        return send(res, shell('Líderes de ministerios de desarrollo', form(options, { ...req.body, ...keep }, sub.errors), 400));
+        return send(res, shell('Líderes de ministerios de desarrollo', form(options, groups, { ...req.body, ...keep }, sub.errors), 400));
       }
       const out = await intake.submit(db, sub);
       send(

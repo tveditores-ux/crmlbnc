@@ -13,20 +13,26 @@ const TODAY = new Date().toLocaleDateString('en-CA', { timeZone: config.timezone
 const fakeJpeg = (fill = 7) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(400, fill), Buffer.from([0xff, 0xd9])]);
 const dataUrl = (buf) => `data:image/jpeg;base64,${buf.toString('base64')}`;
 const OPTIONS = ['Alabanza', 'Anfitriones', 'Diaconado', 'Intercesión', 'Medios', 'Nueva Vida'];
+const GROUPS = [{ id: 7, name: 'Grupo Esperanza', leader_name: 'Ana Díaz' }];
 
-// ministerio + cargo + la ficha del líder + estado civil: todo obligatorio menos correo y foto
+// ministerio + grupo de cuidado + la ficha del líder + estado civil: todo obligatorio menos correo y foto (sin cargo)
 const base = {
-  ministerio: 'Alabanza', cargo: 'Líder del ministerio', full_name: 'María Torres', phone: '0414-000.00.22', bd_day: '15', bd_month: '06', bd_year: '1990',
+  ministerio: 'Alabanza', grupo_cuidado: 'ninguno', full_name: 'María Torres', phone: '0414-000.00.22', bd_day: '15', bd_month: '06', bd_year: '1990',
   cedula: 'V-19888777', address: 'Urbanización El Prado, casa 4', civil_status: 'Casado(a)', congregation: 'Mujeres',
 };
 
-test('validación: el ministerio de desarrollo y el cargo mandan; la ficha es la del líder más el estado civil', () => {
-  const parse = (extra) => intake.parseSubmission({ ...base, ...extra }, OPTIONS, '58', TODAY);
+test('validación: el ministerio de desarrollo y el grupo de cuidado mandan; la ficha es la del líder más el estado civil', () => {
+  const parse = (extra) => intake.parseSubmission({ ...base, ...extra }, OPTIONS, GROUPS, '58', TODAY);
   const ok = parse({});
   assert.deepEqual(ok.errors, []);
   assert.equal(ok.value.phone, '584140000022');
   assert.equal(ok.value.ministerio, 'Alabanza');
-  assert.equal(ok.value.cargo, 'Líder del ministerio');
+  assert.equal(ok.value.grupo_cuidado, ''); // «ninguno»: no asiste a un grupo de cuidado
+  assert.equal(ok.value.grupo_cuidado_id, null);
+  const conGrupo = parse({ grupo_cuidado: '7' });
+  assert.deepEqual(conGrupo.errors, []);
+  assert.equal(conGrupo.value.grupo_cuidado, 'Grupo Esperanza');
+  assert.equal(conGrupo.value.grupo_cuidado_id, 7);
 
   assert.ok(parse({ ministerio: '' }).errors.includes('Elige tu ministerio de desarrollo.'));
   assert.ok(parse({ ministerio: 'Matrimonios' }).errors.includes('Elige tu ministerio de desarrollo.')); // congregacional: no va aquí
@@ -34,8 +40,8 @@ test('validación: el ministerio de desarrollo y el cargo mandan; la ficha es la
   // solo los seis cargados en Ministerios: estos salen de las funciones del registro ministerial, no de Ministerios
   for (const m of ['Consolidación', 'Protocolo y ujieres', 'Medios y sonido', 'Iglesia en línea', 'Oración', 'Otro ministerio', 'Evangelismo']) assert.ok(parse({ ministerio: m }).errors.includes('Elige tu ministerio de desarrollo.'), m);
   for (const m of OPTIONS) assert.equal(parse({ ministerio: m }).value.ministerio, m);
-  assert.ok(parse({ cargo: '' }).errors.includes('Elige tu cargo en el ministerio.'));
-  assert.ok(parse({ cargo: 'Pastor' }).errors.includes('Elige tu cargo en el ministerio.'));
+  assert.ok(parse({ grupo_cuidado: '' }).errors.includes('Elige a qué grupo de cuidado perteneces o asistes.'));
+  assert.ok(parse({ grupo_cuidado: '99' }).errors.includes('Elige a qué grupo de cuidado perteneces o asistes.')); // grupo que no existe
   assert.ok(parse({ cedula: '' }).errors.includes('Escribe tu cédula de identidad.'));
   assert.ok(parse({ address: '' }).errors.includes('Escribe tu dirección.'));
   assert.ok(parse({ civil_status: '' }).errors.includes('Elige tu estado civil.'));
@@ -76,9 +82,10 @@ const tokenOf = async (db) => (await intake.ensureToken(db)).token;
 const person = async (db, phone) => (await db.query('SELECT * FROM people WHERE phone = $1', [phone])).rows[0];
 const count = async (db, table, where = '') => (await db.query(`SELECT count(*)::int AS n FROM ${table} ${where}`)).rows[0].n;
 
-test('el formulario público: pide ministerio, cargo, cédula y estado civil; enlaces malos o apagados no abren', async (t) => {
+test('el formulario público: pide ministerio, grupo de cuidado, cédula y estado civil (sin cargo); enlaces malos o apagados no abren', async (t) => {
   await withApp(t, async ({ db, get, post }) => {
     const token = await tokenOf(db);
+    await db.query("INSERT INTO care_groups (name, leader_name, token) VALUES ('Grupo Esperanza', 'Ana Díaz', 'tok-grupo-esperanza')");
     const r = await get(`/desarrollo/${token}`);
     assert.equal(r.status, 200);
     assert.equal(r.headers.get('cache-control'), 'no-store');
@@ -87,7 +94,10 @@ test('el formulario público: pide ministerio, cargo, cédula y estado civil; en
     assert.match(html, /¿Qué ministerio de desarrollo lideras\?/);
     for (const m of ['Alabanza', 'Anfitriones', 'Diaconado', 'Intercesión', 'Medios', 'Nueva Vida']) assert.match(html, new RegExp(`<option[^>]*>${m}</option>`), m);
     for (const x of ['Iglesia en línea', 'Consolidación', 'Protocolo y ujieres', 'Otro ministerio']) assert.ok(!html.includes(`>${x}</option>`), x);
-    assert.match(html, /Líder del ministerio/);
+    assert.match(html, /¿A qué grupo de cuidado perteneces o asistes\?/);
+    assert.match(html, /Grupo Esperanza — líder: Ana Díaz/);
+    assert.match(html, /No asisto a un grupo de cuidado/);
+    assert.ok(!html.includes('¿Cuál es tu cargo en el ministerio?'));
     assert.match(html, /Cédula de identidad \(C\.I\.\)/);
     assert.match(html, /Estado civil/);
     assert.equal((await get('/desarrollo/zzzzzzzzzzzzzzzzzzzz')).status, 404);
@@ -102,7 +112,8 @@ test('el formulario público: pide ministerio, cargo, cédula y estado civil; en
 test('un líder nuevo queda pendiente; al aprobar entra a Personas, a su ministerio y como coordinador, sin consentimiento', async (t) => {
   await withApp(t, async ({ db, get, post }) => {
     const token = await tokenOf(db);
-    const r = await post(`/desarrollo/${token}`, { ...base, email: 'maria@ejemplo.com', wants_messages: '1', photo_data: dataUrl(fakeJpeg(4)) });
+    const gid = (await db.query("INSERT INTO care_groups (name, leader_name, token) VALUES ('Grupo Esperanza', 'Ana Díaz', 'tok-grupo-esperanza') RETURNING id")).rows[0].id;
+    const r = await post(`/desarrollo/${token}`, { ...base, grupo_cuidado: String(gid), email: 'maria@ejemplo.com', wants_messages: '1', photo_data: dataUrl(fakeJpeg(4)) });
     assert.equal(r.status, 200);
     assert.match(await r.text(), /Recibimos tu registro/);
     assert.equal(await count(db, 'people'), 0);
@@ -125,7 +136,9 @@ test('un líder nuevo queda pendiente; al aprobar entra a Personas, a su ministe
     assert.ok(min, 'el ministerio se creó');
     assert.equal(min.coord, 'María Torres');
     assert.equal(await count(db, 'person_ministries', `WHERE person_id = ${p.id} AND ministry_id = ${min.id}`), 1);
+    assert.equal(await count(db, 'care_group_people', `WHERE group_id = ${gid} AND name = 'María Torres'`), 1); // quedó en la lista de gente de su grupo de cuidado
     const sub = (await db.query('SELECT * FROM ministry_leader_submissions')).rows[0];
+    assert.equal(sub.grupo_cuidado, 'Grupo Esperanza');
     assert.equal(sub.status, 'aplicada');
     assert.equal(sub.cedula, ''); // lo sensible se borra al atender
   });
