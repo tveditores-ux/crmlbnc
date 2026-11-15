@@ -329,7 +329,7 @@ function nuevaVidaRouter(ctx) {
       <form method="post" action="${action}" class="card">
         <div class="row">${t('name', 'Nombre completo', 'text', 'required')}${t('phone', 'WhatsApp', 'tel')}${t('email', 'Correo', 'email')}</div>
         <div class="row">${t('decision_date', 'Fecha de la decisión', 'date', `max="${esc(today())}"`)}<div><label>Sede</label><select name="sede"><option value="">Sin definir</option>${[...nb.SEDES, ...(v.sede && !nb.SEDES.includes(v.sede) ? [v.sede] : [])].map((s) => `<option ${v.sede === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>${t('age', 'Edad', 'number', 'min="0" max="120"')}${t('civil_status', 'Estado civil')}</div>
-        <div class="row"><div><label>Servicio en que se convirtió</label><select name="service"><option value="">Sin definir</option>${[...nb.SERVICES, ...(v.service && !nb.SERVICES.includes(v.service) ? [v.service] : [])].map((s) => `<option ${v.service === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div></div>
+        <div class="row"><div><label>Servicio en que se convirtió</label><select name="service"><option value="">Sin definir</option>${[...nb.SERVICES, ...(v.service && !nb.SERVICES.includes(v.service) ? [v.service] : [])].map((s) => `<option ${v.service === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div><div><label>¿Primera vez en la iglesia?</label><select name="first_time"><option value="">Sin definir</option>${[...nb.FIRST_TIME, ...(v.first_time && !nb.FIRST_TIME.includes(v.first_time) ? [v.first_time] : [])].map((s) => `<option ${v.first_time === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div><div><label>Decisión</label><select name="decision_type"><option value="">Sin definir</option>${[...nb.DECISION_TYPES, ...(v.decision_type && !nb.DECISION_TYPES.includes(v.decision_type) ? [v.decision_type] : [])].map((s) => `<option ${v.decision_type === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div></div>
         <div class="row">${t('address', 'Dirección (dato sensible)')}${t('how_arrived', 'Cómo llegó a la congregación')}</div>
         <label>Seguimiento</label><textarea name="followup">${esc(v.followup || '')}</textarea>
         <label>Nota</label><textarea name="note">${esc(v.note || '')}</textarea>
@@ -338,7 +338,7 @@ function nuevaVidaRouter(ctx) {
         <div class="actions"><button>Guardar</button><a class="btn sec" href="/nueva-vida">Cancelar</a></div>
       </form>`;
   }
-  const fromRecord = (x) => ({ name: x.full_name === nv.PLACEHOLDER ? '' : x.full_name, phone: x.phone ? displayPhone(x.phone) : '', email: x.email, decision_date: x.d, sede: x.sede, service: x.service, age: x.age, civil_status: x.civil_status, address: x.address, how_arrived: x.how_arrived, followup: x.followup, note: x.note, needs_review: x.needs_review, review_note: x.review_note });
+  const fromRecord = (x) => ({ name: x.full_name === nv.PLACEHOLDER ? '' : x.full_name, phone: x.phone ? displayPhone(x.phone) : '', email: x.email, decision_date: x.d, sede: x.sede, service: x.service, first_time: x.first_time, decision_type: x.decision_type, age: x.age, civil_status: x.civil_status, address: x.address, how_arrived: x.how_arrived, followup: x.followup, note: x.note, needs_review: x.needs_review, review_note: x.review_note });
 
   r.get('/nueva-vida/nueva', (req, res) => page(req, res, 'Registrar nuevo creyente', `<h1>Registrar nuevo creyente</h1>${form({ decision_date: today() }, '/nueva-vida')}`));
   r.post(

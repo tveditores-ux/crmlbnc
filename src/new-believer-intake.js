@@ -31,6 +31,12 @@ const SERVICES = ['Domingo · 1er servicio', 'Domingo · 2do servicio', 'Domingo
 /** Las sedes de la iglesia (las dictó el pastor, 2026-11-15): la lista es fija, no sale de los datos. */
 const SEDES = ['Las Mercedes', 'Nuarito'];
 
+/** Si es la primera vez en la iglesia o si ya había venido antes (lo pidió el pastor, 2026-11-15). */
+const FIRST_TIME = ['Primera vez', 'Ya ha venido antes'];
+
+/** La decisión del día: conversión o reconciliación (lo pidió el pastor, 2026-11-15). */
+const DECISION_TYPES = ['Conversión', 'Reconciliación'];
+
 async function getLink(db) {
   const { rows } = await db.query('SELECT key, value FROM care_settings WHERE key IN ($1, $2)', [TOKEN_KEY, ACTIVE_KEY]);
   const m = Object.fromEntries(rows.map((r) => [r.key, r.value]));
@@ -79,6 +85,8 @@ function parseSubmission(body, countryCode = '58', today) {
     address: body.address,
     how_arrived: body.how_arrived,
     service: body.service,
+    first_time: body.first_time,
+    decision_type: body.decision_type,
   };
   const { value, errors } = nv.validateRow(raw, countryCode, today);
   const name = String(body.full_name || '').trim();
@@ -88,6 +96,8 @@ function parseSubmission(body, countryCode = '58', today) {
   if (!String(body.decision_date || '').trim()) errors.push('Escribe la fecha de la decisión (la de hoy, si se convirtió hoy).');
   if (!SEDES.includes(value.sede)) errors.push('Elige la sede donde se convirtió: Las Mercedes o Nuarito.');
   if (!SERVICES.includes(value.service)) errors.push('Elige en qué servicio se convirtió: domingo 1, 2 o 3, o miércoles.');
+  if (!FIRST_TIME.includes(value.first_time)) errors.push('Dinos si es tu primera vez en la iglesia o si ya has venido antes.');
+  if (!DECISION_TYPES.includes(value.decision_type)) errors.push('Elige si fue conversión o reconciliación.');
   if (!String(body.how_arrived || '').trim()) errors.push('Elige cómo llegó a la iglesia.');
   return { value, errors: [...new Set(errors)] };
 }
@@ -95,9 +105,9 @@ function parseSubmission(body, countryCode = '58', today) {
 /** Guarda el registro en la lista de Nueva Vida, marcado por revisar. Devuelve el id. */
 async function submit(db, v) {
   const { rows } = await db.query(
-    `INSERT INTO nueva_vida (full_name, phone, email, decision_date, date_note, sede, age, civil_status, address, how_arrived, followup, note, needs_review, review_note, source, service)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'','',TRUE,$11,$12,$13) RETURNING id`,
-    [v.full_name, v.phone, v.email, v.decision_date, v.date_note, v.sede, v.age, v.civil_status, v.address, v.how_arrived, REVIEW_NOTE, SOURCE, v.service]
+    `INSERT INTO nueva_vida (full_name, phone, email, decision_date, date_note, sede, age, civil_status, address, how_arrived, followup, note, needs_review, review_note, source, service, first_time, decision_type)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'','',TRUE,$11,$12,$13,$14,$15) RETURNING id`,
+    [v.full_name, v.phone, v.email, v.decision_date, v.date_note, v.sede, v.age, v.civil_status, v.address, v.how_arrived, REVIEW_NOTE, SOURCE, v.service, v.first_time, v.decision_type]
   );
   return rows[0].id;
 }
@@ -109,7 +119,7 @@ async function countPending(db) {
 }
 
 module.exports = {
-  TOKEN_KEY, ACTIVE_KEY, SOURCE, HOW_ARRIVED, SERVICES, SEDES,
+  TOKEN_KEY, ACTIVE_KEY, SOURCE, HOW_ARRIVED, SERVICES, SEDES, FIRST_TIME, DECISION_TYPES,
   getLink, ensureLink, regenerateLink, setLinkActive, linkIsValid,
   listSedes, parseSubmission, submit, countPending,
 };
