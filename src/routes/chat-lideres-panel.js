@@ -29,7 +29,7 @@ function chatLideresPanelRouter(ctx) {
       if (!person) return go(res, '/personas', { err: 'No existe esa persona.' });
       const link = await chat.ensureLink(db, person.id);
       const url = `${config.publicUrl}/chat/${link.token}`;
-      const saludo = `Hola ${firstName(person.full_name)}, entra al chat de líderes de ${config.churchName} con tu enlace personal: ${url} — ahí conversamos entre líderes y servidores, y puedes preguntarle a Grace. Guárdalo y agrega el ícono a tu pantalla de inicio para recibir los avisos de la app.`;
+      const saludo = `Hola ${firstName(person.full_name)}, entra al chat de líderes de ${config.churchName} con tu enlace personal: ${url} — ahí conversamos entre líderes y servidores, y Grace también está en la sala, como una más: menciónala en un mensaje y te responde. Guárdalo y agrega el ícono a tu pantalla de inicio para recibir los avisos de la app.`;
       const tienePush = await chat.hasSubscription(db, person.id);
       page(
         req,
@@ -111,7 +111,7 @@ function chatLideresPanelRouter(ctx) {
         'Chat de líderes',
         '/personas',
         `<h1>Chat de líderes</h1>
-        <p class="muted">La sala donde los líderes y servidores conversan entre ellos y le preguntan a Grace. Cada quien entra con su enlace personal, desde su ficha. Los avisos salen como notificaciones de la propia app (no por WhatsApp).</p>
+        <p class="muted">La sala donde los líderes y servidores conversan entre ellos. Grace es una más en la sala: responde cuando la mencionan en un mensaje. Cada quien entra con su enlace personal, desde su ficha. Los avisos salen como notificaciones de la propia app (no por WhatsApp).</p>
         <div class="card">
           <h2 style="margin-top:0">Ajustes</h2>
           <form method="post" action="/chat-lideres/limite" style="display:flex;gap:8px;align-items:end;flex-wrap:wrap">

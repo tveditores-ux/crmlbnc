@@ -3,8 +3,9 @@ const crypto = require('node:crypto');
 const webpush = require('./web-push');
 
 /**
- * Chat de líderes: una sala común donde líderes y servidores conversan entre ellos y le preguntan a
- * Grace con un límite diario por persona. Cada quien entra con SU enlace personal (desde su ficha):
+ * Chat de líderes: una sala común donde líderes y servidores conversan entre ellos. Grace es una
+ * usuaria más de la sala: responde cuando la mencionan en un mensaje, con un límite diario por
+ * persona. Cada quien entra con SU enlace personal (desde su ficha):
  * el enlace identifica quién escribe y a quién se le avisa. Los avisos son notificaciones de la
  * propia app (Web Push), no WhatsApp: al llegar un mensaje nuevo se avisa a los demás miembros que
  * tengan las notificaciones activadas, con una pausa de 15 minutos entre avisos por persona (salvo
