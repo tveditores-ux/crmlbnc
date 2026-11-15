@@ -5,6 +5,7 @@ const { esc } = require('../util');
 const { displayPhone } = require('../phone');
 const nv = require('../nuevavida/store');
 const letters = require('../nuevavida/letters');
+const nb = require('../new-believer-intake');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -175,6 +176,7 @@ function nuevaVidaRouter(ctx) {
         `<h1>Nueva Vida</h1>
         <p class="sub">Lista de nuevos creyentes. Desde aquí se conecta cada persona con <a href="/consolidacion">Consolidación</a> cuando se quiera darle seguimiento. Contiene datos personales: solo la ven los administradores.</p>
         <div class="actions"><a class="btn" href="/nueva-vida/nueva">Registrar nuevo creyente</a>
+          <a class="btn sec" href="/nueva-vida/enlace">Enlace del día de conversión</a>
           <a class="btn sec" href="/nueva-vida/importar">Cargar un archivo</a></div>
         <div class="card" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
           <div style="flex:1 1 260px"><h3 style="margin:0 0 2px">Carta de bienvenida</h3>
@@ -246,6 +248,53 @@ function nuevaVidaRouter(ctx) {
         });
       </script>`;
   }
+
+  /* ----------------- Enlace del día de conversión (remoto público) ----------------- */
+  r.get(
+    '/nueva-vida/enlace',
+    ah(async (req, res) => {
+      const s = await nb.ensureLink(db);
+      const url = `${config.publicUrl}/nuevos-creyentes/${s.token}`;
+      const pending = await nb.countPending(db);
+      const saludo = `Hola, la paz del Señor. Este es el enlace para registrar a los nuevos creyentes de ${config.churchName} el mismo día de su conversión: ${url} Se llena en el momento de la decisión y queda en Nueva Vida para su seguimiento. Guárdalo en tu teléfono.`;
+      page(
+        req,
+        res,
+        'Enlace del día de conversión',
+        `<p><a href="/nueva-vida">← Nueva Vida</a></p><h1>Registro de nuevos creyentes: enlace del día de conversión</h1>
+        <p class="sub">Un solo enlace para llenar en el momento en que la persona se convierte. Lo que se envía entra directo a esta lista de Nueva Vida, marcado «por revisar» y con la fuente «Enlace del día de conversión». También está en la pestaña «Registros».</p>
+        ${pending ? `<div class="flash ok"><a href="/nueva-vida">${pending} registro${pending === 1 ? '' : 's'} del enlace por revisar en la lista →</a></div>` : ''}
+        <div class="card">
+          <label>Enlace para compartir con el equipo de Nueva Vida
+            <input type="text" readonly value="${esc(url)}" onclick="this.select()" style="width:100%">
+          </label>
+          <p style="display:flex;gap:8px;flex-wrap:wrap">
+            <a class="btn" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(saludo)}">Enviar por WhatsApp</a>
+            <button type="button" class="btn sec" onclick="navigator.clipboard.writeText(${JSON.stringify(url)});this.textContent='¡Copiado!'">Copiar enlace</button>
+            <a class="btn sec" href="${esc(url)}" target="_blank" rel="noopener">Abrir el formulario</a>
+          </p>
+          <p class="muted" style="margin-bottom:0">Estado: <strong>${s.active ? 'encendido' : 'apagado'}</strong>. Compártelo solo con el equipo que registra conversiones: quien tenga el enlace puede registrar un nuevo creyente.</p>
+        </div>
+        <div class="card">
+          <form method="post" action="/nueva-vida/enlace/${s.active ? 'apagar' : 'encender'}" style="display:inline">
+            <button class="btn sec">${s.active ? 'Apagar el enlace' : 'Encender el enlace'}</button>
+          </form>
+          <form method="post" action="/nueva-vida/enlace/nuevo" style="display:inline" onsubmit="return confirm('Se crea un enlace nuevo y el anterior deja de funcionar. ¿Continuar?')">
+            <button class="btn sec">Generar enlace nuevo</button>
+          </form>
+        </div>`
+      );
+    })
+  );
+
+  r.post(
+    '/nueva-vida/enlace/:accion(encender|apagar|nuevo)',
+    ah(async (req, res) => {
+      if (req.params.accion === 'nuevo') await nb.regenerateLink(db);
+      else await nb.setLinkActive(db, req.params.accion === 'encender');
+      go(res, '/nueva-vida/enlace', { ok: 'Enlace del día de conversión actualizado.' });
+    })
+  );
 
   r.get('/nueva-vida/importar', (req, res) => page(req, res, 'Cargar archivo', importPage('')));
 

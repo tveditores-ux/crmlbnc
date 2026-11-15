@@ -8,6 +8,7 @@ const personas = require('../member-intake');
 const lideres = require('../care-intake');
 const reporte = require('../care-report-link');
 const chat = require('../chat-lideres');
+const creyentes = require('../new-believer-intake');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -107,6 +108,19 @@ function registrosRouter(ctx) {
       setActive: (d, on) => chat.setInviteActive(d, on),
       pending: async () => 0,
       ask: `Hola, la paz del Señor. Te invito al chat de líderes de ${church}: abre este enlace y entra con tu número de WhatsApp: {enlace} Ahí conversamos entre líderes y servidores, y Grace también está en la sala. Agrega el ícono a tu pantalla de inicio para recibir los avisos de la app.`,
+    },
+    {
+      key: 'creyentes',
+      title: 'Registro de nuevos creyentes',
+      para: 'Para registrar a un nuevo creyente el mismo día de su conversión, en el momento de la decisión. Entra a la lista de Nueva Vida marcado por revisar. Compártelo solo con el equipo que registra conversiones.',
+      path: '/nuevos-creyentes/',
+      panel: '/nueva-vida/enlace',
+      review: '/nueva-vida',
+      ensure: (d) => creyentes.ensureLink(d),
+      regen: (d) => creyentes.regenerateLink(d),
+      setActive: (d, on) => creyentes.setLinkActive(d, on),
+      pending: (d) => creyentes.countPending(d),
+      ask: `Hola, la paz del Señor. Este es el enlace para registrar a los nuevos creyentes de ${church} el mismo día de su conversión: {enlace} Se llena en el momento de la decisión y queda en Nueva Vida para su seguimiento. Guárdalo en tu teléfono.`,
     },
   ];
 

@@ -27,6 +27,7 @@ const { careGroupsRouter } = require('./routes/care-groups');
 const { redilPreguntasRouter } = require('./routes/redil-preguntas');
 const { libretaRemotaRouter } = require('./routes/libreta-remota');
 const { reporteComunRouter } = require('./routes/reporte-comun');
+const { nuevosCreyentesRouter } = require('./routes/nuevos-creyentes');
 const { pastorIntakeRouter } = require('./routes/pastor-intake');
 const { pastorRequestsRouter } = require('./routes/pastor-requests');
 const { ministryLeaderIntakeRouter } = require('./routes/ministry-leader-intake');
@@ -112,6 +113,7 @@ function createApp(ctx) {
   app.use(libretaRemotaRouter(ctx)); // libretica del REDIL por enlace común (control remoto): enlace secreto, sin sesión
   app.use(careRemoteRouter(ctx)); // reporte del líder de grupo de cuidado: igual, enlace secreto
   app.use(reporteComunRouter(ctx)); // reporte semanal APARTE: un solo enlace para todos los líderes, solo con su nombre
+  app.use(nuevosCreyentesRouter(ctx)); // registro de nuevos creyentes el día de su conversión: un solo enlace, entra a Nueva Vida por revisar
 
   app.get('/entrar', (req, res) => res.send(loginPage()));
 
