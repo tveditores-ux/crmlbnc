@@ -19,24 +19,39 @@ const { CIVIL_STATUS } = require('./member-intake');
  * Al elegir, se usa el nombre tal como está cargado en Ministerios si coincide por raíz sin
  * tildes (p. ej. si estuviera «Diáconos» en vez de «Diaconado»), para enlazar con ese ministerio.
  * Pide lo mismo que la ficha del líder de grupo de cuidado (nombre, nacimiento, cédula, dirección,
- * teléfono, correo, congregación y foto) más el estado civil, y primero el ministerio y a qué grupo
- * de cuidado pertenece o asiste. Sin cargo (quitado por Eliezer, 2026-11-14): el enlace es solo
- * para líderes, así que sobra preguntarlo.
+ * teléfono, correo, congregación y foto) más el estado civil, y primero el ministerio —puede ser
+ * MÁS DE UNO (2026-11-14)— y a qué grupo de cuidado pertenece o asiste. Sin cargo (quitado por
+ * Eliezer, 2026-11-14): el enlace es solo para líderes, así que sobra preguntarlo. También pregunta
+ * si sirve en algún ministerio congregacional (Niños, Jóvenes, Mujeres…): no es lo mismo que su
+ * congregación, que ya se pregunta en la ficha.
  *  - Si su teléfono ya está en Personas y no trae nada distinto, la ficha se completa sola (solo
  *    llena lo vacío; el rol solo si estaba vacío: «Líder de <ministerio>»).
  *  - Si es alguien nuevo, o trae un dato distinto, espera revisión en el panel.
- * Al aplicarse, la persona queda en su ministerio (se crea en Ministerios si no existía) y, si ese
- * ministerio aún no tiene coordinador, queda como su coordinador; y su nombre entra en la lista de
- * gente de su grupo de cuidado (care_group_people), si dijo a cuál asiste.
+ * Al aplicarse, la persona queda en sus ministerios (se crean en Ministerios si no existían) y, en
+ * cada uno que aún no tenga coordinador, queda como su coordinador; si dijo que sirve en un
+ * ministerio congregacional, queda sirviendo en él (sin coordinarlo); y su nombre entra en la lista
+ * de gente de su grupo de cuidado (care_group_people), si dijo a cuál asiste.
  * Nunca cambia el consentimiento (opt_in) por sí solo: "quiero recibir recordatorios" queda como aviso.
  */
 const DESARROLLO = ['Alabanza', 'Anfitriones', 'Diaconado', 'Intercesión', 'Medios', 'Nueva Vida'];
 const SIN_GRUPO = 'ninguno'; // valor de la planilla para «No asisto a un grupo de cuidado»
+const CONGREGACIONALES = cg.CONGREGATIONS.filter((c) => c !== 'General'); // ministerios congregacionales donde puede servir («General» no es un ministerio)
+const SIN_CONGREGACIONAL = 'No sirvo en ninguno'; // opción de la planilla
 const FIELDS = ['full_name', 'email', 'birth_date', 'cedula', 'address', 'civil_status', 'congregation'];
 const LABELS = {
-  ministerio: 'Ministerio', grupo_cuidado: 'Grupo de cuidado', full_name: 'Nombre y apellido', email: 'Correo', birth_date: 'Nacimiento', cedula: 'Cédula (C.I.)',
+  ministerio: 'Ministerio', grupo_cuidado: 'Grupo de cuidado', congregacional: 'Ministerio congregacional', full_name: 'Nombre y apellido', email: 'Correo', birth_date: 'Nacimiento', cedula: 'Cédula (C.I.)',
   address: 'Dirección', civil_status: 'Estado civil', congregation: 'Congregación',
 };
+/** La lista de ministerios de desarrollo de una respuesta (JSON en `ministerios`; si no, el de 038). */
+const ministeriosDe = (sub) => {
+  try {
+    const a = JSON.parse(sub.ministerios || '[]');
+    if (Array.isArray(a) && a.length) return a.map(String);
+  } catch { /* respuestas viejas: solo el primer ministerio */ }
+  return sub.ministerio ? [sub.ministerio] : [];
+};
+/** «Alabanza», «Alabanza y Medios», «Alabanza, Medios y Nueva Vida». */
+const joinList = (xs) => (xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} y ${xs[xs.length - 1]}`);
 const SENSITIVE = ['birth_date', 'cedula', 'address']; // se borran de la respuesta cuando se atiende
 
 const clean = (v, n) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
@@ -94,18 +109,25 @@ async function careGroupOptions(db) {
 
 /* ------------------------------ Validación ------------------------------ */
 /**
- * Valida el envío. Obligatorios: ministerio, grupo de cuidado (o decir que no asiste a ninguno),
- * nombre y apellido, teléfono, fecha de nacimiento, cédula, dirección, estado civil y congregación
- * (la ficha del líder, más el estado civil). Correo y foto, opcionales.
+ * Valida el envío. Obligatorios: ministerio (uno o varios), grupo de cuidado (o decir que no asiste
+ * a ninguno), si sirve en un ministerio congregacional, nombre y apellido, teléfono, fecha de
+ * nacimiento, cédula, dirección, estado civil y congregación (la ficha del líder, más el estado
+ * civil). Correo y foto, opcionales.
  * ministryNames = lo que se puede elegir (ministryOptions); groups = careGroupOptions ({id, name}).
  */
 function parseSubmission(body, ministryNames, groups, countryCode, today) {
   const errors = [];
-  let ministerio = String(body.ministerio ?? '').trim();
-  if (!ministryNames.includes(ministerio)) {
-    ministerio = '';
-    errors.push('Elige tu ministerio de desarrollo.');
-  }
+  const rawList = Array.isArray(body.ministerio) ? body.ministerio : [body.ministerio];
+  const picked = [...new Set(rawList.map((x) => String(x ?? '').trim()).filter(Boolean))];
+  const ministerios = picked.filter((m) => ministryNames.includes(m));
+  if (!picked.length || ministerios.length !== picked.length) errors.push('Elige tu ministerio de desarrollo.');
+  const ministerio = ministerios[0] || '';
+
+  const cRaw = String(body.congregacional ?? '').trim();
+  let congregacional = '';
+  if (cRaw === SIN_CONGREGACIONAL) congregacional = '';
+  else if (CONGREGACIONALES.includes(cRaw)) congregacional = cRaw;
+  else errors.push('Elige si sirves en un ministerio congregacional.');
 
   const gRaw = String(body.grupo_cuidado ?? '').trim();
   let grupo_cuidado = '';
@@ -162,7 +184,7 @@ function parseSubmission(body, ministryNames, groups, countryCode, today) {
   if (photo.error) errors.push(photo.error);
 
   return {
-    value: { ministerio, grupo_cuidado, grupo_cuidado_id, full_name, phone, email, birth_date, cedula: ci.value, address, civil_status: CIVIL_STATUS.includes(civil) ? civil : '', congregation, wants_messages: body.wants_messages === '1' },
+    value: { ministerio, ministerios, congregacional, grupo_cuidado, grupo_cuidado_id, full_name, phone, email, birth_date, cedula: ci.value, address, civil_status: CIVIL_STATUS.includes(civil) ? civil : '', congregation, wants_messages: body.wants_messages === '1' },
     photo,
     errors: [...new Set(errors)],
   };
@@ -188,9 +210,9 @@ async function submit(pool, sub) {
     }
   }
   const { rows } = await pool.query(
-    `INSERT INTO ministry_leader_submissions (person_id, ministerio, grupo_cuidado, grupo_cuidado_id, full_name, phone, email, birth_date, cedula, address, civil_status, congregation, wants_messages, photo)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
-    [person ? person.id : null, v.ministerio, v.grupo_cuidado, v.grupo_cuidado_id, v.full_name, v.phone, v.email, v.birth_date, v.cedula, v.address, v.civil_status, v.congregation, v.wants_messages, sub.photo.buffer]
+    `INSERT INTO ministry_leader_submissions (person_id, ministerio, ministerios, congregacional, grupo_cuidado, grupo_cuidado_id, full_name, phone, email, birth_date, cedula, address, civil_status, congregation, wants_messages, photo)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
+    [person ? person.id : null, v.ministerio, JSON.stringify(v.ministerios || []), v.congregacional || '', v.grupo_cuidado, v.grupo_cuidado_id, v.full_name, v.phone, v.email, v.birth_date, v.cedula, v.address, v.civil_status, v.congregation, v.wants_messages, sub.photo.buffer]
   );
   const id = rows[0].id;
   if (auto) {
@@ -201,11 +223,12 @@ async function submit(pool, sub) {
 }
 
 /**
- * Aplica una respuesta: completa (o crea) la ficha, deja a la persona en su ministerio y, si el
- * ministerio no tenía coordinador, lo deja como coordinador (el enlace es solo para líderes). El rol
- * solo se escribe si la ficha no tenía («Líder de <ministerio>»): liderar un ministerio nunca pisa un
- * rol pastoral. Si dijo a qué grupo de cuidado asiste, su nombre entra en la lista de gente de ese
- * grupo (care_group_people), si no estaba ya.
+ * Aplica una respuesta: completa (o crea) la ficha, deja a la persona en sus ministerios y, en cada
+ * uno que no tenía coordinador, lo deja como coordinador (el enlace es solo para líderes). El rol
+ * solo se escribe si la ficha no tenía («Líder de <ministerios>»): liderar un ministerio nunca pisa
+ * un rol pastoral. Si sirve en un ministerio congregacional, queda en él sin coordinarlo. Si dijo a
+ * qué grupo de cuidado asiste, su nombre entra en la lista de gente de ese grupo (care_group_people),
+ * si no estaba ya.
  * A una ficha existente, en automático solo le llena lo vacío; al aprobar a mano, lo enviado
  * reemplaza lo distinto. `consent: true` (solo desde el panel) registra el consentimiento si la
  * persona lo pidió. Devuelve { error } o { personId, created }.
@@ -229,15 +252,22 @@ async function apply(pool, submissionId, { auto = false, consent = false } = {})
       const params = [person.id, ...set.map((f) => sub[f])];
       if (!person.role) {
         sets.push(`role = $${params.length + 1}`);
-        params.push(`Líder de ${sub.ministerio}`);
+        params.push(`Líder de ${joinList(ministeriosDe(sub))}`);
       }
       sets.push('profile_updated_at = now()', 'updated_at = now()');
       if (consent && sub.wants_messages) sets.push('opt_in = TRUE');
       await db.query(`UPDATE people SET ${sets.join(', ')} WHERE id = $1`, params);
-      // queda en su ministerio (se crea si no existía) y, si no había coordinador, coordina
-      const ministryId = await repo.ensureMinistry(db, sub.ministerio);
-      await db.query('INSERT INTO person_ministries (person_id, ministry_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [person.id, ministryId]);
-      await db.query('UPDATE ministries SET coordinator_id = $2 WHERE id = $1 AND coordinator_id IS NULL', [ministryId, person.id]);
+      // queda en sus ministerios (se crean si no existían) y, en cada uno sin coordinador, coordina
+      for (const name of ministeriosDe(sub)) {
+        const ministryId = await repo.ensureMinistry(db, name);
+        await db.query('INSERT INTO person_ministries (person_id, ministry_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [person.id, ministryId]);
+        await db.query('UPDATE ministries SET coordinator_id = $2 WHERE id = $1 AND coordinator_id IS NULL', [ministryId, person.id]);
+      }
+      // si sirve en un ministerio congregacional, queda sirviendo en él (sin coordinarlo)
+      if (sub.congregacional) {
+        const congId = await repo.ensureMinistry(db, sub.congregacional);
+        await db.query('INSERT INTO person_ministries (person_id, ministry_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [person.id, congId]);
+      }
       // y en la lista de gente de su grupo de cuidado, si dijo a cuál asiste y no estaba ya
       if (sub.grupo_cuidado_id) {
         const names = (await db.query('SELECT name FROM care_group_people WHERE group_id = $1', [sub.grupo_cuidado_id])).rows.map((x) => keyOf(x.name));
@@ -272,7 +302,7 @@ async function discard(db, submissionId) {
 /** Respuestas por revisar, con la ficha actual para comparar. La foto no se trae, solo si tiene. */
 async function listPending(db) {
   const { rows } = await db.query(
-    `SELECT s.id, s.person_id, s.phone, s.wants_messages, s.created_at, s.ministerio, s.grupo_cuidado, (s.photo IS NOT NULL) AS has_photo,
+    `SELECT s.id, s.person_id, s.phone, s.wants_messages, s.created_at, s.ministerio, s.ministerios, s.congregacional, s.grupo_cuidado, (s.photo IS NOT NULL) AS has_photo,
             ${FIELDS.map((f) => `s.${f}`).join(', ')}, ${FIELDS.map((f) => `p.${f} AS cur_${f}`).join(', ')}
        FROM ministry_leader_submissions s LEFT JOIN people p ON p.id = s.person_id
       WHERE s.status = 'pendiente' ORDER BY s.created_at`
@@ -281,4 +311,4 @@ async function listPending(db) {
 }
 const countPending = async (db) => (await db.query("SELECT count(*)::int AS n FROM ministry_leader_submissions WHERE status = 'pendiente'")).rows[0].n;
 
-module.exports = { DESARROLLO, SIN_GRUPO, FIELDS, LABELS, SENSITIVE, getSettings, ensureToken, regenerateToken, setActive, tokenIsValid, ministryOptions, careGroupOptions, sameMinistry, parseSubmission, conflictsWith, submit, apply, discard, listPending, countPending };
+module.exports = { DESARROLLO, SIN_GRUPO, CONGREGACIONALES, SIN_CONGREGACIONAL, FIELDS, LABELS, SENSITIVE, ministeriosDe, joinList, getSettings, ensureToken, regenerateToken, setActive, tokenIsValid, ministryOptions, careGroupOptions, sameMinistry, parseSubmission, conflictsWith, submit, apply, discard, listPending, countPending };

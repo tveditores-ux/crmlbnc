@@ -46,7 +46,10 @@ function ministryLeaderIntakeRouter(ctx) {
       <form method="post" autocomplete="off">
         <div class="hp" aria-hidden="true"><label>No llenar<input type="text" name="web" tabindex="-1"></label></div>
         <h2>Tu ministerio de desarrollo</h2>
-        ${sel('ministerio', '¿Qué ministerio de desarrollo lideras?', options, 'Elige…', true)}
+        <label>¿Qué ministerio de desarrollo lideras? <span class="muted" style="font-size:14px">(puedes marcar más de uno)</span></label>
+        ${options
+          .map((o) => `<label class="check" style="display:block;font-size:17px;margin:8px 0"><input type="checkbox" name="ministerio" value="${esc(o)}" ${(Array.isArray(v.ministerio) ? v.ministerio : [v.ministerio]).includes(o) ? 'checked' : ''}> ${esc(o)}</label>`)
+          .join('')}
         ${selGrupo}
         <h2>Tus datos</h2>
         ${t('full_name', 'Nombre y apellido', 'maxlength="120" required placeholder="Nombre y apellido"')}
@@ -56,6 +59,7 @@ function ministryLeaderIntakeRouter(ctx) {
         ${t('address', 'Dirección', 'maxlength="250" required')}
         ${sel('civil_status', 'Estado civil', CIVIL_STATUS, 'Elige…', true)}
         ${sel('congregation', '¿Cuál es tu congregación?', CONGREGATIONS, 'Elige…', true)}
+        ${sel('congregacional', '¿Sirves en algún ministerio congregacional?', [intake.SIN_CONGREGACIONAL, ...intake.CONGREGACIONALES], 'Elige…', true)}
         <label for="email">Correo</label><input id="email" type="email" inputmode="email" name="email" value="${esc(v.email || '')}">
         <h2>Foto (opcional)</h2>
         <div class="photo-box">
