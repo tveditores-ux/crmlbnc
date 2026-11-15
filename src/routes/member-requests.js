@@ -11,7 +11,7 @@ const short = (iso) => String(iso).slice(0, 10).split('-').reverse().join('/');
 /** Tarjeta de solo lectura con lo que la persona envió, para su ficha. Datos sensibles: solo en el panel, con sesión. */
 function memberDataCard(p, hasPhoto, timeZone) {
   const rows = [
-    ['Nacimiento', p.birth_date ? short(p.birth_date) : ''], ['Cédula (C.I.)', p.cedula], ['Dirección', p.address],
+    ['Nacimiento', p.birth_date ? short(p.birth_date) : ''], ['Cédula (C.I.)', p.cedula], ['Dirección', p.address], ['Ocupación', p.occupation],
     ['Estado civil', p.civil_status], ['Congregación', p.congregation], ['Grupo de cuidado', p.care_group_name],
   ].filter(([, v]) => v);
   if (!rows.length && !hasPhoto && !p.profile_updated_at) return '';

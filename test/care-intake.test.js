@@ -38,7 +38,7 @@ const mkGroup = async (db, name, phone = '', leader = 'Líder Registrado', congr
   (await db.query('INSERT INTO care_groups (name, leader_name, leader_phone, congregation, token) VALUES ($1,$2,$3,$4,$5) RETURNING *', [name, leader, phone, congregation, `tok${Math.random().toString(36).slice(2).padEnd(18, 'x')}`])).rows[0];
 const tokenOf = async (db) => (await intake.ensureToken(db)).token;
 // lo obligatorio: congregación, nombre y apellido, cédula, dirección, teléfono, correo y foto
-const base = { leader_name: 'Líder X', leader_phone: '0414-000.00.01', congregation: 'Mujeres', leader_email: 'lider@ejemplo.com', leader_cedula: 'V-12345678', leader_address: 'Calle de prueba 1', photo_data: dataUrl(fakeJpeg(5)) };
+const base = { leader_name: 'Líder X', leader_phone: '0414-000.00.01', congregation: 'Mujeres', leader_email: 'lider@ejemplo.com', leader_cedula: 'V-12345678', leader_address: 'Calle de prueba 1', leader_occupation: 'Comerciante', photo_data: dataUrl(fakeJpeg(5)) };
 
 test('reconocer el grupo por el teléfono: uno solo, varios (desempata la congregación) o ninguno', () => {
   const groups = [
@@ -100,7 +100,7 @@ test('el formulario común pide la congregación, no lista grupos ni teléfonos,
     assert.match(html, /Cédula de identidad \(C\.I\.\) del líder/);
     assert.match(html, /Dirección del líder/);
     assert.ok(!html.includes('Líder asesor') && !html.includes('advisor_name'));
-    for (const id of ['leader_email', 'leader_phone', 'leader_name', 'leader_cedula', 'leader_address']) assert.match(html, new RegExp(`id="${id}"[^>]*required|required[^>]*id="${id}"`), id);
+    for (const id of ['leader_email', 'leader_phone', 'leader_name', 'leader_cedula', 'leader_address', 'leader_occupation']) assert.match(html, new RegExp(`id="${id}"[^>]*required|required[^>]*id="${id}"`), id);
     assert.match(html, /Foto del líder/);
     assert.match(html, /Cargar tu fotografía es necesario para completar el registro de tu ficha de liderazgo/);
     assert.ok(!html.includes('Grupo Secreto')); // ya no se muestran los grupos
@@ -235,7 +235,7 @@ test('envíos malos: 400, nada se guarda y la foto buena se conserva; trampa par
     assert.equal((await post(`/registro/${token}`, { ...base, photo_data: 'data:image/png;base64,AAAA' })).status, 400);
     assert.equal(await count(), 0);
 
-    for (const [field, msg] of [['leader_email', /correo/], ['leader_cedula', /cédula/], ['leader_address', /dirección del líder/], ['photo_data', /Falta la foto/]]) {
+    for (const [field, msg] of [['leader_email', /correo/], ['leader_cedula', /cédula/], ['leader_address', /dirección del líder/], ['leader_occupation', /ocupación del líder/], ['photo_data', /Falta la foto/]]) {
       const r = await post(`/registro/${token}`, { ...base, [field]: '' });
       assert.equal(r.status, 400, field);
       assert.match(await r.text(), msg);

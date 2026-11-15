@@ -37,10 +37,10 @@ const DESARROLLO = ['Alabanza', 'Anfitriones', 'Diaconado', 'Intercesión', 'Med
 const SIN_GRUPO = 'ninguno'; // valor de la planilla para «No asisto a un grupo de cuidado»
 const CONGREGACIONALES = cg.CONGREGATIONS.filter((c) => c !== 'General'); // ministerios congregacionales donde puede servir («General» no es un ministerio)
 const SIN_CONGREGACIONAL = 'No sirvo en ninguno'; // opción de la planilla
-const FIELDS = ['full_name', 'email', 'birth_date', 'cedula', 'address', 'civil_status', 'congregation'];
+const FIELDS = ['full_name', 'email', 'birth_date', 'cedula', 'address', 'occupation', 'civil_status', 'congregation'];
 const LABELS = {
   ministerio: 'Ministerio', grupo_cuidado: 'Grupo de cuidado', congregacional: 'Ministerio congregacional', full_name: 'Nombre y apellido', email: 'Correo', birth_date: 'Nacimiento', cedula: 'Cédula (C.I.)',
-  address: 'Dirección', civil_status: 'Estado civil', congregation: 'Congregación',
+  address: 'Dirección', occupation: 'Ocupación', civil_status: 'Estado civil', congregation: 'Congregación',
 };
 /** La lista de ministerios de desarrollo de una respuesta (JSON en `ministerios`; si no, el de 038). */
 const ministeriosDe = (sub) => {
@@ -111,8 +111,9 @@ async function careGroupOptions(db) {
 /**
  * Valida el envío. Obligatorios: ministerio (uno o varios), grupo de cuidado (o decir que no asiste
  * a ninguno), si sirve en un ministerio congregacional, nombre y apellido, teléfono, fecha de
- * nacimiento, cédula, dirección, estado civil y congregación (la ficha del líder, más el estado
- * civil). El correo es opcional; la foto es OBLIGATORIA (pedido de Eliezer, 2026-11-14).
+ * nacimiento, cédula, dirección, ocupación, estado civil y congregación (la ficha del líder, más
+ * el estado civil). TODOS los datos son obligatorios, también el correo y la foto
+ * (pedido de Eliezer, 2026-11-14).
  * ministryNames = lo que se puede elegir (ministryOptions); groups = careGroupOptions ({id, name}).
  */
 function parseSubmission(body, ministryNames, groups, countryCode, today) {
@@ -153,7 +154,8 @@ function parseSubmission(body, ministryNames, groups, countryCode, today) {
 
   const emailRaw = clean(body.email, 120);
   const email = emailRaw ? normalizeEmail(emailRaw) || '' : '';
-  if (emailRaw && !email) errors.push('Tu correo no parece válido.');
+  if (!emailRaw) errors.push('Escribe tu correo.');
+  else if (!email) errors.push('Tu correo no parece válido.');
 
   const parts = [body.bd_day, body.bd_month, body.bd_year].map((x) => String(x ?? '').trim());
   let birth_date = '';
@@ -174,6 +176,9 @@ function parseSubmission(body, ministryNames, groups, countryCode, today) {
   const address = clean(body.address, 250);
   if (!address) errors.push('Escribe tu dirección.');
 
+  const occupation = clean(body.occupation, 120);
+  if (!occupation) errors.push('Escribe tu ocupación.');
+
   const civil = String(body.civil_status ?? '').trim();
   if (!CIVIL_STATUS.includes(civil)) errors.push('Elige tu estado civil.');
 
@@ -185,7 +190,7 @@ function parseSubmission(body, ministryNames, groups, countryCode, today) {
   else if (!photo.buffer) errors.push('La foto es obligatoria: tómate una foto o elige una de la galería.');
 
   return {
-    value: { ministerio, ministerios, congregacional, grupo_cuidado, grupo_cuidado_id, full_name, phone, email, birth_date, cedula: ci.value, address, civil_status: CIVIL_STATUS.includes(civil) ? civil : '', congregation, wants_messages: body.wants_messages === '1' },
+    value: { ministerio, ministerios, congregacional, grupo_cuidado, grupo_cuidado_id, full_name, phone, email, birth_date, cedula: ci.value, address, occupation, civil_status: CIVIL_STATUS.includes(civil) ? civil : '', congregation, wants_messages: body.wants_messages === '1' },
     photo,
     errors: [...new Set(errors)],
   };
@@ -211,9 +216,9 @@ async function submit(pool, sub) {
     }
   }
   const { rows } = await pool.query(
-    `INSERT INTO ministry_leader_submissions (person_id, ministerio, ministerios, congregacional, grupo_cuidado, grupo_cuidado_id, full_name, phone, email, birth_date, cedula, address, civil_status, congregation, wants_messages, photo)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
-    [person ? person.id : null, v.ministerio, JSON.stringify(v.ministerios || []), v.congregacional || '', v.grupo_cuidado, v.grupo_cuidado_id, v.full_name, v.phone, v.email, v.birth_date, v.cedula, v.address, v.civil_status, v.congregation, v.wants_messages, sub.photo.buffer]
+    `INSERT INTO ministry_leader_submissions (person_id, ministerio, ministerios, congregacional, grupo_cuidado, grupo_cuidado_id, full_name, phone, email, birth_date, cedula, address, occupation, civil_status, congregation, wants_messages, photo)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id`,
+    [person ? person.id : null, v.ministerio, JSON.stringify(v.ministerios || []), v.congregacional || '', v.grupo_cuidado, v.grupo_cuidado_id, v.full_name, v.phone, v.email, v.birth_date, v.cedula, v.address, v.occupation, v.civil_status, v.congregation, v.wants_messages, sub.photo.buffer]
   );
   const id = rows[0].id;
   if (auto) {

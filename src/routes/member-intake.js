@@ -44,13 +44,14 @@ function memberIntakeRouter(ctx) {
         <label for="phone">Teléfono (WhatsApp)</label><input id="phone" type="tel" inputmode="tel" name="phone" required value="${esc(v.phone || '')}" placeholder="0414-000.00.00">
         ${birthRoll(v, today(), 'Fecha de nacimiento')}
         ${sel('congregation', '¿Cuál es tu congregación?', CONGREGATIONS, 'Elige…', true)}
-        ${sel('care_group_name', 'Tu grupo de cuidado', [...groups, intake.NO_GROUP], 'Elige… (opcional)')}
-        <h2>Más datos (opcionales)</h2>
-        <label for="cedula">Cédula de identidad (C.I.)</label><input id="cedula" type="text" name="cedula" maxlength="14" autocapitalize="characters" value="${esc(v.cedula || '')}" placeholder="V-12345678">
-        <label for="email">Correo</label><input id="email" type="email" inputmode="email" name="email" value="${esc(v.email || '')}">
-        ${t('address', 'Dirección', 'maxlength="250"')}
-        ${sel('civil_status', 'Estado civil', intake.CIVIL_STATUS, 'Elige…')}
-        <h2>Foto (opcional)</h2>
+        ${sel('care_group_name', 'Tu grupo de cuidado', [...groups, intake.NO_GROUP], 'Elige…', true)}
+        <h2>Más datos</h2>
+        <label for="cedula">Cédula de identidad (C.I.)</label><input id="cedula" type="text" name="cedula" required maxlength="14" autocapitalize="characters" value="${esc(v.cedula || '')}" placeholder="V-12345678">
+        <label for="email">Correo</label><input id="email" type="email" inputmode="email" name="email" required value="${esc(v.email || '')}">
+        ${t('address', 'Dirección', 'maxlength="250" required')}
+        ${t('occupation', 'Ocupación', 'maxlength="120" required placeholder="Tu oficio o profesión"')}
+        ${sel('civil_status', 'Estado civil', intake.CIVIL_STATUS, 'Elige…', true)}
+        <h2>Foto</h2>
         <div class="photo-box">
           <img id="photo_prev" alt="Vista previa de la foto" ${v.photo_data ? `src="${esc(v.photo_data)}"` : 'style="display:none"'}>
           <div class="quick">
@@ -63,7 +64,7 @@ function memberIntakeRouter(ctx) {
         <label class="check"><input type="checkbox" name="wants_messages" value="1" ${v.wants_messages === '1' ? 'checked' : ''}> Quiero recibir recordatorios de la iglesia por WhatsApp</label>
         <p class="muted" style="font-size:13px;margin:4px 0 0">Es opcional. La iglesia te lo confirmará antes de escribirte.</p>
         <button class="go">Enviar mis datos</button>
-      </form>${photoScript({ required: false })}`;
+      </form>${photoScript({ required: true })}`;
   }
 
   r.get(

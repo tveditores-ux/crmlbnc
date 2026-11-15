@@ -229,6 +229,7 @@ function adminRouter(ctx) {
           <a class="btn sec" href="/personas/solicitud">Pedir datos a las personas</a>
           <a class="btn sec" href="/personas/pastores">Registro ministerial</a>
           <a class="btn sec" href="/personas/ministerios-desarrollo">Líderes de ministerios de desarrollo</a>
+          <a class="btn sec" href="/chat-lideres">Chat de líderes</a>
           <a class="btn sec" href="/personas/exportar.csv${esc(members.viewQuery(v))}">Descargar lista${filtered ? ' (con estos filtros)' : ''}</a></div>
         <div class="grid">
           <div class="card"><div class="stat" style="color:var(--ok)">${counts.miembro}</div><div class="stat-label">miembros</div></div>
@@ -402,6 +403,9 @@ function adminRouter(ctx) {
         rows[0].full_name,
         '/personas',
         `<h1>${esc(rows[0].full_name)}</h1>${memberDataCard(rows[0], hasPhoto, config.timezone)}${personForm(rows[0], ministries, sel, `/personas/${id}`)}
+        <div class="card"><strong>Su acceso al chat de líderes</strong>
+          <p class="muted" style="margin:4px 0 10px">La sala donde los líderes y servidores conversan entre ellos y le preguntan a Grace. Cada quien entra con su propio enlace personal.</p>
+          <a class="btn sec" href="/personas/${id}/chat">Dar o ver su acceso al chat</a></div>
         <div class="card"><strong>¿Esta persona está repetida?</strong>
           <p class="muted" style="margin:4px 0 10px">Si hay otra ficha de la misma persona, únelas: se conserva la más antigua y se pasa todo lo de la otra.</p>
           <a class="btn sec" href="/personas/${id}/unir">Unir con otra persona</a></div>
