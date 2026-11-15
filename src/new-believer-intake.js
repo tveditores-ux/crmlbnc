@@ -29,7 +29,7 @@ const HOW_ARRIVED = [
 const SERVICES = ['Domingo · 1er servicio', 'Domingo · 2do servicio', 'Domingo · 3er servicio', 'Miércoles'];
 
 /** Las sedes de la iglesia (las dictó el pastor, 2026-11-15): la lista es fija, no sale de los datos. */
-const SEDES = ['Nuarito', 'Las Mercedes'];
+const SEDES = ['Las Mercedes', 'Nuarito'];
 
 async function getLink(db) {
   const { rows } = await db.query('SELECT key, value FROM care_settings WHERE key IN ($1, $2)', [TOKEN_KEY, ACTIVE_KEY]);
@@ -86,7 +86,7 @@ function parseSubmission(body, countryCode = '58', today) {
   else if (name.split(/\s+/).length < 2) errors.push('Escribe el nombre y el apellido, para poder identificarlo.');
   if (!String(body.phone || '').trim()) errors.push('Escribe su número de WhatsApp: es el medio para llamarlo en el seguimiento.');
   if (!String(body.decision_date || '').trim()) errors.push('Escribe la fecha de la decisión (la de hoy, si se convirtió hoy).');
-  if (!SEDES.includes(value.sede)) errors.push('Elige la sede donde se convirtió: Nuarito o Las Mercedes.');
+  if (!SEDES.includes(value.sede)) errors.push('Elige la sede donde se convirtió: Las Mercedes o Nuarito.');
   if (!SERVICES.includes(value.service)) errors.push('Elige en qué servicio se convirtió: domingo 1, 2 o 3, o miércoles.');
   if (!String(body.how_arrived || '').trim()) errors.push('Elige cómo llegó a la iglesia.');
   return { value, errors: [...new Set(errors)] };

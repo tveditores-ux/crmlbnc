@@ -328,7 +328,7 @@ function nuevaVidaRouter(ctx) {
     return `${errors.length ? `<div class="flash err">${errors.map(esc).join('<br>')}</div>` : ''}
       <form method="post" action="${action}" class="card">
         <div class="row">${t('name', 'Nombre completo', 'text', 'required')}${t('phone', 'WhatsApp', 'tel')}${t('email', 'Correo', 'email')}</div>
-        <div class="row">${t('decision_date', 'Fecha de la decisión', 'date', `max="${esc(today())}"`)}${t('sede', 'Sede')}${t('age', 'Edad', 'number', 'min="0" max="120"')}${t('civil_status', 'Estado civil')}</div>
+        <div class="row">${t('decision_date', 'Fecha de la decisión', 'date', `max="${esc(today())}"`)}<div><label>Sede</label><select name="sede"><option value="">Sin definir</option>${[...nb.SEDES, ...(v.sede && !nb.SEDES.includes(v.sede) ? [v.sede] : [])].map((s) => `<option ${v.sede === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>${t('age', 'Edad', 'number', 'min="0" max="120"')}${t('civil_status', 'Estado civil')}</div>
         <div class="row"><div><label>Servicio en que se convirtió</label><select name="service"><option value="">Sin definir</option>${[...nb.SERVICES, ...(v.service && !nb.SERVICES.includes(v.service) ? [v.service] : [])].map((s) => `<option ${v.service === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div></div>
         <div class="row">${t('address', 'Dirección (dato sensible)')}${t('how_arrived', 'Cómo llegó a la congregación')}</div>
         <label>Seguimiento</label><textarea name="followup">${esc(v.followup || '')}</textarea>
