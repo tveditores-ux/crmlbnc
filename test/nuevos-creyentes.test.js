@@ -53,7 +53,7 @@ test('parseSubmission: lo esencial es obligatorio y la fecha no puede ser futura
   );
   assert.ok(sinServicio.errors.some((e) => /en qué servicio/.test(e)));
   const ok = nb.parseSubmission(
-    { full_name: 'María Pérez', phone: '0414-0000001', decision_date: TODAY, sede: 'Las Mercedes', service: 'Domingo · 2do servicio', how_arrived: 'Invitado por un familiar' },
+    { full_name: 'María Pérez', phone: '0414-0000001', decision_date: TODAY, sede: 'Las Mercedes', service: 'Domingo · 2do servicio', first_time: 'Primera vez', decision_type: 'Conversión', how_arrived: 'Invitado por un familiar' },
     '58',
     TODAY
   );
@@ -61,6 +61,15 @@ test('parseSubmission: lo esencial es obligatorio y la fecha no puede ser futura
   assert.equal(ok.value.phone, '584140000001');
   assert.equal(ok.value.decision_date, TODAY);
   assert.equal(ok.value.service, 'Domingo · 2do servicio');
+  assert.equal(ok.value.first_time, 'Primera vez');
+  assert.equal(ok.value.decision_type, 'Conversión');
+  const sinDatos = nb.parseSubmission(
+    { full_name: 'María Pérez', phone: '0414-0000001', decision_date: TODAY, sede: 'Las Mercedes', service: 'Miércoles', how_arrived: 'Otro' },
+    '58',
+    TODAY
+  );
+  assert.ok(sinDatos.errors.some((e) => /primera vez/.test(e)));
+  assert.ok(sinDatos.errors.some((e) => /conversión o reconciliación/.test(e)));
 });
 
 test('el remoto: enlace malo no abre; el registro entra a Nueva Vida por revisar, con la fecha de hoy', async (t) => {
@@ -78,6 +87,8 @@ test('el remoto: enlace malo no abre; el registro entra a Nueva Vida por revisar
     assert.match(html, /Miércoles/);
     assert.match(html, /Nuarito/); // las sedes son las dos que dictó el pastor
     assert.match(html, /Las Mercedes/);
+    assert.match(html, /¿Es tu primera vez en la iglesia\?/);
+    assert.match(html, /¿Fue conversión o reconciliación\?/);
 
     // falta el teléfono: vuelve al formulario con el aviso y no guarda nada
     const bad = await post(`/nuevos-creyentes/${link.token}`, { full_name: 'María Pérez', decision_date: TODAY, sede: 'Las Mercedes', how_arrived: 'Otro' });
@@ -88,7 +99,7 @@ test('el remoto: enlace malo no abre; el registro entra a Nueva Vida por revisar
     // registro completo: entra a la lista, por revisar y con su fuente
     const ok = await post(`/nuevos-creyentes/${link.token}`, {
       full_name: 'María Pérez', phone: '0414-0000001', decision_date: TODAY, sede: 'Las Mercedes',
-      service: 'Miércoles', how_arrived: 'Invitado por un familiar', age: '33', civil_status: 'Casado(a)',
+      service: 'Miércoles', first_time: 'Ya ha venido antes', decision_type: 'Reconciliación', how_arrived: 'Invitado por un familiar', age: '33', civil_status: 'Casado(a)',
     });
     assert.equal(ok.status, 200);
     assert.match(await ok.text(), /familia de Dios/);
@@ -96,6 +107,8 @@ test('el remoto: enlace malo no abre; el registro entra a Nueva Vida por revisar
     assert.equal(rows.length, 1);
     assert.equal(rows[0].full_name, 'María Pérez');
     assert.equal(rows[0].service, 'Miércoles');
+    assert.equal(rows[0].first_time, 'Ya ha venido antes');
+    assert.equal(rows[0].decision_type, 'Reconciliación');
     assert.equal(rows[0].phone, '584140000001');
     assert.equal(rows[0].decision_date.toISOString().slice(0, 10), TODAY);
     assert.equal(rows[0].needs_review, true);

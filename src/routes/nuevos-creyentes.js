@@ -54,6 +54,8 @@ function nuevosCreyentesRouter(ctx) {
         <input id="decision_date" type="date" name="decision_date" required max="${today()}" value="${esc(v.decision_date || today())}">
         ${sedeField}
         ${sel('service', '¿En qué servicio se convirtió?', nb.SERVICES, true)}
+        ${sel('first_time', '¿Es tu primera vez en la iglesia?', nb.FIRST_TIME, true)}
+        ${sel('decision_type', '¿Fue conversión o reconciliación?', nb.DECISION_TYPES, true)}
         ${sel('how_arrived', '¿Cómo llegó a la iglesia?', nb.HOW_ARRIVED, true)}
         <h2>Si los tienes a mano (opcional)</h2>
         <div class="pair">
@@ -100,7 +102,7 @@ function nuevosCreyentesRouter(ctx) {
       const { value, errors } = nb.parseSubmission(body, config.defaultCountryCode, today());
       if (errors.length) {
         const sedes = await nb.listSedes(db);
-        const back = { full_name: body.full_name, phone: body.phone, email: body.email, decision_date: body.decision_date, sede: body.sede, service: body.service, age: body.age, civil_status: body.civil_status, address: body.address, how_arrived: body.how_arrived };
+        const back = { full_name: body.full_name, phone: body.phone, email: body.email, decision_date: body.decision_date, sede: body.sede, service: body.service, first_time: body.first_time, decision_type: body.decision_type, age: body.age, civil_status: body.civil_status, address: body.address, how_arrived: body.how_arrived };
         return send(res, shell('Registro de nuevo creyente', form(req.params.token, back, errors, sedes)));
       }
       await nb.submit(db, value);

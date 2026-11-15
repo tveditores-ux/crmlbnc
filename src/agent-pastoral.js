@@ -243,7 +243,7 @@ async function runTool(db, config, name, input = {}, now = new Date()) {
       const { desde, hasta } = range(input, now, tz);
       const sede = String(input.sede || '').trim();
       const { rows } = await db.query(
-        `SELECT n.full_name, n.decision_date, n.sede, n.service, n.how_arrived, n.followup, n.connected_at,
+        `SELECT n.full_name, n.decision_date, n.sede, n.service, n.first_time, n.decision_type, n.how_arrived, n.followup, n.connected_at,
                 c.status, c.call_date, c.meeting_date, c.baptism_date
            FROM nueva_vida n LEFT JOIN consolidation c ON c.id = n.consolidation_id
           WHERE n.decision_date BETWEEN $1 AND $2 AND ($3 = '' OR lower(n.sede) LIKE $4)
@@ -255,7 +255,7 @@ async function runTool(db, config, name, input = {}, now = new Date()) {
       return {
         rango: { desde, hasta }, total: rows.length, por_sede: porSede,
         personas: rows.map((r) => ({
-          nombre: r.full_name, fecha_decision: day(r.decision_date), sede: r.sede, servicio: r.service || null, como_llego: clip(r.how_arrived, 80), seguimiento: clip(r.followup, 160),
+          nombre: r.full_name, fecha_decision: day(r.decision_date), sede: r.sede, servicio: r.service || null, primera_vez: r.first_time || null, decision: r.decision_type || null, como_llego: clip(r.how_arrived, 80), seguimiento: clip(r.followup, 160),
           conectado_a_consolidacion: Boolean(r.connected_at), estado: r.status || null, llamada: day(r.call_date), reunion: day(r.meeting_date), bautismo: day(r.baptism_date),
         })),
       };
