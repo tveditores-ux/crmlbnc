@@ -28,6 +28,9 @@ const HOW_ARRIVED = [
 /** En qué servicio se convirtió (pedido del pastor, 2026-11-15): los tres del domingo o el del miércoles. */
 const SERVICES = ['Domingo · 1er servicio', 'Domingo · 2do servicio', 'Domingo · 3er servicio', 'Miércoles'];
 
+/** Las sedes de la iglesia (las dictó el pastor, 2026-11-15): la lista es fija, no sale de los datos. */
+const SEDES = ['Nuarito', 'Las Mercedes'];
+
 async function getLink(db) {
   const { rows } = await db.query('SELECT key, value FROM care_settings WHERE key IN ($1, $2)', [TOKEN_KEY, ACTIVE_KEY]);
   const m = Object.fromEntries(rows.map((r) => [r.key, r.value]));
@@ -53,10 +56,9 @@ async function linkIsValid(db, token) {
   return l.active && l.token === token;
 }
 
-/** Las sedes que ya usa la lista de Nueva Vida, para ofrecerlas en el formulario. */
-async function listSedes(db) {
-  const { rows } = await db.query("SELECT DISTINCT sede FROM nueva_vida WHERE sede <> '' ORDER BY sede");
-  return rows.map((r) => r.sede);
+/** Las sedes que ofrece el formulario: la lista fija que dictó el pastor. */
+async function listSedes() {
+  return SEDES;
 }
 
 /**
@@ -84,7 +86,7 @@ function parseSubmission(body, countryCode = '58', today) {
   else if (name.split(/\s+/).length < 2) errors.push('Escribe el nombre y el apellido, para poder identificarlo.');
   if (!String(body.phone || '').trim()) errors.push('Escribe su número de WhatsApp: es el medio para llamarlo en el seguimiento.');
   if (!String(body.decision_date || '').trim()) errors.push('Escribe la fecha de la decisión (la de hoy, si se convirtió hoy).');
-  if (!String(body.sede || '').trim()) errors.push('Elige la sede donde se convirtió.');
+  if (!SEDES.includes(value.sede)) errors.push('Elige la sede donde se convirtió: Nuarito o Las Mercedes.');
   if (!SERVICES.includes(value.service)) errors.push('Elige en qué servicio se convirtió: domingo 1, 2 o 3, o miércoles.');
   if (!String(body.how_arrived || '').trim()) errors.push('Elige cómo llegó a la iglesia.');
   return { value, errors: [...new Set(errors)] };
@@ -107,7 +109,7 @@ async function countPending(db) {
 }
 
 module.exports = {
-  TOKEN_KEY, ACTIVE_KEY, SOURCE, HOW_ARRIVED, SERVICES,
+  TOKEN_KEY, ACTIVE_KEY, SOURCE, HOW_ARRIVED, SERVICES, SEDES,
   getLink, ensureLink, regenerateLink, setLinkActive, linkIsValid,
   listSedes, parseSubmission, submit, countPending,
 };

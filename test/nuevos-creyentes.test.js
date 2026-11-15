@@ -41,19 +41,19 @@ test('parseSubmission: lo esencial es obligatorio y la fecha no puede ser futura
   assert.ok(empty.errors.some((e) => /sede/.test(e)));
   const manana = new Date(Date.now() + 864e5).toLocaleDateString('en-CA', { timeZone: config.timezone });
   const future = nb.parseSubmission(
-    { full_name: 'María Pérez', phone: '0414-0000001', decision_date: manana, sede: 'Cabudare', how_arrived: 'Otro' },
+    { full_name: 'María Pérez', phone: '0414-0000001', decision_date: manana, sede: 'Las Mercedes', how_arrived: 'Otro' },
     '58',
     TODAY
   );
   assert.ok(future.errors.some((e) => /futura/.test(e)));
   const sinServicio = nb.parseSubmission(
-    { full_name: 'María Pérez', phone: '0414-0000001', decision_date: TODAY, sede: 'Cabudare', how_arrived: 'Otro' },
+    { full_name: 'María Pérez', phone: '0414-0000001', decision_date: TODAY, sede: 'Las Mercedes', how_arrived: 'Otro' },
     '58',
     TODAY
   );
   assert.ok(sinServicio.errors.some((e) => /en qué servicio/.test(e)));
   const ok = nb.parseSubmission(
-    { full_name: 'María Pérez', phone: '0414-0000001', decision_date: TODAY, sede: 'Cabudare', service: 'Domingo · 2do servicio', how_arrived: 'Invitado por un familiar' },
+    { full_name: 'María Pérez', phone: '0414-0000001', decision_date: TODAY, sede: 'Las Mercedes', service: 'Domingo · 2do servicio', how_arrived: 'Invitado por un familiar' },
     '58',
     TODAY
   );
@@ -76,16 +76,18 @@ test('el remoto: enlace malo no abre; el registro entra a Nueva Vida por revisar
     assert.match(html, /¿En qué servicio se convirtió\?/);
     assert.match(html, /Domingo · 1er servicio/);
     assert.match(html, /Miércoles/);
+    assert.match(html, /Nuarito/); // las sedes son las dos que dictó el pastor
+    assert.match(html, /Las Mercedes/);
 
     // falta el teléfono: vuelve al formulario con el aviso y no guarda nada
-    const bad = await post(`/nuevos-creyentes/${link.token}`, { full_name: 'María Pérez', decision_date: TODAY, sede: 'Cabudare', how_arrived: 'Otro' });
+    const bad = await post(`/nuevos-creyentes/${link.token}`, { full_name: 'María Pérez', decision_date: TODAY, sede: 'Las Mercedes', how_arrived: 'Otro' });
     assert.equal(bad.status, 200);
     assert.match(await bad.text(), /WhatsApp/);
     assert.equal((await db.query('SELECT count(*)::int AS n FROM nueva_vida')).rows[0].n, 0);
 
     // registro completo: entra a la lista, por revisar y con su fuente
     const ok = await post(`/nuevos-creyentes/${link.token}`, {
-      full_name: 'María Pérez', phone: '0414-0000001', decision_date: TODAY, sede: 'Cabudare',
+      full_name: 'María Pérez', phone: '0414-0000001', decision_date: TODAY, sede: 'Las Mercedes',
       service: 'Miércoles', how_arrived: 'Invitado por un familiar', age: '33', civil_status: 'Casado(a)',
     });
     assert.equal(ok.status, 200);
