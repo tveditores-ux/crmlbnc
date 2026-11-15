@@ -82,6 +82,9 @@ function chatLideresPanelRouter(ctx) {
       const miembros = await chat.members(db);
       const mensajes = await chat.recentMessages(db, 50);
       const limite = await chat.getGraceLimit(db);
+      const invite = await chat.getInvite(db);
+      const inviteUrl = invite.token ? `${config.publicUrl}/chat-invitacion/${invite.token}` : '';
+      const inviteSaludo = `Hola, la paz del Señor. Te invito al chat de líderes de ${config.churchName}: abre este enlace y entra con tu número de WhatsApp: ${inviteUrl} Ahí conversamos entre líderes y servidores, y Grace también está en la sala. Agrega el ícono a tu pantalla de inicio para recibir los avisos de la app.`;
       const vapid = await webpush.ensureVapid(db).catch(() => null);
       const subs = (await db.query('SELECT DISTINCT person_id FROM push_subscriptions')).rows.map((x) => x.person_id);
       const filasMiembros = miembros.length
@@ -123,6 +126,29 @@ function chatLideresPanelRouter(ctx) {
           <p class="muted" style="margin-bottom:0">Notificaciones de la app: ${vapid ? 'listas (clave pública generada)' : 'sin generar todavía'} · Con 0, Grace no responde en la sala.</p>
         </div>
         <div class="card">
+          <h2 style="margin-top:0">Enlace de invitación (para compartir con los miembros)</h2>
+          ${
+            invite.token
+              ? `<p style="margin-top:0">Este es <strong>el enlace que se comparte</strong> con los líderes y servidores — por el grupo de WhatsApp, por ejemplo. Quien lo abre escribe su número de WhatsApp y entra directo a <strong>su</strong> chat (cada quien como sí mismo). También está en la pestaña «Registros» y dentro del chat, en el botón ↗.</p>
+          <label>Enlace de invitación
+            <input type="text" readonly value="${esc(inviteUrl)}" onclick="this.select()" style="width:100%">
+          </label>
+          <p style="display:flex;gap:8px;flex-wrap:wrap">
+            <a class="btn" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(inviteSaludo)}">Enviar por WhatsApp</a>
+            <button type="button" class="btn sec" onclick="navigator.clipboard.writeText(${JSON.stringify(inviteUrl)});this.textContent='¡Copiado!'">Copiar enlace</button>
+          </p>
+          <p class="muted">Estado: <strong>${invite.active ? 'encendido' : 'apagado'}</strong></p>
+          <form method="post" action="/chat-lideres/invitacion/${invite.active ? 'apagar' : 'encender'}" style="display:inline">
+            <button class="btn sec">${invite.active ? 'Apagar la invitación' : 'Encender la invitación'}</button>
+          </form>
+          <form method="post" action="/chat-lideres/invitacion/nuevo" style="display:inline" onsubmit="return confirm('Se crea un enlace de invitación nuevo y el anterior deja de funcionar. ¿Continuar?')">
+            <button class="btn sec">Generar enlace nuevo</button>
+          </form>`
+              : `<p style="margin-top:0">Todavía no hay enlace de invitación. Genéralo y compártelo con los líderes y servidores: quien lo abra escribe su número de WhatsApp y entra directo a su chat, sin repartir enlace por enlace.</p>
+          <form method="post" action="/chat-lideres/invitacion/generar"><button class="btn">Generar enlace de invitación</button></form>`
+          }
+        </div>
+        <div class="card">
           <h2 style="margin-top:0">Miembros (${miembros.length})</h2>
           <table><thead><tr><th>Persona</th><th>Rol</th><th>Notificaciones</th></tr></thead><tbody>${filasMiembros}</tbody></table>
         </div>
@@ -131,6 +157,16 @@ function chatLideresPanelRouter(ctx) {
           <table><thead><tr><th>Cuándo</th><th>Quién</th><th>Mensaje</th><th></th></tr></thead><tbody>${filasMensajes}</tbody></table>
         </div>`
       );
+    })
+  );
+
+  r.post(
+    '/chat-lideres/invitacion/:accion(generar|nuevo|encender|apagar)',
+    ah(async (req, res) => {
+      if (req.params.accion === 'generar') await chat.ensureInvite(db);
+      else if (req.params.accion === 'nuevo') await chat.regenerateInvite(db);
+      else await chat.setInviteActive(db, req.params.accion === 'encender');
+      go(res, '/chat-lideres', { ok: 'Enlace de invitación actualizado.' });
     })
   );
 
