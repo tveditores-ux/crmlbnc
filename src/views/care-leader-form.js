@@ -38,6 +38,7 @@ function leaderFields(v, { today, photoSrc = '', stages, days, congregations = [
         ${birthRoll(v, today)}
         <label for="leader_cedula">Cédula de identidad (C.I.) del líder</label><input id="leader_cedula" type="text" inputmode="text" autocapitalize="characters" name="leader_cedula" required maxlength="14" value="${esc(v.leader_cedula || '')}" placeholder="V-12345678">
         ${t('leader_address', 'Dirección del líder', 'maxlength="250" required')}
+        ${t('leader_occupation', 'Ocupación del líder', 'maxlength="120" required placeholder="Su oficio o profesión"')}
         <label for="leader_phone">Teléfono del líder (WhatsApp)</label><input id="leader_phone" type="tel" inputmode="tel" name="leader_phone" required value="${esc(v.leader_phone_input ?? '')}" placeholder="0414-000.00.00">
         <label for="leader_email">Correo del líder</label><input id="leader_email" type="email" inputmode="email" name="leader_email" required value="${esc(v.leader_email || '')}">
 

@@ -126,6 +126,16 @@ async function mergePeople(pool, idA, idB, { inheritOptIn = false } = {}) {
     await db.query('UPDATE member_submissions SET person_id = $1 WHERE person_id = $2', [keep.id, other.id]);
     await db.query('UPDATE ministry_leader_submissions SET person_id = $1 WHERE person_id = $2', [keep.id, other.id]);
 
+    // 1c) Chat de líderes: el acceso personal pasa a la ficha conservada (si ya tenía uno, manda el suyo);
+    // sus mensajes, su lectura y sus suscripciones de notificaciones también.
+    await db.query('DELETE FROM person_chat_links WHERE person_id = $1 AND EXISTS (SELECT 1 FROM person_chat_links WHERE person_id = $2)', [other.id, keep.id]);
+    await db.query('UPDATE person_chat_links SET person_id = $1 WHERE person_id = $2', [keep.id, other.id]);
+    await db.query('UPDATE chat_room_messages SET person_id = $1 WHERE person_id = $2', [keep.id, other.id]);
+    await db.query('UPDATE chat_room_messages SET pregunta_de = $1 WHERE pregunta_de = $2', [keep.id, other.id]);
+    await db.query('DELETE FROM chat_room_reads WHERE person_id = $1 AND EXISTS (SELECT 1 FROM chat_room_reads WHERE person_id = $2)', [other.id, keep.id]);
+    await db.query('UPDATE chat_room_reads SET person_id = $1 WHERE person_id = $2', [keep.id, other.id]);
+    await db.query('UPDATE push_subscriptions SET person_id = $1 WHERE person_id = $2', [keep.id, other.id]);
+
     // 2) Ministerios: se unen; si la otra era coordinadora, ahora lo es la conservada.
     summary.ministries = (
       await db.query(

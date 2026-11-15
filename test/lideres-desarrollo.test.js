@@ -15,10 +15,10 @@ const dataUrl = (buf) => `data:image/jpeg;base64,${buf.toString('base64')}`;
 const OPTIONS = ['Alabanza', 'Anfitriones', 'Diaconado', 'Intercesión', 'Medios', 'Nueva Vida'];
 const GROUPS = [{ id: 7, name: 'Grupo Esperanza', leader_name: 'Ana Díaz' }];
 
-// ministerio + grupo de cuidado + la ficha del líder + estado civil y foto: todo obligatorio menos el correo (sin cargo)
+// ministerio + grupo de cuidado + la ficha del líder + estado civil: TODOS los datos obligatorios (sin cargo)
 const base = {
   ministerio: 'Alabanza', congregacional: 'No sirvo en ninguno', grupo_cuidado: 'ninguno', full_name: 'María Torres', phone: '0414-000.00.22', bd_day: '15', bd_month: '06', bd_year: '1990',
-  cedula: 'V-19888777', address: 'Urbanización El Prado, casa 4', civil_status: 'Casado(a)', congregation: 'Mujeres', photo_data: dataUrl(fakeJpeg()),
+  cedula: 'V-19888777', address: 'Urbanización El Prado, casa 4', occupation: 'Docente', email: 'maria@ejemplo.com', civil_status: 'Casado(a)', congregation: 'Mujeres', photo_data: dataUrl(fakeJpeg()),
 };
 
 test('validación: el ministerio de desarrollo y el grupo de cuidado mandan; la ficha es la del líder más el estado civil', () => {

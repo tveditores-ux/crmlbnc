@@ -47,10 +47,11 @@ function pastorIntakeRouter(ctx) {
         ${birthRoll(v, today(), 'Fecha de nacimiento')}
         <label for="cedula">Cédula de identidad (C.I.)</label><input id="cedula" type="text" name="cedula" required maxlength="14" autocapitalize="characters" value="${esc(v.cedula || '')}" placeholder="V-12345678">
         ${t('address', 'Dirección', 'maxlength="250" required')}
+        ${t('occupation', 'Ocupación', 'maxlength="120" required placeholder="Tu oficio o profesión"')}
         ${sel('civil_status', 'Estado civil', CIVIL_STATUS, 'Elige…', true)}
         ${sel('congregation', '¿Cuál es tu congregación?', CONGREGATIONS, 'Elige…', true)}
-        <label for="email">Correo</label><input id="email" type="email" inputmode="email" name="email" value="${esc(v.email || '')}">
-        <h2>Foto (opcional)</h2>
+        <label for="email">Correo</label><input id="email" type="email" inputmode="email" name="email" required value="${esc(v.email || '')}">
+        <h2>Foto</h2>
         <div class="photo-box">
           <img id="photo_prev" alt="Vista previa de la foto" ${v.photo_data ? `src="${esc(v.photo_data)}"` : 'style="display:none"'}>
           <div class="quick">
@@ -63,7 +64,7 @@ function pastorIntakeRouter(ctx) {
         <label class="check"><input type="checkbox" name="wants_messages" value="1" ${v.wants_messages === '1' ? 'checked' : ''}> Quiero recibir recordatorios de la iglesia por WhatsApp</label>
         <p class="muted" style="font-size:13px;margin:4px 0 0">Es opcional. La iglesia te lo confirmará antes de escribirte.</p>
         <button class="go">Enviar mi registro</button>
-      </form>${photoScript({ required: false })}
+      </form>${photoScript({ required: true })}
       <script>(function(){var s=document.getElementById('funcion'),b=document.getElementById('otro_box');function f(){b.style.display=s.value===${JSON.stringify(intake.OTRO)}?'':'none';}s.addEventListener('change',f);f();})();</script>`;
   }
 

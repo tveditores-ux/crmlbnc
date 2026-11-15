@@ -15,9 +15,12 @@ const fakeJpeg = (fill = 7) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe
 const dataUrl = (buf) => `data:image/jpeg;base64,${buf.toString('base64')}`;
 
 // lo obligatorio: nombre y apellido, teléfono, nacimiento (tres selectores) y congregación
-const base = { full_name: 'Ana Pérez', phone: '0414-000.00.01', bd_day: '05', bd_month: '11', bd_year: '1985', congregation: 'Mujeres' };
+const base = {
+  full_name: 'Ana Pérez', phone: '0414-000.00.01', email: 'ana@ejemplo.com', bd_day: '05', bd_month: '11', bd_year: '1985', congregation: 'Mujeres',
+  cedula: 'V-12345678', address: 'Calle de prueba 1', occupation: 'Docente', civil_status: 'Casado(a)', care_group_name: 'Todavía no estoy en un grupo', photo_data: dataUrl(fakeJpeg()),
+};
 
-test('validación: obligatorios, formatos y lo opcional', () => {
+test('validación: todo obligatorio y formatos', () => {
   const parse = (extra) => intake.parseSubmission({ ...base, ...extra }, ['Grupo Uno'], '58', TODAY);
   const ok = parse({});
   assert.deepEqual(ok.errors, []);
@@ -34,7 +37,7 @@ test('validación: obligatorios, formatos y lo opcional', () => {
   assert.ok(parse({ bd_day: '', bd_month: '', bd_year: '' }).errors.includes('Elige tu fecha de nacimiento.'));
   assert.ok(parse({ bd_day: '5', bd_month: '', bd_year: '1985' }).errors.some((e) => /Completa el día, el mes y el año/.test(e)));
   assert.ok(parse({ bd_day: '31', bd_month: '02', bd_year: '1985' }).errors.some((e) => /no existe/.test(e)));
-  // opcionales: cédula (se normaliza), correo, estado civil y grupo (solo uno de la lista)
+  // antes opcionales, ahora también obligatorios: cédula (se normaliza), correo, dirección, ocupación, estado civil y grupo
   const full = parse({ cedula: 'v 12.345.678', email: 'Ana@Ejemplo.com', civil_status: 'Casado(a)', care_group_name: 'Grupo Uno', wants_messages: '1' });
   assert.deepEqual(full.errors, []);
   assert.equal(full.value.cedula, 'V-12345678');
@@ -45,8 +48,13 @@ test('validación: obligatorios, formatos y lo opcional', () => {
   assert.equal(parse({ civil_status: 'Inventado' }).value.civil_status, '');
   assert.ok(parse({ cedula: 'abc' }).errors.some((e) => /cédula/i.test(e)));
   assert.ok(parse({ email: 'no-es-correo' }).errors.some((e) => /correo/.test(e)));
+  assert.ok(parse({ email: '' }).errors.includes('Escribe tu correo.'));
+  assert.ok(parse({ address: '' }).errors.includes('Escribe tu dirección.'));
+  assert.ok(parse({ occupation: '' }).errors.includes('Escribe tu ocupación.'));
+  assert.ok(parse({ civil_status: '' }).errors.includes('Elige tu estado civil.'));
+  assert.ok(parse({ care_group_name: '' }).errors.includes('Elige tu grupo de cuidado.'));
   assert.ok(parse({ photo_data: 'data:image/png;base64,AAAA' }).errors.length);
-  assert.equal(parse({ photo_data: '' }).photo.buffer, null); // la foto es opcional
+  assert.ok(parse({ photo_data: '' }).errors.includes('La foto es obligatoria: tómate una foto o elige una de la galería.'));
 });
 
 async function withApp(t, fn) {
@@ -148,7 +156,7 @@ test('el consentimiento solo se registra si la persona lo pidió Y quien revisa 
   await withApp(t, async ({ db, post }) => {
     const token = await tokenOf(db);
     await post(`/mis-datos/${token}`, { ...base, wants_messages: '1' });
-    await post(`/mis-datos/${token}`, { ...base, full_name: 'Luis Rojas', phone: '0414-000.00.02' }); // no lo pidió
+    await post(`/mis-datos/${token}`, { ...base, full_name: 'Luis Rojas', phone: '0414-000.00.02', email: 'luis@ejemplo.com' }); // no lo pidió
     const [a, b] = (await db.query('SELECT id FROM member_submissions ORDER BY id')).rows;
     await post(`/personas/respuestas/${a.id}/aplicar`, { consent: '1' });
     await post(`/personas/respuestas/${b.id}/aplicar`, { consent: '1' }); // marcó la casilla, pero la persona no lo pidió
@@ -163,7 +171,7 @@ test('quien ya está en Personas y no trae nada distinto se completa sola, sin p
     await db.query("INSERT INTO people (full_name, phone, opt_in, active) VALUES ('Sin Consentimiento', '584140000002', FALSE, TRUE)");
     const token = await tokenOf(db);
 
-    const r = await post(`/mis-datos/${token}`, { ...base, full_name: 'maría pérez', email: '', cedula: 'V-12345678', address: 'Calle 1', wants_messages: '1', photo_data: dataUrl(fakeJpeg()) });
+    const r = await post(`/mis-datos/${token}`, { ...base, full_name: 'maría pérez', email: 'maria@ejemplo.com', cedula: 'V-12345678', address: 'Calle 1', wants_messages: '1', photo_data: dataUrl(fakeJpeg()) });
     assert.match(await r.text(), /Tus datos quedaron guardados/);
     const p = await person(db, '584140000001');
     assert.equal(p.full_name, 'MARÍA  Pérez'); // su nombre no se pisa

@@ -31,6 +31,8 @@ const { pastorIntakeRouter } = require('./routes/pastor-intake');
 const { pastorRequestsRouter } = require('./routes/pastor-requests');
 const { ministryLeaderIntakeRouter } = require('./routes/ministry-leader-intake');
 const { ministryLeaderRequestsRouter } = require('./routes/ministry-leader-requests');
+const { chatLideresRouter } = require('./routes/chat-lideres');
+const { chatLideresPanelRouter } = require('./routes/chat-lideres-panel');
 const { registrosRouter } = require('./routes/registros');
 const { configuracionRouter } = require('./routes/configuracion');
 const { calendarRouter } = require('./routes/calendar');
@@ -103,6 +105,7 @@ function createApp(ctx) {
   app.use(memberIntakeRouter(ctx)); // "Mis datos": enlace común para toda la gente, sin sesión
   app.use(pastorIntakeRouter(ctx)); // registro pastoral: enlace común para los pastores, sin sesión
   app.use(ministryLeaderIntakeRouter(ctx)); // líderes de ministerios de desarrollo: enlace común solo para ellos, sin sesión
+  app.use(chatLideresRouter(ctx)); // chat de líderes: sala común con enlace PERSONAL por líder/servidor, sin sesión
   app.use(cartasRouter()); // la carta de bienvenida se lee sin sesión: el enlace se manda por WhatsApp
   app.use(careIntakeRouter(ctx)); // enlace común para todos los líderes: también por enlace secreto
   app.use(reunionRemotaRouter(ctx)); // libreta de la reunión de equipo: enlace secreto, sin sesión
@@ -151,6 +154,7 @@ function createApp(ctx) {
   app.use(memberRequestsRouter(ctx));
   app.use(pastorRequestsRouter(ctx));
   app.use(ministryLeaderRequestsRouter(ctx));
+  app.use(chatLideresPanelRouter(ctx));
   app.use(registrosRouter(ctx)); // «Registros»: todos los enlaces de registro en un solo lugar
   app.use(attendanceRouter(ctx));
   app.use(membersRouter(ctx));

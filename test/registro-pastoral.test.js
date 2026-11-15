@@ -14,10 +14,10 @@ const TODAY = new Date().toLocaleDateString('en-CA', { timeZone: config.timezone
 const fakeJpeg = (fill = 7) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(400, fill), Buffer.from([0xff, 0xd9])]);
 const dataUrl = (buf) => `data:image/jpeg;base64,${buf.toString('base64')}`;
 
-// la ficha del líder + estado civil + función: todo obligatorio menos correo y foto
+// la ficha del líder + estado civil + función: TODOS los datos obligatorios, también correo y foto
 const base = {
   funcion: 'Pastor', full_name: 'José Hernández', phone: '0414-000.00.11', bd_day: '20', bd_month: '03', bd_year: '1980',
-  cedula: 'V-11222333', address: 'Casa pastoral, calle 2', civil_status: 'Casado(a)', congregation: 'Hombres',
+  cedula: 'V-11222333', address: 'Casa pastoral, calle 2', occupation: 'Docente', email: 'jose@ejemplo.com', civil_status: 'Casado(a)', congregation: 'Hombres', photo_data: dataUrl(fakeJpeg()),
 };
 
 test('validación: la función manda y la ficha es la del líder más el estado civil', () => {
@@ -45,7 +45,9 @@ test('validación: la función manda y la ficha es la del líder más el estado 
   assert.deepEqual(parse({ congregation: 'General' }).errors, []); // los pastores pueden ser de la congregación general
   assert.equal(parse({ congregation: 'General' }).value.congregation, 'General');
   assert.ok(parse({ full_name: 'Solonombre' }).errors.includes('Escribe tu nombre y tu apellido.'));
-  assert.equal(parse({ photo_data: '' }).photo.buffer, null); // la foto es opcional
+  assert.ok(parse({ photo_data: '' }).errors.some((e) => /foto es obligatoria/.test(e))); // la foto es obligatoria
+  assert.ok(parse({ email: '' }).errors.includes('Escribe tu correo.'));
+  assert.ok(parse({ occupation: '' }).errors.includes('Escribe tu ocupación.'));
   assert.ok(parse({ photo_data: 'data:image/png;base64,AAAA' }).errors.length);
 });
 

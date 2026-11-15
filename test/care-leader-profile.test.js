@@ -13,7 +13,7 @@ const TODAY = new Date().toLocaleDateString('en-CA', { timeZone: config.timezone
 
 // "JPEG" mínimo para las pruebas: empieza con FFD8FF, termina con FFD9 y pasa el tamaño mínimo.
 // lo obligatorio del formulario por grupo (el nacimiento y la foto se prueban aparte)
-const required = { leader_name: 'Líder Uno', leader_cedula: 'V-12345678', leader_address: 'Calle de prueba 1', leader_phone: '0414-000.00.01', leader_email: 'lider@ejemplo.com' };
+const required = { leader_name: 'Líder Uno', leader_cedula: 'V-12345678', leader_address: 'Calle de prueba 1', leader_occupation: 'Comerciante', leader_phone: '0414-000.00.01', leader_email: 'lider@ejemplo.com' };
 const fakeJpeg = (fill = 7) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(400, fill), Buffer.from([0xff, 0xd9])]);
 const dataUrl = (buf) => `data:image/jpeg;base64,${buf.toString('base64')}`;
 

@@ -21,10 +21,10 @@ const FUNCIONES = [
   'Coordinador de ministerio', 'Alabanza', 'Intercesión', 'Iglesia de niños', 'Protocolo y ujieres', 'Medios y sonido',
 ];
 const OTRO = 'Otro ministerio'; // con el nombre escrito a mano en funcion_otro
-const FIELDS = ['full_name', 'email', 'birth_date', 'cedula', 'address', 'civil_status', 'congregation'];
+const FIELDS = ['full_name', 'email', 'birth_date', 'cedula', 'address', 'occupation', 'civil_status', 'congregation'];
 const LABELS = {
   funcion: 'Función', full_name: 'Nombre y apellido', email: 'Correo', birth_date: 'Nacimiento', cedula: 'Cédula (C.I.)',
-  address: 'Dirección', civil_status: 'Estado civil', congregation: 'Congregación',
+  address: 'Dirección', occupation: 'Ocupación', civil_status: 'Estado civil', congregation: 'Congregación',
 };
 const SENSITIVE = ['birth_date', 'cedula', 'address']; // se borran de la respuesta cuando se atiende
 
@@ -59,7 +59,8 @@ async function tokenIsValid(db, token) {
 /* ------------------------------ Validación ------------------------------ */
 /**
  * Valida el envío. Obligatorios: función, nombre y apellido, teléfono, fecha de nacimiento, cédula,
- * dirección, estado civil y congregación (la ficha del líder, más el estado civil). Correo y foto, opcionales.
+ * dirección, ocupación, estado civil y congregación (la ficha del líder, más el estado civil).
+ * TODOS los datos son obligatorios, también el correo y la foto (pedido de Eliezer, 2026-11-14).
  */
 function parseSubmission(body, countryCode, today) {
   const errors = [];
@@ -83,7 +84,8 @@ function parseSubmission(body, countryCode, today) {
 
   const emailRaw = clean(body.email, 120);
   const email = emailRaw ? normalizeEmail(emailRaw) || '' : '';
-  if (emailRaw && !email) errors.push('Tu correo no parece válido.');
+  if (!emailRaw) errors.push('Escribe tu correo.');
+  else if (!email) errors.push('Tu correo no parece válido.');
 
   const parts = [body.bd_day, body.bd_month, body.bd_year].map((x) => String(x ?? '').trim());
   let birth_date = '';
@@ -104,6 +106,9 @@ function parseSubmission(body, countryCode, today) {
   const address = clean(body.address, 250);
   if (!address) errors.push('Escribe tu dirección.');
 
+  const occupation = clean(body.occupation, 120);
+  if (!occupation) errors.push('Escribe tu ocupación.');
+
   const civil = String(body.civil_status ?? '').trim();
   if (!CIVIL_STATUS.includes(civil)) errors.push('Elige tu estado civil.');
 
@@ -112,9 +117,10 @@ function parseSubmission(body, countryCode, today) {
 
   const photo = cg.parsePhoto(body.photo_data);
   if (photo.error) errors.push(photo.error);
+  else if (!photo.buffer) errors.push('La foto es obligatoria: tómate una foto o elige una de la galería.');
 
   return {
-    value: { funcion, full_name, phone, email, birth_date, cedula: ci.value, address, civil_status: CIVIL_STATUS.includes(civil) ? civil : '', congregation, wants_messages: body.wants_messages === '1' },
+    value: { funcion, full_name, phone, email, birth_date, cedula: ci.value, address, occupation, civil_status: CIVIL_STATUS.includes(civil) ? civil : '', congregation, wants_messages: body.wants_messages === '1' },
     photo,
     errors: [...new Set(errors)],
   };
@@ -142,9 +148,9 @@ async function submit(pool, sub) {
     }
   }
   const { rows } = await pool.query(
-    `INSERT INTO pastor_submissions (person_id, funcion, full_name, phone, email, birth_date, cedula, address, civil_status, congregation, wants_messages, photo)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
-    [person ? person.id : null, v.funcion, v.full_name, v.phone, v.email, v.birth_date, v.cedula, v.address, v.civil_status, v.congregation, v.wants_messages, sub.photo.buffer]
+    `INSERT INTO pastor_submissions (person_id, funcion, full_name, phone, email, birth_date, cedula, address, occupation, civil_status, congregation, wants_messages, photo)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+    [person ? person.id : null, v.funcion, v.full_name, v.phone, v.email, v.birth_date, v.cedula, v.address, v.occupation, v.civil_status, v.congregation, v.wants_messages, sub.photo.buffer]
   );
   const id = rows[0].id;
   if (auto) {
