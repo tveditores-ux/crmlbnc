@@ -15,10 +15,10 @@ const dataUrl = (buf) => `data:image/jpeg;base64,${buf.toString('base64')}`;
 const OPTIONS = ['Alabanza', 'Anfitriones', 'Diaconado', 'Intercesión', 'Medios', 'Nueva Vida'];
 const GROUPS = [{ id: 7, name: 'Grupo Esperanza', leader_name: 'Ana Díaz' }];
 
-// ministerio + grupo de cuidado + la ficha del líder + estado civil: todo obligatorio menos correo y foto (sin cargo)
+// ministerio + grupo de cuidado + la ficha del líder + estado civil y foto: todo obligatorio menos el correo (sin cargo)
 const base = {
   ministerio: 'Alabanza', congregacional: 'No sirvo en ninguno', grupo_cuidado: 'ninguno', full_name: 'María Torres', phone: '0414-000.00.22', bd_day: '15', bd_month: '06', bd_year: '1990',
-  cedula: 'V-19888777', address: 'Urbanización El Prado, casa 4', civil_status: 'Casado(a)', congregation: 'Mujeres',
+  cedula: 'V-19888777', address: 'Urbanización El Prado, casa 4', civil_status: 'Casado(a)', congregation: 'Mujeres', photo_data: dataUrl(fakeJpeg()),
 };
 
 test('validación: el ministerio de desarrollo y el grupo de cuidado mandan; la ficha es la del líder más el estado civil', () => {
@@ -57,7 +57,7 @@ test('validación: el ministerio de desarrollo y el grupo de cuidado mandan; la 
   assert.ok(parse({ civil_status: '' }).errors.includes('Elige tu estado civil.'));
   assert.ok(parse({ congregation: '' }).errors.includes('Elige tu congregación.'));
   assert.deepEqual(parse({ congregation: 'General' }).errors, []);
-  assert.equal(parse({ photo_data: '' }).photo.buffer, null); // la foto es opcional
+  assert.ok(parse({ photo_data: '' }).errors.includes('La foto es obligatoria: tómate una foto o elige una de la galería.')); // la foto NO es opcional
 });
 
 test('los ministerios a elegir: solo los seis de desarrollo cargados en el CRM', () => {
@@ -114,6 +114,8 @@ test('el formulario público: pide ministerio, grupo de cuidado, cédula y estad
     assert.ok(!html.includes('¿Cuál es tu cargo en el ministerio?'));
     assert.match(html, /Cédula de identidad \(C\.I\.\)/);
     assert.match(html, /Estado civil/);
+    assert.match(html, /<h2>Foto<\/h2>/);
+    assert.ok(!html.includes('Foto (opcional)'));
     assert.equal((await get('/desarrollo/zzzzzzzzzzzzzzzzzzzz')).status, 404);
     assert.equal((await post('/desarrollo/zzzzzzzzzzzzzzzzzzzz', base)).status, 404);
     await post('/personas/ministerios-desarrollo/enlace/desactivar');
