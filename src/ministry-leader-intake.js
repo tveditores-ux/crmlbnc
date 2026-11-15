@@ -112,7 +112,7 @@ async function careGroupOptions(db) {
  * Valida el envío. Obligatorios: ministerio (uno o varios), grupo de cuidado (o decir que no asiste
  * a ninguno), si sirve en un ministerio congregacional, nombre y apellido, teléfono, fecha de
  * nacimiento, cédula, dirección, estado civil y congregación (la ficha del líder, más el estado
- * civil). Correo y foto, opcionales.
+ * civil). El correo es opcional; la foto es OBLIGATORIA (pedido de Eliezer, 2026-11-14).
  * ministryNames = lo que se puede elegir (ministryOptions); groups = careGroupOptions ({id, name}).
  */
 function parseSubmission(body, ministryNames, groups, countryCode, today) {
@@ -182,6 +182,7 @@ function parseSubmission(body, ministryNames, groups, countryCode, today) {
 
   const photo = cg.parsePhoto(body.photo_data);
   if (photo.error) errors.push(photo.error);
+  else if (!photo.buffer) errors.push('La foto es obligatoria: tómate una foto o elige una de la galería.');
 
   return {
     value: { ministerio, ministerios, congregacional, grupo_cuidado, grupo_cuidado_id, full_name, phone, email, birth_date, cedula: ci.value, address, civil_status: CIVIL_STATUS.includes(civil) ? civil : '', congregation, wants_messages: body.wants_messages === '1' },

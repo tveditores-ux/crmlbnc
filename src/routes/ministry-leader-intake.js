@@ -61,7 +61,7 @@ function ministryLeaderIntakeRouter(ctx) {
         ${sel('congregation', '¿Cuál es tu congregación?', CONGREGATIONS, 'Elige…', true)}
         ${sel('congregacional', '¿Sirves en algún ministerio congregacional?', [intake.SIN_CONGREGACIONAL, ...intake.CONGREGACIONALES], 'Elige…', true)}
         <label for="email">Correo</label><input id="email" type="email" inputmode="email" name="email" value="${esc(v.email || '')}">
-        <h2>Foto (opcional)</h2>
+        <h2>Foto</h2>
         <div class="photo-box">
           <img id="photo_prev" alt="Vista previa de la foto" ${v.photo_data ? `src="${esc(v.photo_data)}"` : 'style="display:none"'}>
           <div class="quick">
@@ -74,7 +74,7 @@ function ministryLeaderIntakeRouter(ctx) {
         <label class="check"><input type="checkbox" name="wants_messages" value="1" ${v.wants_messages === '1' ? 'checked' : ''}> Quiero recibir recordatorios de la iglesia por WhatsApp</label>
         <p class="muted" style="font-size:13px;margin:4px 0 0">Es opcional. La iglesia te lo confirmará antes de escribirte.</p>
         <button class="go">Enviar mi registro</button>
-      </form>${photoScript({ required: false })}`;
+      </form>${photoScript({ required: true })}`;
   }
 
   r.get(
