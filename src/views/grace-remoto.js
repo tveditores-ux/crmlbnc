@@ -54,7 +54,7 @@ body{background:var(--deep);color:var(--text);font:15px/1.5 system-ui,-apple-sys
 .app{position:relative;z-index:1;display:flex;flex-direction:column;height:100%;max-width:880px;margin:0 auto;
   border-left:1px solid rgba(110,231,183,.08);border-right:1px solid rgba(110,231,183,.08);background:rgba(1,20,15,.25)}
 /* cabecera de cristal */
-header{display:flex;align-items:center;gap:12px;padding:calc(10px + env(safe-area-inset-top)) 14px 10px;
+header{position:relative;z-index:10;display:flex;align-items:center;gap:12px;padding:calc(10px + env(safe-area-inset-top)) 14px 10px;
   background:linear-gradient(180deg,rgba(6,78,59,.55),rgba(2,44,34,.35));backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);
   border-bottom:1px solid var(--edge);box-shadow:0 8px 30px rgba(0,0,0,.35),inset 0 -1px 0 rgba(236,253,245,.06)}
 .back{color:var(--e200);text-decoration:none;font-size:22px;line-height:1;padding:6px 4px;opacity:.85}
