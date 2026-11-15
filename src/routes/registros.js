@@ -7,6 +7,7 @@ const pastores = require('../pastor-intake');
 const personas = require('../member-intake');
 const lideres = require('../care-intake');
 const reporte = require('../care-report-link');
+const chat = require('../chat-lideres');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -93,6 +94,19 @@ function registrosRouter(ctx) {
       setActive: (d, on) => reporte.setLinkActive(d, on),
       pending: (d) => reporte.countPending(d),
       ask: 'Hola, la paz del Señor. Este es el enlace para enviar el reporte semanal de tu grupo de cuidado: {enlace} Solo escribe tu nombre y apellido, como líder, y llena el reporte. Guárdalo en tu teléfono: sirve cada semana.',
+    },
+    {
+      key: 'chat',
+      title: 'Invitación al chat de líderes',
+      para: 'El enlace para invitar a los líderes y servidores al chat: quien lo abre escribe su número de WhatsApp y entra directo a su chat (solo funciona para quienes ya tienen acceso dado desde su ficha). Compártelo solo con líderes y servidores.',
+      path: '/chat-invitacion/',
+      panel: '/chat-lideres',
+      review: '/chat-lideres',
+      ensure: (d) => chat.ensureInvite(d),
+      regen: (d) => chat.regenerateInvite(d),
+      setActive: (d, on) => chat.setInviteActive(d, on),
+      pending: async () => 0,
+      ask: `Hola, la paz del Señor. Te invito al chat de líderes de ${church}: abre este enlace y entra con tu número de WhatsApp: {enlace} Ahí conversamos entre líderes y servidores, y Grace también está en la sala. Agrega el ícono a tu pantalla de inicio para recibir los avisos de la app.`,
     },
   ];
 

@@ -56,7 +56,31 @@ self.addEventListener('fetch', () => { /* sin caché: el chat siempre va a la re
 `;
 }
 
-function chatPage({ config, person, token }) {
+/** Página del enlace de invitación: el miembro escribe su WhatsApp y entra a SU chat. */
+function invitePage({ config, token, error }) {
+  const church = esc(config.churchName || '');
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Chat de líderes · ${church}</title><style>
+body{font:16px/1.6 system-ui,-apple-system,sans-serif;background:#022c22;color:#ecfdf5;display:grid;place-items:center;min-height:100vh;margin:0;padding:20px}
+.card{max-width:420px;width:100%;text-align:center}
+h1{font-size:24px;margin:0 0 6px}
+p{color:rgba(209,250,229,.75)}
+.err{background:rgba(127,29,29,.4);border:1px solid rgba(252,165,165,.5);color:#ffe4e6;border-radius:12px;padding:10px 14px}
+input{width:100%;box-sizing:border-box;font:inherit;font-size:18px;text-align:center;padding:13px;border-radius:14px;border:1px solid rgba(110,231,183,.35);background:rgba(1,26,19,.65);color:#ecfdf5;outline:0;margin:10px 0}
+button{width:100%;font:inherit;font-weight:650;padding:13px;border:0;border-radius:14px;cursor:pointer;color:#012018;background:linear-gradient(140deg,#34d399,#047857)}
+</style></head><body><div class="card">
+<h1>Chat de líderes</h1>
+<p>${church}<br>Escribe tu número de WhatsApp —el que tienes registrado en la iglesia— y entras directo a tu chat.</p>
+${error ? `<p class="err">${esc(error)}</p>` : ''}
+<form method="post" action="/chat-invitacion/${esc(token)}">
+  <input name="telefono" type="tel" inputmode="tel" autocomplete="tel" placeholder="Ej.: 0414 123 4567" required>
+  <button type="submit">Entrar al chat</button>
+</form>
+<p style="font-size:13.5px">Solo para líderes y servidores. Si tu número no entra, pídele tu enlace personal al pastor.</p>
+</div></body></html>`;
+}
+
+function chatPage({ config, person, token, inviteUrl }) {
   const church = esc(config.churchName || '');
   const first = esc(String(person.full_name || '').split(' ')[0]);
   const base = `/chat/${token}`;
@@ -115,6 +139,7 @@ textarea::placeholder{color:rgba(209,250,229,.45)}
     <div class="avatar">${DEFAULT_AVATAR}</div>
     <div class="who"><b>Chat de líderes</b><small id="status">${church} · solo líderes y servidores</small></div>
     <button class="bell" id="bell" title="Activar notificaciones de esta app" aria-label="Activar notificaciones">🔔</button>
+    ${inviteUrl ? '<button class="bell" id="shareBtn" title="Compartir el chat con otro líder" aria-label="Compartir el chat con otro líder">↗</button>' : ''}
   </header>
   <main id="chat" aria-live="polite">
     <div class="hello" id="hello">
@@ -136,6 +161,7 @@ textarea::placeholder{color:rgba(209,250,229,.45)}
   var bell = document.getElementById('bell');
   var lastId = 0, lastDay = '', busy = false, yoId = 0;
   var IGLESIA = ${JSON.stringify(config.churchName || '')};
+  var INVITE = ${JSON.stringify(inviteUrl || '')};
   var TITULO = document.title;
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function fmt(t) {
@@ -254,6 +280,13 @@ textarea::placeholder{color:rgba(209,250,229,.45)}
       }).then(function () { estadoCampana(); alert('Listo: te avisaré aquí cuando alguien escriba en el chat.'); });
     }).catch(function () { alert('No se pudieron activar las notificaciones en este aparato.'); });
   });
+  // Compartir el chat con otro líder: se comparte el ENLACE DE INVITACIÓN (cada quien entra con su número)
+  var shareBtn = document.getElementById('shareBtn');
+  if (shareBtn) shareBtn.addEventListener('click', function () {
+    var texto = 'Te invito al chat de líderes de ' + IGLESIA + ': abre este enlace y entra con tu número de WhatsApp:';
+    if (navigator.share) navigator.share({ title: TITULO, text: texto, url: INVITE }).catch(function () {});
+    else window.open('https://wa.me/?text=' + encodeURIComponent(texto + ' ' + INVITE), '_blank');
+  });
   if ('serviceWorker' in navigator) navigator.serviceWorker.register(BASE + '/sw.js').then(estadoCampana).catch(function () {});
   var esIOS = /iphone|ipad/i.test(navigator.userAgent || '');
   var standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
@@ -266,4 +299,4 @@ textarea::placeholder{color:rgba(209,250,229,.45)}
 </body></html>`;
 }
 
-module.exports = { chatPage, invalidPage, manifest, serviceWorkerJs };
+module.exports = { chatPage, invitePage, invalidPage, manifest, serviceWorkerJs };

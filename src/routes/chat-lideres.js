@@ -5,7 +5,7 @@ const webpush = require('../web-push');
 const agent = require('../agent');
 const prayer = require('../prayer');
 const { iconPng } = require('../chat-icon');
-const { chatPage, invalidPage, manifest, serviceWorkerJs } = require('../views/chat-lideres');
+const { chatPage, invitePage, invalidPage, manifest, serviceWorkerJs } = require('../views/chat-lideres');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const MAX_TEXT = 1000;
@@ -15,9 +15,11 @@ const firstName = (name) => String(name || '').split(' ')[0];
 
 /**
  * La app del chat de líderes (/chat/<token>): el token es personal y hace de sesión.
- * La sala es una sola; Grace participa cuando le preguntan (botón o «Grace…» al inicio),
- * con el límite diario por persona que fije el panel, y responde con el contexto de quien
- * pregunta (su grupo, sus ministerios, sus eventos) — nunca con datos de otras personas.
+ * La sala es una sola; Grace es una usuaria más y responde cuando la mencionan en un mensaje,
+ * con el límite diario por persona que fije el panel, y con el contexto de quien la menciona
+ * (su grupo, sus ministerios, sus eventos) — nunca con datos de otras personas.
+ * El enlace de invitación (/chat-invitacion/<token>) es el que se comparte con los miembros:
+ * cada quien escribe su WhatsApp y el sistema lo lleva a SU enlace personal.
  */
 function chatLideresRouter(ctx) {
   const { db, config } = ctx;
@@ -34,10 +36,41 @@ function chatLideresRouter(ctx) {
     next();
   };
 
-  r.get('/chat/:token', resolve, (req, res) => {
-    res.setHeader('Cache-Control', 'no-store');
-    res.send(chatPage({ config, person: req.chatPerson, token: req.chatToken }));
-  });
+  r.get(
+    '/chat/:token',
+    resolve,
+    ah(async (req, res) => {
+      res.setHeader('Cache-Control', 'no-store');
+      const invite = await chat.getInvite(db);
+      const inviteUrl = invite.token && invite.active ? `${config.publicUrl}/chat-invitacion/${invite.token}` : '';
+      res.send(chatPage({ config, person: req.chatPerson, token: req.chatToken, inviteUrl }));
+    })
+  );
+
+  // ----- Enlace de invitación: se comparte con los miembros; cada quien entra con su número -----
+  const inviteOk = async (req) => {
+    const invite = await chat.getInvite(db);
+    return invite.token && invite.active && req.params.token === invite.token ? invite : null;
+  };
+  r.get(
+    '/chat-invitacion/:token',
+    ah(async (req, res) => {
+      if (!(await inviteOk(req))) return res.status(404).send(invalidPage());
+      res.setHeader('Cache-Control', 'no-store');
+      res.send(invitePage({ config, token: req.params.token }));
+    })
+  );
+  r.post(
+    '/chat-invitacion/:token',
+    ah(async (req, res) => {
+      if (!(await inviteOk(req))) return res.status(404).send(invalidPage());
+      const found = await chat.findMemberByPhone(db, req.body && req.body.telefono, config.defaultCountryCode);
+      if (!found) {
+        return res.send(invitePage({ config, token: req.params.token, error: 'Ese número no está entre los líderes y servidores con acceso al chat. Revisa el número o pídele tu enlace personal al pastor.' }));
+      }
+      res.redirect(303, `/chat/${found.token}`);
+    })
+  );
 
   r.get('/chat/:token/manifest.webmanifest', resolve, (req, res) => {
     res.type('application/manifest+json').send(manifest({ config, token: req.chatToken }));

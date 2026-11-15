@@ -1,6 +1,7 @@
 'use strict';
 const crypto = require('node:crypto');
 const webpush = require('./web-push');
+const { normalizePhone } = require('./phone');
 
 /**
  * Chat de líderes: una sala común donde líderes y servidores conversan entre ellos. Grace es una
@@ -207,6 +208,63 @@ async function notifyRoom(ctx, { exceptPersonId = null, urgentFor = null, title,
   return sent;
 }
 
+// ---------- Enlace de invitación (uno solo, para compartir con los miembros) ----------
+// El chat se comparte como un grupo de WhatsApp: UN enlace de invitación que el pastor (o cualquier
+// miembro, desde el botón ↗ del chat) manda a los demás. Quien lo abre escribe SU número de WhatsApp
+// y el sistema lo reconoce entre las personas con acceso y lo lleva a SU enlace personal: cada quien
+// sigue entrando como sí mismo, pero ya nadie tiene que repartir enlace por enlace.
+const INVITE_TOKEN_KEY = 'chat_invite_token';
+const INVITE_ACTIVE_KEY = 'chat_invite_active';
+
+async function getSetting(db, key) {
+  const { rows } = await db.query('SELECT value FROM care_settings WHERE key = $1', [key]);
+  return rows.length ? rows[0].value : null;
+}
+async function setSetting(db, key, value) {
+  await db.query('INSERT INTO care_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', [key, String(value)]);
+}
+
+async function getInvite(db) {
+  const token = await getSetting(db, INVITE_TOKEN_KEY);
+  if (!token) return { token: null, active: false };
+  return { token, active: (await getSetting(db, INVITE_ACTIVE_KEY)) !== '0' };
+}
+async function ensureInvite(db) {
+  const inv = await getInvite(db);
+  if (inv.token) return inv;
+  const token = newToken();
+  await setSetting(db, INVITE_TOKEN_KEY, token);
+  await setSetting(db, INVITE_ACTIVE_KEY, '1');
+  return { token, active: true };
+}
+async function regenerateInvite(db) {
+  const token = newToken();
+  await setSetting(db, INVITE_TOKEN_KEY, token);
+  await setSetting(db, INVITE_ACTIVE_KEY, '1');
+  return { token, active: true };
+}
+async function setInviteActive(db, on) {
+  await setSetting(db, INVITE_ACTIVE_KEY, on ? '1' : '0');
+  return getInvite(db);
+}
+
+/** Busca al miembro por su número de WhatsApp entre las personas con acceso activo a la sala. */
+async function findMemberByPhone(db, rawPhone, countryCode) {
+  const wanted = normalizePhone(rawPhone, countryCode || '58');
+  if (!wanted) return null;
+  const { rows } = await db.query(
+    `SELECT l.person_id, l.token, p.full_name, p.phone FROM person_chat_links l JOIN people p ON p.id = l.person_id
+      WHERE l.active = TRUE AND p.active = TRUE`
+  );
+  for (const row of rows) {
+    const have = normalizePhone(row.phone, countryCode || '58');
+    if (have && (have === wanted || have.slice(-9) === wanted.slice(-9))) {
+      return { person: { id: row.person_id, full_name: row.full_name, phone: row.phone }, token: row.token };
+    }
+  }
+  return null;
+}
+
 module.exports = {
   newToken,
   LIMIT_KEY,
@@ -218,6 +276,11 @@ module.exports = {
   setActive,
   byToken,
   members,
+  getInvite,
+  ensureInvite,
+  regenerateInvite,
+  setInviteActive,
+  findMemberByPhone,
   postMessage,
   listMessages,
   recentMessages,

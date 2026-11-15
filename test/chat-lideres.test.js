@@ -266,3 +266,43 @@ test('el panel: la ficha da el acceso personal y la sala se administra (límite 
     assert.equal(await chat.getGraceLimit(db), 3);
   });
 });
+
+test('el enlace de invitación: el miembro escribe su WhatsApp y entra a SU chat', async (t) => {
+  await withApp(t, async ({ db, get, postForm }) => {
+    const a = await mkPerson(db, 'Ana Líder', '584140000001');
+    const la = await chat.ensureLink(db, a);
+    const invite = await chat.ensureInvite(db);
+    assert.ok(invite.token);
+    assert.equal(invite.active, true);
+
+    // la página pide el número
+    const page = await get(`/chat-invitacion/${invite.token}`);
+    assert.equal(page.status, 200);
+    assert.match(await page.text(), /número de WhatsApp/);
+
+    // token malo: enlace no válido
+    assert.equal((await get('/chat-invitacion/no-existe')).status, 404);
+
+    // número desconocido: se queda en la página con el aviso
+    const bad = await postForm(`/chat-invitacion/${invite.token}`, { telefono: '0412 999 8877' });
+    assert.equal(bad.status, 200);
+    assert.match(await bad.text(), /no está entre los líderes/);
+
+    // el número de Ana (en formato local) la lleva a SU enlace personal
+    const ok = await postForm(`/chat-invitacion/${invite.token}`, { telefono: '0414-0000001' });
+    assert.equal(ok.status, 303);
+    assert.equal(ok.headers.get('location'), `/chat/${la.token}`);
+
+    // dentro del chat aparece el botón de compartir con la invitación…
+    const chatHtml = await (await get(`/chat/${la.token}`)).text();
+    assert.ok(chatHtml.includes('id="shareBtn"'));
+    assert.ok(chatHtml.includes(`/chat-invitacion/${invite.token}`));
+
+    // …y al apagar la invitación, el enlace deja de abrir y el botón desaparece
+    await chat.setInviteActive(db, false);
+    assert.equal((await get(`/chat-invitacion/${invite.token}`)).status, 404);
+    const chatHtml2 = await (await get(`/chat/${la.token}`)).text();
+    assert.ok(!chatHtml2.includes('id="shareBtn"'));
+    assert.ok(!chatHtml2.includes('/chat-invitacion/'));
+  });
+});
