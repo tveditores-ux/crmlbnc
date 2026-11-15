@@ -15,6 +15,8 @@ const HEADERS = {
   nombre: 'name', telefono: 'phone', correo: 'email', fecha_decision: 'decision_date', nota_fecha: 'date_note', sede: 'sede',
   edad: 'age', estado_civil: 'civil_status', direccion: 'address', como_llego: 'how_arrived', seguimiento: 'followup',
   nota: 'note', fuente: 'source', revisar: 'needs_review', aviso: 'review_note', texto_original: 'raw_text',
+  // OJO: las columnas nuevas van AL FINAL — hay archivos y pruebas que leen la plantilla por posición.
+  servicio: 'service',
 };
 const TEMPLATE_HEADERS = Object.keys(HEADERS);
 const YES = new Set(['si', 'sí', 'yes', '1', 'true', 'x']);
@@ -31,6 +33,7 @@ function validateRow(raw, countryCode = '58', today = new Date().toISOString().s
     civil_status: clip(raw.civil_status, 30),
     address: clip(raw.address, 300),
     how_arrived: clip(raw.how_arrived, 300),
+    service: clip(raw.service, 40),
     followup: clip(raw.followup, 1000),
     note: clip(raw.note, 1000),
     date_note: clip(raw.date_note, 300),
@@ -117,10 +120,10 @@ async function applyImport(pool, prepared) {
     for (const { value: v } of toSave) {
       await db.query(
         `INSERT INTO nueva_vida (full_name, phone, email, decision_date, date_note, sede, age, civil_status, address, how_arrived,
-                                 followup, note, source, needs_review, review_note, raw_text)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+                                 followup, note, source, needs_review, review_note, raw_text, service)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
         [v.full_name, v.phone, v.email, v.decision_date, v.date_note, v.sede, v.age, v.civil_status, v.address, v.how_arrived,
-          v.followup, v.note, v.source, v.needs_review, v.review_note, v.raw_text]
+          v.followup, v.note, v.source, v.needs_review, v.review_note, v.raw_text, v.service]
       );
     }
   });
@@ -193,18 +196,18 @@ async function save(db, id, raw, countryCode = '58', today) {
   const { value: v, errors } = validateRow(raw, countryCode, today);
   if (String(raw.name || '').trim() === '') errors.push('Escribe el nombre.');
   if (errors.length) return { errors };
-  const params = [v.full_name, v.phone, v.email, v.decision_date, v.date_note, v.sede, v.age, v.civil_status, v.address, v.how_arrived, v.followup, v.note, v.needs_review, v.review_note];
+  const params = [v.full_name, v.phone, v.email, v.decision_date, v.date_note, v.sede, v.age, v.civil_status, v.address, v.how_arrived, v.followup, v.note, v.needs_review, v.review_note, v.service];
   if (id) {
     const { rowCount } = await db.query(
       `UPDATE nueva_vida SET full_name=$2, phone=$3, email=$4, decision_date=$5, date_note=$6, sede=$7, age=$8, civil_status=$9, address=$10,
-              how_arrived=$11, followup=$12, note=$13, needs_review=$14, review_note=$15, updated_at=now() WHERE id=$1`,
+              how_arrived=$11, followup=$12, note=$13, needs_review=$14, review_note=$15, service=$16, updated_at=now() WHERE id=$1`,
       [id, ...params]
     );
     return rowCount ? { id } : { errors: ['No existe ese registro.'] };
   }
   const { rows } = await db.query(
-    `INSERT INTO nueva_vida (full_name, phone, email, decision_date, date_note, sede, age, civil_status, address, how_arrived, followup, note, needs_review, review_note, source)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'Registro manual') RETURNING id`,
+    `INSERT INTO nueva_vida (full_name, phone, email, decision_date, date_note, sede, age, civil_status, address, how_arrived, followup, note, needs_review, review_note, source, service)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'Registro manual',$15) RETURNING id`,
     params
   );
   return { id: rows[0].id };

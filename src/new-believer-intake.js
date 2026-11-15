@@ -25,6 +25,9 @@ const HOW_ARRIVED = [
   'Otro',
 ];
 
+/** En qué servicio se convirtió (pedido del pastor, 2026-11-15): los tres del domingo o el del miércoles. */
+const SERVICES = ['Domingo · 1er servicio', 'Domingo · 2do servicio', 'Domingo · 3er servicio', 'Miércoles'];
+
 async function getLink(db) {
   const { rows } = await db.query('SELECT key, value FROM care_settings WHERE key IN ($1, $2)', [TOKEN_KEY, ACTIVE_KEY]);
   const m = Object.fromEntries(rows.map((r) => [r.key, r.value]));
@@ -73,6 +76,7 @@ function parseSubmission(body, countryCode = '58', today) {
     civil_status: body.civil_status,
     address: body.address,
     how_arrived: body.how_arrived,
+    service: body.service,
   };
   const { value, errors } = nv.validateRow(raw, countryCode, today);
   const name = String(body.full_name || '').trim();
@@ -81,6 +85,7 @@ function parseSubmission(body, countryCode = '58', today) {
   if (!String(body.phone || '').trim()) errors.push('Escribe su número de WhatsApp: es el medio para llamarlo en el seguimiento.');
   if (!String(body.decision_date || '').trim()) errors.push('Escribe la fecha de la decisión (la de hoy, si se convirtió hoy).');
   if (!String(body.sede || '').trim()) errors.push('Elige la sede donde se convirtió.');
+  if (!SERVICES.includes(value.service)) errors.push('Elige en qué servicio se convirtió: domingo 1, 2 o 3, o miércoles.');
   if (!String(body.how_arrived || '').trim()) errors.push('Elige cómo llegó a la iglesia.');
   return { value, errors: [...new Set(errors)] };
 }
@@ -88,9 +93,9 @@ function parseSubmission(body, countryCode = '58', today) {
 /** Guarda el registro en la lista de Nueva Vida, marcado por revisar. Devuelve el id. */
 async function submit(db, v) {
   const { rows } = await db.query(
-    `INSERT INTO nueva_vida (full_name, phone, email, decision_date, date_note, sede, age, civil_status, address, how_arrived, followup, note, needs_review, review_note, source)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'','',TRUE,$11,$12) RETURNING id`,
-    [v.full_name, v.phone, v.email, v.decision_date, v.date_note, v.sede, v.age, v.civil_status, v.address, v.how_arrived, REVIEW_NOTE, SOURCE]
+    `INSERT INTO nueva_vida (full_name, phone, email, decision_date, date_note, sede, age, civil_status, address, how_arrived, followup, note, needs_review, review_note, source, service)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'','',TRUE,$11,$12,$13) RETURNING id`,
+    [v.full_name, v.phone, v.email, v.decision_date, v.date_note, v.sede, v.age, v.civil_status, v.address, v.how_arrived, REVIEW_NOTE, SOURCE, v.service]
   );
   return rows[0].id;
 }
@@ -102,7 +107,7 @@ async function countPending(db) {
 }
 
 module.exports = {
-  TOKEN_KEY, ACTIVE_KEY, SOURCE, HOW_ARRIVED,
+  TOKEN_KEY, ACTIVE_KEY, SOURCE, HOW_ARRIVED, SERVICES,
   getLink, ensureLink, regenerateLink, setLinkActive, linkIsValid,
   listSedes, parseSubmission, submit, countPending,
 };

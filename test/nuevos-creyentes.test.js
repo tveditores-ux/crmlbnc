@@ -46,14 +46,21 @@ test('parseSubmission: lo esencial es obligatorio y la fecha no puede ser futura
     TODAY
   );
   assert.ok(future.errors.some((e) => /futura/.test(e)));
+  const sinServicio = nb.parseSubmission(
+    { full_name: 'María Pérez', phone: '0414-0000001', decision_date: TODAY, sede: 'Cabudare', how_arrived: 'Otro' },
+    '58',
+    TODAY
+  );
+  assert.ok(sinServicio.errors.some((e) => /en qué servicio/.test(e)));
   const ok = nb.parseSubmission(
-    { full_name: 'María Pérez', phone: '0414-0000001', decision_date: TODAY, sede: 'Cabudare', how_arrived: 'Invitado por un familiar' },
+    { full_name: 'María Pérez', phone: '0414-0000001', decision_date: TODAY, sede: 'Cabudare', service: 'Domingo · 2do servicio', how_arrived: 'Invitado por un familiar' },
     '58',
     TODAY
   );
   assert.deepEqual(ok.errors, []);
   assert.equal(ok.value.phone, '584140000001');
   assert.equal(ok.value.decision_date, TODAY);
+  assert.equal(ok.value.service, 'Domingo · 2do servicio');
 });
 
 test('el remoto: enlace malo no abre; el registro entra a Nueva Vida por revisar, con la fecha de hoy', async (t) => {
@@ -66,6 +73,9 @@ test('el remoto: enlace malo no abre; el registro entra a Nueva Vida por revisar
     const html = await page.text();
     assert.match(html, /Registro de nuevo creyente/);
     assert.ok(html.includes(`value="${TODAY}"`)); // la fecha ya viene en hoy: se llena el día de la conversión
+    assert.match(html, /¿En qué servicio se convirtió\?/);
+    assert.match(html, /Domingo · 1er servicio/);
+    assert.match(html, /Miércoles/);
 
     // falta el teléfono: vuelve al formulario con el aviso y no guarda nada
     const bad = await post(`/nuevos-creyentes/${link.token}`, { full_name: 'María Pérez', decision_date: TODAY, sede: 'Cabudare', how_arrived: 'Otro' });
@@ -76,13 +86,14 @@ test('el remoto: enlace malo no abre; el registro entra a Nueva Vida por revisar
     // registro completo: entra a la lista, por revisar y con su fuente
     const ok = await post(`/nuevos-creyentes/${link.token}`, {
       full_name: 'María Pérez', phone: '0414-0000001', decision_date: TODAY, sede: 'Cabudare',
-      how_arrived: 'Invitado por un familiar', age: '33', civil_status: 'Casado(a)',
+      service: 'Miércoles', how_arrived: 'Invitado por un familiar', age: '33', civil_status: 'Casado(a)',
     });
     assert.equal(ok.status, 200);
     assert.match(await ok.text(), /familia de Dios/);
     const rows = (await db.query('SELECT * FROM nueva_vida')).rows;
     assert.equal(rows.length, 1);
     assert.equal(rows[0].full_name, 'María Pérez');
+    assert.equal(rows[0].service, 'Miércoles');
     assert.equal(rows[0].phone, '584140000001');
     assert.equal(rows[0].decision_date.toISOString().slice(0, 10), TODAY);
     assert.equal(rows[0].needs_review, true);
