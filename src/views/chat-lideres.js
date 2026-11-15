@@ -86,11 +86,10 @@ header{display:flex;align-items:center;gap:12px;padding:calc(10px + env(safe-are
 main{flex:1;overflow-y:auto;padding:18px 14px 8px;scroll-behavior:smooth}
 .day{display:flex;justify-content:center;margin:6px 0 14px}.day span{font-size:12px;color:var(--e200);padding:4px 12px;border-radius:999px;background:rgba(6,78,59,.55);border:1px solid rgba(110,231,183,.18)}
 .row{display:flex;margin:6px 0;flex-direction:column}
-.row.yo{align-items:flex-end}.row.otro,.row.grace{align-items:flex-start}
+.row.yo{align-items:flex-end}.row.otro{align-items:flex-start}
 .autor{font-size:12px;margin:0 4px 2px;font-weight:650}
 .bub{position:relative;max-width:min(80%,560px);padding:9px 12px 20px;border-radius:16px;word-wrap:break-word;overflow-wrap:anywhere}
 .otro .bub{border-top-left-radius:5px;background:linear-gradient(160deg,rgba(236,253,245,.10),rgba(2,44,34,.55));border:1px solid rgba(236,253,245,.16);box-shadow:0 6px 24px rgba(0,0,0,.28)}
-.grace .bub{border-top-left-radius:5px;background:linear-gradient(160deg,rgba(16,185,129,.20),rgba(2,44,34,.55));border:1px solid var(--edge);box-shadow:0 6px 24px rgba(0,0,0,.28)}
 .yo .bub{border-top-right-radius:5px;color:#012018;background:linear-gradient(140deg,#d1fae5 0%,#6ee7b7 35%,#10b981 100%);box-shadow:0 8px 26px rgba(16,185,129,.35)}
 .privado{align-items:center}.privado .bub{max-width:92%;background:rgba(127,29,29,.35);border:1px solid rgba(252,165,165,.45);border-radius:14px;color:#ffe4e6}
 .bub time{position:absolute;right:10px;bottom:4px;font-size:11px;opacity:.6}
@@ -100,10 +99,6 @@ main{flex:1;overflow-y:auto;padding:18px 14px 8px;scroll-behavior:smooth}
 @keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
 .hello{text-align:center;padding:26px 10px 8px;color:var(--muted)}
 .hello h1{margin:0 0 4px;font-size:22px;color:var(--e50)}
-.bar{display:flex;gap:8px;align-items:center;padding:6px 14px 2px;flex-wrap:wrap}
-.toggle{font:inherit;font-size:13px;color:var(--e50);cursor:pointer;padding:7px 13px;border-radius:999px;border:1px solid var(--edge);background:rgba(2,44,34,.5)}
-.toggle.on{background:linear-gradient(140deg,#34d399,#047857);color:#012018;font-weight:650}
-.quedan{font-size:12.5px;color:var(--muted)}
 footer{display:flex;align-items:flex-end;gap:10px;padding:8px 12px calc(10px + env(safe-area-inset-bottom));background:linear-gradient(0deg,rgba(2,44,34,.75),rgba(2,44,34,.35));border-top:1px solid var(--edge)}
 .box{flex:1;display:flex;border-radius:24px;padding:4px 6px 4px 14px;background:rgba(1,26,19,.65);border:1px solid var(--edge)}
 textarea{flex:1;resize:none;border:0;outline:0;background:transparent;color:var(--text);font:inherit;max-height:140px;padding:9px 0;line-height:1.4}
@@ -124,13 +119,9 @@ textarea::placeholder{color:rgba(209,250,229,.45)}
   <main id="chat" aria-live="polite">
     <div class="hello" id="hello">
       <h1>Hola, ${first}</h1>
-      <div>Este es el chat de los líderes: conversen entre ustedes y, cuando necesiten, pregúntenle a Grace con el botón de abajo. Ella responde de su grupo, su ministerio y los eventos de la iglesia.</div>
+      <div>Este es el chat de los líderes: conversen entre ustedes. Grace también está en la sala, como una más: menciónala en un mensaje —escribe su nombre— y te responde aquí mismo, de tu grupo, tu ministerio y los eventos de la iglesia.</div>
     </div>
   </main>
-  <div class="bar">
-    <button class="toggle" id="graceToggle" type="button">✦ Preguntar a Grace</button>
-    <span class="quedan" id="quedan"></span>
-  </div>
   <footer>
     <div class="box"><textarea id="msg" rows="1" placeholder="Escribe un mensaje" maxlength="1000" aria-label="Mensaje"></textarea></div>
     <button class="send" id="send" aria-label="Enviar">➤</button>
@@ -141,9 +132,9 @@ textarea::placeholder{color:rgba(209,250,229,.45)}
 (function () {
   var BASE = '${base}';
   var chat = document.getElementById('chat'), msg = document.getElementById('msg'), send = document.getElementById('send');
-  var hello = document.getElementById('hello'), toggle = document.getElementById('graceToggle'), quedan = document.getElementById('quedan');
+  var hello = document.getElementById('hello');
   var bell = document.getElementById('bell');
-  var lastId = 0, lastDay = '', busy = false, paraGrace = false, yoId = 0;
+  var lastId = 0, lastDay = '', busy = false, yoId = 0;
   var IGLESIA = ${JSON.stringify(config.churchName || '')};
   var TITULO = document.title;
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -176,8 +167,8 @@ textarea::placeholder{color:rgba(209,250,229,.45)}
     var row = document.createElement('div');
     var esGrace = m.kind === 'grace';
     var esYo = !esGrace && m.person_id === yoId;
-    row.className = 'row ' + (esGrace ? 'grace' : esYo ? 'yo' : 'otro');
-    var autor = esGrace ? '<div class="autor" style="color:var(--e300)">✦ Grace</div>' : (!esYo ? '<div class="autor" style="color:' + color(m.author_name || '') + '">' + esc(m.author_name || '') + '</div>' : '');
+    row.className = 'row ' + (esYo ? 'yo' : 'otro'); // Grace se ve como una usuaria más de la sala
+    var autor = !esYo ? '<div class="autor" style="color:' + color(m.author_name || '') + '">' + esc(m.author_name || '') + '</div>' : '';
     row.innerHTML = autor + '<div class="bub">' + fmt(m.body) + '<time>' + hhmm(d) + '</time></div>';
     chat.appendChild(row);
     if (m.id > lastId) lastId = m.id;
@@ -186,7 +177,7 @@ textarea::placeholder{color:rgba(209,250,229,.45)}
   }
   function addLocal(texto, clase) {
     var row = document.createElement('div');
-    row.className = 'row ' + (clase || 'grace');
+    row.className = 'row ' + (clase || 'otro');
     row.innerHTML = '<div class="bub">' + fmt(texto) + '</div>';
     chat.appendChild(row);
     chat.scrollTop = chat.scrollHeight;
@@ -194,14 +185,8 @@ textarea::placeholder{color:rgba(209,250,229,.45)}
   }
   function typing(on) {
     var t = document.getElementById('typing');
-    if (on && !t) { t = document.createElement('div'); t.id = 'typing'; t.className = 'row grace typing'; t.innerHTML = '<div class="bub"><span class="dots"><i></i><i></i><i></i></span></div>'; chat.appendChild(t); chat.scrollTop = chat.scrollHeight; }
+    if (on && !t) { t = document.createElement('div'); t.id = 'typing'; t.className = 'row otro typing'; t.innerHTML = '<div class="bub"><span class="dots"><i></i><i></i><i></i></span></div>'; chat.appendChild(t); chat.scrollTop = chat.scrollHeight; }
     if (!on && t) t.remove();
-  }
-  function setLimite(l) {
-    if (!l) return;
-    quedan.textContent = l.limite > 0 ? ('Te quedan ' + l.restantes + ' de ' + l.limite + ' preguntas a Grace hoy') : 'Grace está apagada en este chat';
-    toggle.disabled = l.restantes <= 0;
-    if (l.restantes <= 0 && paraGrace) { paraGrace = false; toggle.classList.remove('on'); }
   }
   function post(url, body) {
     return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) })
@@ -215,7 +200,6 @@ textarea::placeholder{color:rgba(209,250,229,.45)}
       var deOtros = false;
       nuevos.forEach(function (m) { add(m); if (m.kind === 'grace' || m.person_id !== yoId) deOtros = true; });
       if (nuevos.length) { marcarLeido(); if (document.hidden && deOtros) document.title = '• ' + TITULO; }
-      setLimite(j.limite);
       document.getElementById('status').textContent = IGLESIA + ' · ' + (j.miembros || 0) + ' en la sala';
       return nuevos;
     }).catch(function () { return []; });
@@ -224,16 +208,15 @@ textarea::placeholder{color:rgba(209,250,229,.45)}
     var texto = String(msg.value || '').trim();
     if (!texto || busy) return;
     busy = true; send.disabled = true;
-    var eraGrace = paraGrace || /^\\s*@?grace\\b/i.test(texto);
+    var eraGrace = /\bgrace\b/i.test(texto); // Grace es una más: se le habla mencionándola en el mensaje
     if (eraGrace) typing(true);
-    post(BASE + '/mensaje', { texto: texto, para_grace: paraGrace }).then(function (r) {
+    post(BASE + '/mensaje', { texto: texto }).then(function (r) {
       typing(false);
       if (r.j.crisis) { addLocal(r.j.crisis, 'privado'); msg.value = ''; }
       else if (r.ok) {
         msg.value = ''; grow();
         (r.j.mensajes || []).forEach(function (m) { add(m); });
-        if (r.j.aviso) addLocal(r.j.aviso, 'grace');
-        setLimite(r.j.limite);
+        if (r.j.aviso) addLocal(r.j.aviso, 'otro');
         marcarLeido();
       } else addLocal(r.j.error || 'No se pudo enviar. Intenta de nuevo.', 'privado');
     }).catch(function () { typing(false); addLocal('Se perdió la conexión. Intenta de nuevo.', 'privado'); })
@@ -243,7 +226,6 @@ textarea::placeholder{color:rgba(209,250,229,.45)}
   msg.addEventListener('input', grow);
   msg.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar(); } });
   send.addEventListener('click', enviar);
-  toggle.addEventListener('click', function () { paraGrace = !paraGrace; toggle.classList.toggle('on', paraGrace); msg.placeholder = paraGrace ? 'Tu pregunta para Grace…' : 'Escribe un mensaje'; msg.focus(); });
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { document.title = TITULO; traer(); } });
 
   // Notificaciones de la app (Web Push)

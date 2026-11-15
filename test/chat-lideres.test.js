@@ -96,7 +96,8 @@ test('la app: página, manifiesto y service worker; enlace malo da la página de
     const html = await pageRes.text();
     assert.match(html, /Chat de líderes/);
     assert.match(html, /manifest\.webmanifest/);
-    assert.match(html, /Preguntar a Grace/);
+    assert.ok(!html.includes('Preguntar a Grace')); // sin botón: Grace es una usuaria más
+    assert.match(html, /como una más/);
     const man = await (await get(`/chat/${link.token}/manifest.webmanifest`)).json();
     assert.equal(man.start_url, `/chat/${link.token}`);
     assert.equal(man.display, 'standalone');
@@ -118,7 +119,7 @@ test('los líderes conversan entre ellos en la misma sala', async (t) => {
     assert.equal(r.status, 200);
     const seenByB = await (await get(`/chat/${lb.token}/mensajes?desde=0`)).json();
     assert.equal(seenByB.yo_id, b);
-    assert.equal(seenByB.miembros, 2);
+    assert.equal(seenByB.miembros, 3); // Ana, Luis y Grace, que es una más en la sala
     const msg = seenByB.mensajes.find((m) => m.body.includes('Hola a todos'));
     assert.ok(msg);
     assert.equal(msg.author_name, 'Ana Líder');
@@ -133,16 +134,17 @@ test('Grace responde en la sala con límite diario por persona', async (t) => {
     const la = await chat.ensureLink(db, a);
     const lb = await chat.ensureLink(db, b);
     await chat.setGraceLimit(db, 2);
-    const ask = (token) => postJson(`/chat/${token}/mensaje`, { texto: 'Grace, ¿a qué hora es el servicio?', para_grace: true }).then((x) => x.json());
-    const r1 = await ask(la.token);
+    const ask = (token, texto) => postJson(`/chat/${token}/mensaje`, { texto }).then((x) => x.json());
+    const r1 = await ask(la.token, 'Grace, ¿a qué hora es el servicio?');
     assert.equal(r1.mensajes.filter((m) => m.kind === 'grace').length, 1);
     assert.equal(r1.limite.restantes, 1);
-    const r2 = await ask(la.token);
+    const r2 = await ask(la.token, '¿Me ayudas, Grace, con los cumpleaños de hoy?'); // mencionada en mitad del mensaje: también responde
+    assert.equal(r2.mensajes.filter((m) => m.kind === 'grace').length, 1);
     assert.equal(r2.limite.restantes, 0);
-    const r3 = await ask(la.token);
-    assert.match(r3.aviso, /Ya usaste tus 2 preguntas a Grace de hoy/);
+    const r3 = await ask(la.token, 'Grace, ¿y los bautizados?');
+    assert.match(r3.aviso, /Ya me hiciste tus 2 preguntas de hoy/);
     assert.equal(r3.mensajes.filter((m) => m.kind === 'grace').length, 0);
-    const rb = await ask(lb.token); // el límite es por persona: Luis aún puede
+    const rb = await ask(lb.token, 'Grace, ¿cuántos grupos hay?'); // el límite es por persona: Luis aún puede
     assert.equal(rb.mensajes.filter((m) => m.kind === 'grace').length, 1);
     const all = await (await get(`/chat/${la.token}/mensajes?desde=0`)).json();
     assert.equal(all.mensajes.filter((m) => m.kind === 'grace' && m.pregunta_de === a).length, 2);

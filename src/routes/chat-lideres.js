@@ -72,7 +72,8 @@ function chatLideresRouter(ctx) {
       const desde = Math.max(0, parseInt(req.query.desde, 10) || 0);
       const mensajes = desde === 0 ? await chat.recentMessages(db, 60) : await chat.listMessages(db, { sinceId: desde, limit: 100 });
       const miembros = await chat.members(db);
-      res.json({ mensajes, miembros: miembros.length, yo_id: req.chatPerson.id, limite: await limiteInfo(req.chatPerson.id) });
+      // +1: Grace también está en la sala, como una más (pedido del pastor, 2026-11-15)
+      res.json({ mensajes, miembros: miembros.length + 1, yo_id: req.chatPerson.id, limite: await limiteInfo(req.chatPerson.id) });
     })
   );
 
@@ -116,7 +117,8 @@ function chatLideresRouter(ctx) {
         return res.json({ crisis: agent.CRISIS_REPLY, mensajes: [], limite: await limiteInfo(person.id) });
       }
 
-      const quiereGrace = Boolean(req.body && req.body.para_grace) || /^\s*@?grace\b/i.test(texto);
+      // Grace es una más en la sala: responde cuando la mencionan en el mensaje, donde sea que vaya su nombre.
+      const quiereGrace = /\bgrace\b/i.test(texto);
       const pregunta = texto.replace(/^\s*@?grace[,:\s]*/i, '').trim() || texto;
       const nuevos = [];
       const propio = await chat.postMessage(db, { personId: person.id, authorName: person.full_name, kind: 'persona', body: texto });
@@ -128,7 +130,7 @@ function chatLideresRouter(ctx) {
       if (quiereGrace) {
         const info = await limiteInfo(person.id);
         if (!config.agent.apiKey) aviso = 'Grace todavía no puede responder: falta la clave del modelo en el panel.';
-        else if (info.restantes <= 0) aviso = `Ya usaste tus ${info.limite} preguntas a Grace de hoy. Mañana se renuevan.`;
+        else if (info.restantes <= 0) aviso = `Ya me hiciste tus ${info.limite} preguntas de hoy 😊 Mañana seguimos.`;
         else {
           try {
             const base = await agent.buildContext(db, config, person, new Date(), person.phone);
@@ -136,7 +138,7 @@ function chatLideresRouter(ctx) {
             const transcripcion = recientes
               .map((m) => (m.kind === 'grace' ? `Grace: ${m.body}` : `${firstName(m.author_name)}: ${m.body}`))
               .join('\n');
-            const context = `${base}\nCanal: chat de líderes de la iglesia (una sala donde los líderes conversan entre ellos). Responde solo a la pregunta de ${firstName(person.full_name)}.\nConversación reciente de la sala:\n${transcripcion}`;
+            const context = `${base}\nCanal: chat de líderes de la iglesia (una sala donde los líderes conversan entre ellos y tú, Grace, eres una más de la sala: te mencionaron en un mensaje). Responde solo a lo que te pide ${firstName(person.full_name)}, como una conversación normal del grupo.\nConversación reciente de la sala:\n${transcripcion}`;
             const g = await agent.generate(config, { context, history: [], message: pregunta }, ctx.fetchImpl);
             let respuesta;
             let escalar = false;
@@ -173,8 +175,8 @@ function chatLideresRouter(ctx) {
         chat
           .notifyRoom(ctx, {
             urgentFor: person.id,
-            title: 'Grace respondió tu pregunta',
-            bodyText: 'Abre el chat de líderes para ver su respuesta.',
+            title: 'Grace te respondió en el chat',
+            bodyText: 'Abre el chat de líderes para ver lo que dijo.',
           })
           .catch(() => {});
       }
