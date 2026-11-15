@@ -102,16 +102,16 @@ function ministryLeaderRequestsRouter(ctx) {
       const cards = pending
         .map((s) => {
           const rows = [
-            ...(['ministerio', 'grupo_cuidado', ...intake.FIELDS].map((f) => {
+            ...(['ministerio', 'grupo_cuidado', 'congregacional', ...intake.FIELDS].map((f) => {
               const cur = s['cur_' + f];
-              const val = s[f];
+              const val = f === 'ministerio' ? intake.joinList(intake.ministeriosDe(s)) : s[f];
               if (!val || (cur !== undefined && val === (cur ?? ''))) return '';
-              if ((f === 'ministerio' || f === 'grupo_cuidado') && cur === undefined) return `<tr><td class="muted">${esc(intake.LABELS[f])}</td><td><span class="muted">—</span></td><td><strong>${esc(val)}</strong></td></tr>`;
+              if ((f === 'ministerio' || f === 'grupo_cuidado' || f === 'congregacional') && cur === undefined) return `<tr><td class="muted">${esc(intake.LABELS[f])}</td><td><span class="muted">—</span></td><td><strong>${esc(val)}</strong></td></tr>`;
               return `<tr><td class="muted">${esc(intake.LABELS[f])}</td><td>${cur ? esc(showVal(f, cur)) : '<span class="muted">—</span>'}</td><td><strong>${esc(showVal(f, val))}</strong></td></tr>`;
             })),
           ].join('');
           return `<div class="card">
-            <h3 style="margin-top:0">${esc(s.full_name)} <span class="badge">${esc(s.ministerio)}</span> ${s.grupo_cuidado ? `<span class="badge">${esc(s.grupo_cuidado)}</span>` : ''} ${s.person_id ? '<span class="badge b-warn">Ya está en Personas, con datos distintos</span>' : '<span class="badge b-warn">Persona nueva</span>'}</h3>
+            <h3 style="margin-top:0">${esc(s.full_name)} ${intake.ministeriosDe(s).map((m) => `<span class="badge">${esc(m)}</span>`).join(' ')} ${s.grupo_cuidado ? `<span class="badge">${esc(s.grupo_cuidado)}</span>` : ''} ${s.congregacional ? `<span class="badge">${esc(s.congregacional)}</span>` : ''} ${s.person_id ? '<span class="badge b-warn">Ya está en Personas, con datos distintos</span>' : '<span class="badge b-warn">Persona nueva</span>'}</h3>
             <p class="muted" style="font-size:13px">${esc(displayPhone(s.phone))} · recibido ${esc(short(new Date(s.created_at).toLocaleDateString('en-CA', { timeZone: config.timezone })))}</p>
             ${s.has_photo ? `<img src="/personas/ministerios-desarrollo/respuestas/${s.id}/foto" alt="Foto enviada" width="96" height="96" style="border-radius:16px;object-fit:cover;float:right;margin:0 0 8px 12px">` : ''}
             <div class="table-scroll"><table><tr><th></th><th>Ahora</th><th>Envió</th></tr>${rows || '<tr><td colspan="3" class="muted">No trae cambios.</td></tr>'}</table></div>

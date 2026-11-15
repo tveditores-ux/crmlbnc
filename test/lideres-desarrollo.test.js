@@ -17,7 +17,7 @@ const GROUPS = [{ id: 7, name: 'Grupo Esperanza', leader_name: 'Ana Díaz' }];
 
 // ministerio + grupo de cuidado + la ficha del líder + estado civil: todo obligatorio menos correo y foto (sin cargo)
 const base = {
-  ministerio: 'Alabanza', grupo_cuidado: 'ninguno', full_name: 'María Torres', phone: '0414-000.00.22', bd_day: '15', bd_month: '06', bd_year: '1990',
+  ministerio: 'Alabanza', congregacional: 'No sirvo en ninguno', grupo_cuidado: 'ninguno', full_name: 'María Torres', phone: '0414-000.00.22', bd_day: '15', bd_month: '06', bd_year: '1990',
   cedula: 'V-19888777', address: 'Urbanización El Prado, casa 4', civil_status: 'Casado(a)', congregation: 'Mujeres',
 };
 
@@ -27,6 +27,16 @@ test('validación: el ministerio de desarrollo y el grupo de cuidado mandan; la 
   assert.deepEqual(ok.errors, []);
   assert.equal(ok.value.phone, '584140000022');
   assert.equal(ok.value.ministerio, 'Alabanza');
+  assert.deepEqual(ok.value.ministerios, ['Alabanza']);
+  assert.equal(ok.value.congregacional, '');
+  const varios = parse({ ministerio: ['Alabanza', 'Medios', 'Alabanza'] });
+  assert.deepEqual(varios.errors, []);
+  assert.deepEqual(varios.value.ministerios, ['Alabanza', 'Medios']); // más de un ministerio, sin repetir
+  assert.ok(parse({ ministerio: [] }).errors.includes('Elige tu ministerio de desarrollo.'));
+  assert.ok(parse({ ministerio: ['Alabanza', 'Evangelismo'] }).errors.includes('Elige tu ministerio de desarrollo.'));
+  assert.equal(parse({ congregacional: 'Mujeres' }).value.congregacional, 'Mujeres');
+  assert.ok(parse({ congregacional: '' }).errors.includes('Elige si sirves en un ministerio congregacional.'));
+  assert.ok(parse({ congregacional: 'General' }).errors.includes('Elige si sirves en un ministerio congregacional.')); // «General» no es un ministerio
   assert.equal(ok.value.grupo_cuidado, ''); // «ninguno»: no asiste a un grupo de cuidado
   assert.equal(ok.value.grupo_cuidado_id, null);
   const conGrupo = parse({ grupo_cuidado: '7' });
@@ -70,8 +80,9 @@ async function withApp(t, fn) {
   const b = `http://127.0.0.1:${server.address().port}`;
   const get = (p) => fetch(b + p, { redirect: 'manual' });
   const post = (p, fields = {}) => fetch(b + p, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(Object.entries(fields)), redirect: 'manual' });
+  const postRaw = (p, params) => fetch(b + p, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: params, redirect: 'manual' });
   try {
-    await fn({ db: h.db, get, post });
+    await fn({ db: h.db, get, post, postRaw });
   } finally {
     server.close();
     await h.close();
@@ -92,8 +103,11 @@ test('el formulario público: pide ministerio, grupo de cuidado, cédula y estad
     const html = await r.text();
     assert.match(html, /Líderes de ministerios de desarrollo/);
     assert.match(html, /¿Qué ministerio de desarrollo lideras\?/);
-    for (const m of ['Alabanza', 'Anfitriones', 'Diaconado', 'Intercesión', 'Medios', 'Nueva Vida']) assert.match(html, new RegExp(`<option[^>]*>${m}</option>`), m);
-    for (const x of ['Iglesia en línea', 'Consolidación', 'Protocolo y ujieres', 'Otro ministerio']) assert.ok(!html.includes(`>${x}</option>`), x);
+    assert.match(html, /puedes marcar más de uno/);
+    for (const m of ['Alabanza', 'Anfitriones', 'Diaconado', 'Intercesión', 'Medios', 'Nueva Vida']) assert.match(html, new RegExp(`type="checkbox" name="ministerio" value="${m}"`), m);
+    for (const x of ['Iglesia en línea', 'Consolidación', 'Protocolo y ujieres', 'Otro ministerio']) assert.ok(!html.includes(`value="${x}"`), x);
+    assert.match(html, /¿Sirves en algún ministerio congregacional\?/);
+    assert.match(html, /No sirvo en ninguno/);
     assert.match(html, /¿A qué grupo de cuidado perteneces o asistes\?/);
     assert.match(html, /Grupo Esperanza — líder: Ana Díaz/);
     assert.match(html, /No asisto a un grupo de cuidado/);
@@ -109,11 +123,15 @@ test('el formulario público: pide ministerio, grupo de cuidado, cédula y estad
   });
 });
 
-test('un líder nuevo queda pendiente; al aprobar entra a Personas, a su ministerio y como coordinador, sin consentimiento', async (t) => {
-  await withApp(t, async ({ db, get, post }) => {
+test('un líder nuevo queda pendiente; al aprobar entra a Personas, a sus ministerios y como coordinador, sin consentimiento', async (t) => {
+  await withApp(t, async ({ db, get, post, postRaw }) => {
     const token = await tokenOf(db);
     const gid = (await db.query("INSERT INTO care_groups (name, leader_name, token) VALUES ('Grupo Esperanza', 'Ana Díaz', 'tok-grupo-esperanza') RETURNING id")).rows[0].id;
-    const r = await post(`/desarrollo/${token}`, { ...base, grupo_cuidado: String(gid), email: 'maria@ejemplo.com', wants_messages: '1', photo_data: dataUrl(fakeJpeg(4)) });
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries({ ...base, grupo_cuidado: String(gid), email: 'maria@ejemplo.com', wants_messages: '1', photo_data: dataUrl(fakeJpeg(4)), congregacional: 'Mujeres' })) params.set(k, v);
+    params.set('ministerio', 'Alabanza');
+    params.append('ministerio', 'Medios'); // lidera dos ministerios de desarrollo
+    const r = await postRaw(`/desarrollo/${token}`, params);
     assert.equal(r.status, 200);
     assert.match(await r.text(), /Recibimos tu registro/);
     assert.equal(await count(db, 'people'), 0);
@@ -129,13 +147,21 @@ test('un líder nuevo queda pendiente; al aprobar entra a Personas, a su ministe
     assert.equal(ok.status, 303);
     const p = await person(db, '584140000022');
     assert.ok(p);
-    assert.equal(p.role, 'Líder de Alabanza');
+    assert.equal(p.role, 'Líder de Alabanza y Medios');
     assert.equal(p.opt_in, false);
     assert.equal(p.cedula, 'V-19888777');
     const min = (await db.query("SELECT m.*, c.full_name AS coord FROM ministries m LEFT JOIN people c ON c.id = m.coordinator_id WHERE m.name = 'Alabanza'")).rows[0];
     assert.ok(min, 'el ministerio se creó');
     assert.equal(min.coord, 'María Torres');
     assert.equal(await count(db, 'person_ministries', `WHERE person_id = ${p.id} AND ministry_id = ${min.id}`), 1);
+    const medios = (await db.query("SELECT * FROM ministries WHERE name = 'Medios'")).rows[0];
+    assert.ok(medios, 'el segundo ministerio también se creó');
+    assert.equal(medios.coordinator_id, p.id);
+    assert.equal(await count(db, 'person_ministries', `WHERE person_id = ${p.id} AND ministry_id = ${medios.id}`), 1);
+    const mujeres = (await db.query("SELECT * FROM ministries WHERE name = 'Mujeres'")).rows[0];
+    assert.ok(mujeres, 'el ministerio congregacional donde sirve también quedó');
+    assert.equal(await count(db, 'person_ministries', `WHERE person_id = ${p.id} AND ministry_id = ${mujeres.id}`), 1);
+    assert.notEqual(mujeres.coordinator_id, p.id); // sirve en él, no lo coordina
     assert.equal(await count(db, 'care_group_people', `WHERE group_id = ${gid} AND name = 'María Torres'`), 1); // quedó en la lista de gente de su grupo de cuidado
     const sub = (await db.query('SELECT * FROM ministry_leader_submissions')).rows[0];
     assert.equal(sub.grupo_cuidado, 'Grupo Esperanza');
