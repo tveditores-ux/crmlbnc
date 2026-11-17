@@ -17,6 +17,7 @@ const { consolidationRouter } = require('./routes/consolidation');
 const { nuevaVidaRouter } = require('./routes/nueva-vida');
 const { bautizadosRouter } = require('./routes/bautizados');
 const { reunionEquipoRouter, reunionRemotaRouter } = require('./routes/reunion-equipo');
+const { libretaLideresRouter, libretaLideresRemotaRouter } = require('./routes/libreta-lideres');
 const { remoteRouter } = require('./routes/attendance-remote');
 const { careRemoteRouter } = require('./routes/care-remote');
 const { careIntakeRouter } = require('./routes/care-intake');
@@ -110,6 +111,7 @@ function createApp(ctx) {
   app.use(cartasRouter()); // la carta de bienvenida se lee sin sesión: el enlace se manda por WhatsApp
   app.use(careIntakeRouter(ctx)); // enlace común para todos los líderes: también por enlace secreto
   app.use(reunionRemotaRouter(ctx)); // libreta de la reunión de equipo: enlace secreto, sin sesión
+  app.use(libretaLideresRemotaRouter(ctx)); // libreta de líderes — propuestas: enlace secreto, sin sesión (comparte prefijo con el panel; los segmentos que no son token pasan al guardia de sesión)
   app.use(libretaRemotaRouter(ctx)); // libretica del REDIL por enlace común (control remoto): enlace secreto, sin sesión
   app.use(careRemoteRouter(ctx)); // reporte del líder de grupo de cuidado: igual, enlace secreto
   app.use(reporteComunRouter(ctx)); // reporte semanal APARTE: un solo enlace para todos los líderes, solo con su nombre
@@ -166,6 +168,7 @@ function createApp(ctx) {
   app.use(nuevaVidaRouter(ctx));
   app.use(bautizadosRouter(ctx));
   app.use(reunionEquipoRouter(ctx));
+  app.use(libretaLideresRouter(ctx));
   app.use(careGroupsRouter(ctx));
   app.use(redilPreguntasRouter(ctx));
   app.use(calendarRouter(ctx));
