@@ -106,6 +106,7 @@ const NAV = [
   ['/oracion', 'Buzón de oración'],
   ['/guia', 'Guía del líder'],
   ['/reunion-equipo', 'Reunión de equipo'],
+  ['/libreta-lideres', 'Libreta de líderes'],
   ['/redil/libreta', 'Libretica REDIL'],
   ['/redil/preguntas', 'Preguntas REDIL'],
   ['/conversaciones', 'Conversaciones'],
