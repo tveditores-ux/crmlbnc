@@ -3,10 +3,13 @@ const crypto = require('crypto');
 
 /**
  * Libreta de líderes — propuestas: hoja hermana de la de Reunión de equipo, con contenido nuevo.
- * El contenido es DATO EN CÓDIGO: las 7 propuestas de líderes/coordinadores que salieron de las
- * respuestas del equipo (punto que cada uno expuso + solución clave). El equipo pastoral NO va
- * en esta libreta. Por persona hay tres casillas que se llenan: acuerdo de hoy, primer paso y
- * fecha, y revisión.
+ * Las 7 propuestas de líderes/coordinadores que salieron de las respuestas del equipo (punto que
+ * cada uno expuso + solución clave) quedan en código SOLO como textos por defecto: desde el panel
+ * del CRM se pueden corregir y el texto corregido se guarda en la base (claves `lNpunto`/`lNsol`);
+ * sin corrección guardada se muestra el texto de código. El equipo pastoral NO va en esta libreta.
+ * Por persona hay tres casillas que se llenan: acuerdo de hoy, primer paso y fecha, y revisión.
+ * El control remoto del teléfono muestra los textos efectivos de SOLO LECTURA: desde el teléfono
+ * nadie puede cambiar el punto ni la solución, solo escribir en las casillas y enviar.
  */
 
 const PERSONAS = [
@@ -63,20 +66,41 @@ const CAMPOS = [
 /** Clave de la casilla `campo` de la persona `n`: l1a … l7c. */
 const keyOf = (n, campo) => `l${n}${campo}`;
 
-/** Únicas claves aceptadas (el servidor no guarda nada fuera de esta lista). */
+/** Únicas claves de casilla aceptadas (el servidor no guarda nada fuera de esta lista). */
 const KEYS = new Set(PERSONAS.flatMap((p) => CAMPOS.map(([c]) => keyOf(p.n, c))));
+
+/** Clave del texto `cual` ('punto' | 'sol') de la persona `n`: l1punto, l1sol … l7sol. */
+const textKeyOf = (n, cual) => `l${n}${cual}`;
+
+/** Claves de los textos de las propuestas: solo las guarda el panel del CRM, nunca el remoto. */
+const TEXT_KEYS = new Set(PERSONAS.flatMap((p) => [textKeyOf(p.n, 'punto'), textKeyOf(p.n, 'sol')]));
+
+/** Todo lo que la hoja del panel puede guardar: casillas + textos de las propuestas. */
+const PANEL_KEYS = new Set([...KEYS, ...TEXT_KEYS]);
 const MAX_LEN = 5000;
 
 async function loadAll(db) {
   const { rows } = await db.query('SELECT key, value FROM libreta_lideres');
   const out = {};
-  for (const r of rows) if (KEYS.has(r.key)) out[r.key] = r.value;
+  for (const r of rows) if (PANEL_KEYS.has(r.key)) out[r.key] = r.value;
   return out;
 }
 
-/** Guarda una casilla. Devuelve false si la clave no existe. Un texto vacío borra la fila. */
+/**
+ * Textos efectivos de las propuestas, en el orden de PERSONAS: el guardado en la base si existe
+ * y no está vacío; si no, el texto por defecto de código. Es lo que ven el panel y el remoto.
+ */
+function resolveTextos(d = {}) {
+  return PERSONAS.map((p) => ({
+    n: p.n,
+    punto: String(d[textKeyOf(p.n, 'punto')] ?? '').trim() ? d[textKeyOf(p.n, 'punto')] : p.punto,
+    solucion: String(d[textKeyOf(p.n, 'sol')] ?? '').trim() ? d[textKeyOf(p.n, 'sol')] : p.solucion,
+  }));
+}
+
+/** Guarda una casilla o un texto del panel. Devuelve false si la clave no existe. Un texto vacío borra la fila (en un texto, eso vuelve al valor por defecto). */
 async function saveField(db, key, value) {
-  if (!KEYS.has(key)) return false;
+  if (!PANEL_KEYS.has(key)) return false;
   const v = String(value ?? '').replace(/\r\n/g, '\n').slice(0, MAX_LEN);
   if (!v.trim()) {
     await db.query('DELETE FROM libreta_lideres WHERE key = $1', [key]);
@@ -90,6 +114,7 @@ async function saveField(db, key, value) {
   return true;
 }
 
+/** Borrar todo: vacía la hoja completa, textos incluidos — sin filas guardadas, las propuestas vuelven a sus textos por defecto de código. */
 async function clearAll(db) {
   await db.query('DELETE FROM libreta_lideres');
 }
@@ -126,7 +151,11 @@ async function linkIsValid(db, token) {
 /* ---------- Respuestas enviadas por los líderes ---------- */
 const DEVICE_RE = /^[A-Za-z0-9_-]{16,64}$/;
 
-/** Valida lo que llega del teléfono. Devuelve { value, errors }. Solo pasan las casillas conocidas. */
+/**
+ * Valida lo que llega del teléfono. Devuelve { value, errors }. Solo pasan las casillas conocidas
+ * (KEYS): las claves de texto (`lNpunto`/`lNsol`) se ignoran a propósito — desde el remoto los
+ * textos de las propuestas son de solo lectura y ningún envío puede cambiarlos.
+ */
 function parseSubmission(body) {
   const b = body || {};
   const errors = [];
@@ -165,4 +194,4 @@ async function deleteSubmission(db, id) {
   return rowCount > 0;
 }
 
-module.exports = { parseSubmission, saveSubmission, listSubmissions, countSubmissions, deleteSubmission, getLink, ensureLink, regenerateLink, setLinkActive, linkIsValid, PERSONAS, CAMPOS, keyOf, KEYS, MAX_LEN, loadAll, saveField, clearAll };
+module.exports = { parseSubmission, saveSubmission, listSubmissions, countSubmissions, deleteSubmission, getLink, ensureLink, regenerateLink, setLinkActive, linkIsValid, PERSONAS, CAMPOS, keyOf, KEYS, textKeyOf, TEXT_KEYS, PANEL_KEYS, resolveTextos, MAX_LEN, loadAll, saveField, clearAll };
