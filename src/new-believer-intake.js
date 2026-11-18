@@ -102,6 +102,21 @@ function parseSubmission(body, countryCode = '58', today) {
   return { value, errors: [...new Set(errors)] };
 }
 
+/**
+ * ¿Ya hay un registro con el MISMO teléfono y la MISMA fecha de decisión? Es el duplicado típico:
+ * doble toque al enviar, reintento por conexión lenta o dos personas del equipo registrando a la
+ * misma persona en el mismo servicio. La misma persona OTRO día sí puede registrarse de nuevo
+ * (una reconciliación posterior, por ejemplo), por eso la regla es teléfono + fecha, no solo teléfono.
+ */
+async function findSameDay(db, v) {
+  if (!v.phone || !v.decision_date) return null;
+  const { rows } = await db.query(
+    'SELECT id, full_name FROM nueva_vida WHERE phone = $1 AND decision_date = $2 ORDER BY id LIMIT 1',
+    [v.phone, v.decision_date]
+  );
+  return rows[0] || null;
+}
+
 /** Guarda el registro en la lista de Nueva Vida, marcado por revisar. Devuelve el id. */
 async function submit(db, v) {
   const { rows } = await db.query(
@@ -121,5 +136,5 @@ async function countPending(db) {
 module.exports = {
   TOKEN_KEY, ACTIVE_KEY, SOURCE, HOW_ARRIVED, SERVICES, SEDES, FIRST_TIME, DECISION_TYPES,
   getLink, ensureLink, regenerateLink, setLinkActive, linkIsValid,
-  listSedes, parseSubmission, submit, countPending,
+  listSedes, parseSubmission, findSameDay, submit, countPending,
 };

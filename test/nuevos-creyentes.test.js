@@ -121,6 +121,32 @@ test('el remoto: enlace malo no abre; el registro entra a Nueva Vida por revisar
   });
 });
 
+test('el remoto: el mismo teléfono el mismo día NO se duplica; otro día sí puede registrarse', async (t) => {
+  await withApp(t, async ({ db, post }) => {
+    const link = await nb.ensureLink(db);
+    const datos = {
+      full_name: 'María Pérez', phone: '0414-0000001', decision_date: TODAY, sede: 'Las Mercedes',
+      service: 'Miércoles', first_time: 'Primera vez', decision_type: 'Conversión', how_arrived: 'Invitado por un familiar',
+    };
+    const uno = await post(`/nuevos-creyentes/${link.token}`, datos);
+    assert.equal(uno.status, 200);
+    assert.match(await uno.text(), /familia de Dios/);
+
+    // segundo envío idéntico (doble toque, reintento o dos personas del equipo): avisa y no crea otra fila
+    const dos = await post(`/nuevos-creyentes/${link.token}`, datos);
+    assert.equal(dos.status, 200);
+    assert.match(await dos.text(), /Ya quedó registrado hoy/);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM nueva_vida')).rows[0].n, 1);
+
+    // la misma persona, otro día (una reconciliación posterior): sí entra
+    const ayer = new Date(Date.now() - 864e5).toLocaleDateString('en-CA', { timeZone: config.timezone });
+    const tres = await post(`/nuevos-creyentes/${link.token}`, { ...datos, decision_date: ayer, decision_type: 'Reconciliación' });
+    assert.equal(tres.status, 200);
+    assert.match(await tres.text(), /familia de Dios/);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM nueva_vida')).rows[0].n, 2);
+  });
+});
+
 test('el panel: la página del enlace lo genera y la lista de Nueva Vida lleva a ella', async (t) => {
   await withApp(t, async ({ get, admin }) => {
     const p = await get('/nueva-vida/enlace', admin);
