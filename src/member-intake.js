@@ -20,7 +20,7 @@ const LABELS = {
 const SENSITIVE = ['birth_date', 'cedula', 'address']; // se borran de la respuesta cuando se atiende
 
 const clean = (v, n) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
-const keyOf = (s) => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+const keyOf = (s) => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
 /* ----------------------------- Enlace común ----------------------------- */
 async function getSettings(db) {
@@ -168,6 +168,26 @@ async function apply(pool, submissionId, { auto = false, consent = false } = {})
       await db.query(`UPDATE people SET ${sets.join(', ')} WHERE id = $1`, [person.id, ...set.map((f) => sub[f])]);
       if (sub.photo) {
         await db.query('INSERT INTO people_photos (person_id, data) VALUES ($1, $2) ON CONFLICT (person_id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()', [person.id, Buffer.from(sub.photo)]);
+      }
+      // Vínculo con su grupo de cuidado: si la ficha queda con un grupo, el nombre de la persona entra en la
+      // lista de gente de ese grupo (care_group_people), igual que en el registro de desarrollo, para que el
+      // líder la tenga en su ruta y Grace pastoral sepa quiénes están en cada grupo. Solo se agrega: quitar a
+      // alguien de la lista es decisión del líder en su ruta de crecimiento.
+      const groupName = set.includes('care_group_name') ? sub.care_group_name : person.care_group_name;
+      if (groupName) {
+        const matches = (await db.query('SELECT id FROM care_groups WHERE active AND name = $1 ORDER BY id', [groupName])).rows;
+        if (matches.length === 1) {
+          const personName = set.includes('full_name') ? sub.full_name : person.full_name;
+          if (personName) {
+            const gid = matches[0].id;
+            const keyOf = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+            const yaEsta = (await db.query('SELECT name FROM care_group_people WHERE group_id = $1', [gid])).rows.some((x) => keyOf(x.name) === keyOf(personName));
+            if (!yaEsta) {
+              const sort = (await db.query('SELECT COALESCE(max(sort), -1) + 1 AS s FROM care_group_people WHERE group_id = $1', [gid])).rows[0].s;
+              await db.query('INSERT INTO care_group_people (group_id, name, sort) VALUES ($1, $2, $3)', [gid, personName, sort]);
+            }
+          }
+        }
       }
       await db.query(
         `UPDATE member_submissions SET status = 'aplicada', auto_applied = $2, person_id = $3, resolved_at = now(), photo = NULL, birth_date = '', cedula = '', address = '' WHERE id = $1`,

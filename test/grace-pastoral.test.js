@@ -239,3 +239,24 @@ test('panel: el aviso diario de cumpleaños se enciende, con hora y plantilla va
     await h.close();
   }
 });
+
+test('miembros de un grupo de cuidado: une la lista del líder con las fichas que declaran el grupo, sin repetir ni datos privados', async (t) => {
+  await withDb(t, async (db) => {
+    const g = await db.query(`INSERT INTO care_groups (name, leader_name, leader_phone, congregation, token) VALUES ('Luz del Este', 'Carla Líder', '584240000003', 'Adultos', 'tok-a') RETURNING id`);
+    const gid = g.rows[0].id;
+    await db.query('INSERT INTO care_group_people (group_id, name, sort) VALUES ($1, $2, 0), ($1, $3, 1)', [gid, 'Ana Ruta', 'Miembro Prueba']);
+    await db.query(`INSERT INTO people (full_name, phone, active, care_group_name) VALUES
+      ('Miembro Prueba', '584145550002', TRUE, 'Luz del Este'),
+      ('Otra Ficha', '584145550009', TRUE, 'Luz del Este'),
+      ('Ficha Inactiva', '584145550010', FALSE, 'Luz del Este')`);
+    const r = await pastoral.runTool(db, cfg(), 'miembros_grupo_cuidado', { grupo: 'Carla' }, NOW);
+    assert.equal(r.grupos_encontrados, 1);
+    assert.equal(r.grupos[0].lider, 'Carla Líder');
+    // Miembro Prueba está en las dos fuentes y sale una sola vez; la ficha inactiva no sale
+    assert.deepEqual(r.grupos[0].miembros, ['Ana Ruta', 'Miembro Prueba', 'Otra Ficha']);
+    assert.equal(r.grupos[0].total, 3);
+    assert.ok(!JSON.stringify(r).includes('5842')); // ningún teléfono sale por la herramienta
+    assert.equal((await pastoral.runTool(db, cfg(), 'miembros_grupo_cuidado', {}, NOW)).grupos_encontrados, 1);
+    assert.equal((await pastoral.runTool(db, cfg(), 'miembros_grupo_cuidado', { grupo: 'nadie' }, NOW)).grupos_encontrados, 0);
+  });
+});

@@ -86,6 +86,17 @@ const TOOLS = [
     },
   },
   {
+    name: 'miembros_grupo_cuidado',
+    description:
+      'Quiénes están en un grupo de cuidado: los nombres de las personas de cada grupo, uniendo la lista que el líder lleva en su ruta de crecimiento con las personas cuya ficha dice que asisten a ese grupo. Sin indicar grupo: todos los grupos activos. Úsala cuando pregunten quiénes están en el grupo de un líder o en un grupo en concreto.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        grupo: { type: 'string', description: 'Parte del nombre del grupo o del líder (opcional).' },
+      },
+    },
+  },
+  {
     name: 'reportes_grupos',
     description:
       'Reportes semanales de los grupos de cuidado: asistencia, miembros, invitados, ofrenda (bolívares y divisas), etapa, testimonios, seguimiento, notas, visita del líder asesor y si el líder fue al culto del miércoles y del domingo. Incluye los grupos activos que NO reportaron en el rango. Sin fechas: últimos 14 días.',
@@ -204,6 +215,34 @@ async function runTool(db, config, name, input = {}, now = new Date()) {
           personas_en_lista: g.personas, ultimo_reporte: day(g.ultimo_reporte),
         })),
       };
+    }
+    case 'miembros_grupo_cuidado': {
+      const q = String(input.grupo || '').trim();
+      const { rows } = await db.query(
+        `SELECT g.id, g.name, g.leader_name, g.congregation FROM care_groups g
+          WHERE g.active AND ($1 = '' OR lower(g.name || ' ' || g.leader_name) LIKE $2)
+          ORDER BY g.congregation, g.name LIMIT 25`,
+        [q, like(q)]
+      );
+      const keyName = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+      const grupos = [];
+      for (const g of rows) {
+        // el vínculo de una persona con su grupo vive en dos lugares: la lista que el líder lleva en su ruta
+        // de crecimiento (care_group_people) y el grupo que la ficha de la persona declara (care_group_name)
+        const lista = (await db.query('SELECT name FROM care_group_people WHERE group_id = $1 ORDER BY sort, id', [g.id])).rows.map((r) => r.name);
+        const fichas = (await db.query('SELECT full_name FROM people WHERE care_group_name = $1 AND active ORDER BY full_name', [g.name])).rows.map((r) => r.full_name);
+        const seen = new Set();
+        const miembros = [];
+        for (const n of [...lista, ...fichas]) {
+          const nombre = clip(n, 120);
+          const key = keyName(nombre);
+          if (!nombre || seen.has(key)) continue;
+          seen.add(key);
+          miembros.push(nombre);
+        }
+        grupos.push({ grupo: g.name, lider: g.leader_name, congregacion: g.congregation, total: miembros.length, miembros });
+      }
+      return { grupos_encontrados: grupos.length, grupos };
     }
     case 'reportes_grupos': {
       const { desde, hasta } = range(input, now, tz, { back: 14 });

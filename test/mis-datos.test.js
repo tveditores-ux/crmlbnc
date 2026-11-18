@@ -270,3 +270,26 @@ test('unir duplicados conserva los datos nuevos y la foto de la ficha que se eli
     assert.equal((await db.query('SELECT person_id FROM member_submissions')).rows[0].person_id, out.keepId);
   });
 });
+
+test('al aplicar, la persona queda vinculada a su grupo: entra en la lista de gente del grupo, sin duplicarse', async (t) => {
+  const h = await openTestDb();
+  if (!h) return t.skip('sin base de datos de prueba (instala @electric-sql/pglite o define DATABASE_URL_TEST)');
+  const db = h.db;
+  try {
+    const g = (await db.query("INSERT INTO care_groups (name, leader_name, leader_phone, token) VALUES ('Grupo Uno', 'Líder Uno', '584140000001', 'tok-grupo-uno') RETURNING id")).rows[0];
+    const nuevaRespuesta = async () =>
+      (await db.query(
+        `INSERT INTO member_submissions (full_name, phone, email, birth_date, cedula, address, occupation, civil_status, congregation, care_group_name, wants_messages)
+         VALUES ('Ana Vinculada', '584140000777', 'ana@ejemplo.com', '1990-05-01', 'V-12345678', 'Su casa', 'Docente', 'Casado(a)', 'Mujeres', 'Grupo Uno', FALSE) RETURNING id`
+      )).rows[0];
+    const r1 = await intake.apply(db, (await nuevaRespuesta()).id);
+    assert.ok(!r1.error, JSON.stringify(r1));
+    assert.deepEqual((await db.query('SELECT name FROM care_group_people WHERE group_id = $1', [g.id])).rows.map((x) => x.name), ['Ana Vinculada']);
+    // una segunda respuesta de la misma persona no la duplica en la lista del grupo
+    const r2 = await intake.apply(db, (await nuevaRespuesta()).id);
+    assert.ok(!r2.error, JSON.stringify(r2));
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM care_group_people WHERE group_id = $1', [g.id])).rows[0].n, 1);
+  } finally {
+    await h.close();
+  }
+});
