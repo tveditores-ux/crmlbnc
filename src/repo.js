@@ -61,6 +61,9 @@ function validatePerson(input, countryCode, { allowNoContact = false } = {}) {
       opt_in: Boolean(input.opt_in) && Boolean(phone || email),
       active: input.active === undefined ? true : Boolean(input.active),
       notes: String(input.notes || '').trim(),
+      // La congregación solo se toca cuando el llamador la trae (la ficha del panel): los
+      // importadores y demás guardados no la pisan (undefined = dejar la que tenga).
+      congregation: input.congregation === undefined ? undefined : String(input.congregation || '').trim().slice(0, 60),
     },
   };
 }
@@ -128,17 +131,25 @@ async function findByName(db, fullName) {
 
 async function savePerson(db, id, v) {
   if (id) {
-    await db.query(
-      `UPDATE people SET full_name=$2, phone=$3, email=$4, role=$5, preferred_channel=$6,
-              opt_in=$7, active=$8, notes=$9, updated_at=now() WHERE id=$1`,
-      [id, v.full_name, v.phone, v.email, v.role, v.preferred_channel, v.opt_in, v.active, v.notes]
-    );
+    if (v.congregation !== undefined) {
+      await db.query(
+        `UPDATE people SET full_name=$2, phone=$3, email=$4, role=$5, preferred_channel=$6,
+                opt_in=$7, active=$8, notes=$9, congregation=$10, updated_at=now() WHERE id=$1`,
+        [id, v.full_name, v.phone, v.email, v.role, v.preferred_channel, v.opt_in, v.active, v.notes, v.congregation]
+      );
+    } else {
+      await db.query(
+        `UPDATE people SET full_name=$2, phone=$3, email=$4, role=$5, preferred_channel=$6,
+                opt_in=$7, active=$8, notes=$9, updated_at=now() WHERE id=$1`,
+        [id, v.full_name, v.phone, v.email, v.role, v.preferred_channel, v.opt_in, v.active, v.notes]
+      );
+    }
     return id;
   }
   const { rows } = await db.query(
-    `INSERT INTO people (full_name, phone, email, role, preferred_channel, opt_in, active, notes)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-    [v.full_name, v.phone, v.email, v.role, v.preferred_channel, v.opt_in, v.active, v.notes]
+    `INSERT INTO people (full_name, phone, email, role, preferred_channel, opt_in, active, notes, congregation)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+    [v.full_name, v.phone, v.email, v.role, v.preferred_channel, v.opt_in, v.active, v.notes, v.congregation || '']
   );
   return rows[0].id;
 }
