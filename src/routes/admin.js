@@ -9,6 +9,7 @@ const { csvToRecords, toCsv } = require('../csv');
 const repo = require('../repo');
 const members = require('../members');
 const { memberDataCard } = require('./member-requests');
+const { parsePhoto } = require('../care-groups');
 const mm = require('../ministries-merge');
 const { EVENT_TYPES, parseEventType } = require('../event-types');
 const reminders = require('../reminders');
@@ -267,6 +268,59 @@ function adminRouter(ctx) {
     })
   );
 
+  /** Reduce la imagen elegida a JPEG de máx. 900 px en el navegador, igual que en Bautizados. */
+  const REDUCE_JS = `function reduceImage(file, done, max) {
+    var url = URL.createObjectURL(file), img = new Image();
+    img.onload = function () {
+      var s = Math.min(1, (max || 900) / Math.max(img.width, img.height)), c = document.createElement('canvas');
+      c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      done(null, c.toDataURL('image/jpeg', 0.82));
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); done(new Error('No pude leer esa imagen.')); };
+    img.src = url;
+  }`;
+
+  /** Tarjeta «Su foto» de la ficha: el administrador la cambia o la quita desde el panel (pedido del pastor, 2026-11-17). */
+  function personPhotoCard(p, photoV) {
+    const src = photoV ? `/personas/${p.id}/foto?v=${photoV}` : '';
+    return `<div class="card">
+        <strong>Su foto</strong>
+        <p class="muted" style="margin:4px 0 10px">La que la persona envió en su registro. Desde aquí puedes cambiarla por otra o quitarla.</p>
+        <img id="pf_prev" alt="Foto de ${esc(p.full_name)}" ${src ? `src="${src}"` : 'hidden'} style="display:block;width:100%;max-width:220px;aspect-ratio:1/1;object-fit:cover;border-radius:12px;border:1px solid var(--line);margin:0 0 10px">
+        ${src ? '' : '<p class="muted" id="pf_none" style="margin:0 0 8px">Todavía no tiene foto.</p>'}
+        <form method="post" action="/personas/${p.id}/foto" id="pf_form">
+          <input type="hidden" name="photo_data" id="pf_data">
+          <div class="actions" style="margin:0">
+            <label class="btn sec" style="margin:0;cursor:pointer">Tomar foto<input id="pf_cam" type="file" accept="image/*" capture="user" hidden></label>
+            <label class="btn sec" style="margin:0;cursor:pointer">Elegir de la galería<input id="pf_gal" type="file" accept="image/*" hidden></label>
+            <button id="pf_save" hidden>Guardar la foto nueva</button>
+          </div>
+          <p id="pf_msg" class="muted" style="font-size:13px;margin:6px 0 0"></p>
+        </form>
+        ${src ? `<form method="post" action="/personas/${p.id}/foto/eliminar" onsubmit="return confirm('¿Quitar la foto de ${esc(p.full_name).replace(/'/g, '&#39;')}?')"><button class="danger small">Quitar foto</button></form>` : ''}
+      </div>
+      <script>
+        ${REDUCE_JS}
+        (function () {
+          var data = document.getElementById('pf_data'), prev = document.getElementById('pf_prev'), msg = document.getElementById('pf_msg'), save = document.getElementById('pf_save');
+          ['pf_cam', 'pf_gal'].forEach(function (id) {
+            document.getElementById(id).addEventListener('change', function (e) {
+              var f = e.target.files[0]; if (!f) return;
+              msg.textContent = 'Preparando la foto…';
+              reduceImage(f, function (err, url) {
+                if (err) { msg.textContent = err.message; return; }
+                data.value = url; prev.src = url; prev.hidden = false;
+                var none = document.getElementById('pf_none'); if (none) none.hidden = true;
+                save.hidden = false; msg.textContent = 'Revisa la foto y pulsa «Guardar la foto nueva».';
+              });
+            });
+          });
+        })();
+      </script>`;
+  }
+
   function personForm(p, ministries, selected, action, errors = []) {
     return `${errors.length ? `<div class="flash err">${errors.map(esc).join('<br>')}</div>` : ''}
     <form method="post" action="${action}" class="card">
@@ -396,13 +450,15 @@ function adminRouter(ctx) {
       const sel = (await db.query('SELECT ministry_id FROM person_ministries WHERE person_id=$1', [id])).rows.map(
         (x) => x.ministry_id
       );
-      const hasPhoto = (await db.query('SELECT 1 FROM people_photos WHERE person_id = $1', [id])).rows.length > 0;
+      const photoRow = (await db.query('SELECT updated_at FROM people_photos WHERE person_id = $1', [id])).rows[0];
+      const hasPhoto = Boolean(photoRow);
+      const photoV = photoRow ? new Date(photoRow.updated_at).getTime() : 0;
       page(
         req,
         res,
         rows[0].full_name,
         '/personas',
-        `<h1>${esc(rows[0].full_name)}</h1>${memberDataCard(rows[0], hasPhoto, config.timezone)}${personForm(rows[0], ministries, sel, `/personas/${id}`)}
+        `<h1>${esc(rows[0].full_name)}</h1>${memberDataCard(rows[0], hasPhoto, config.timezone)}${personPhotoCard(rows[0], photoV)}${personForm(rows[0], ministries, sel, `/personas/${id}`)}
         <div class="card"><strong>Su acceso al chat de líderes</strong>
           <p class="muted" style="margin:4px 0 10px">La sala donde los líderes y servidores conversan entre ellos y le preguntan a Grace. Cada quien entra con su propio enlace personal.</p>
           <a class="btn sec" href="/personas/${id}/chat">Dar o ver su acceso al chat</a></div>
@@ -415,6 +471,31 @@ function adminRouter(ctx) {
     })
   );
   r.post('/personas/:id(\\d+)', ah((req, res) => handlePersonSave(req, res, +req.params.id)));
+
+  // El administrador cambia la foto de la persona desde su ficha (la foto vive en people_photos).
+  r.post(
+    '/personas/:id(\\d+)/foto',
+    ah(async (req, res) => {
+      const id = +req.params.id;
+      if (!(await db.query('SELECT 1 FROM people WHERE id = $1', [id])).rows.length) return go(res, '/personas', { err: 'No existe esa persona.' });
+      const photo = parsePhoto(req.body.photo_data);
+      if (photo.error) return go(res, `/personas/${id}`, { err: photo.error });
+      if (!photo.buffer) return go(res, `/personas/${id}`, { err: 'Elige primero la foto nueva.' });
+      await db.query(
+        'INSERT INTO people_photos (person_id, data) VALUES ($1, $2) ON CONFLICT (person_id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()',
+        [id, photo.buffer]
+      );
+      go(res, `/personas/${id}`, { ok: 'Foto actualizada.' });
+    })
+  );
+  r.post(
+    '/personas/:id(\\d+)/foto/eliminar',
+    ah(async (req, res) => {
+      const id = +req.params.id;
+      await db.query('DELETE FROM people_photos WHERE person_id = $1', [id]);
+      go(res, `/personas/${id}`, { ok: 'Foto quitada.' });
+    })
+  );
   r.post(
     '/personas/:id(\\d+)/eliminar',
     ah(async (req, res) => {
