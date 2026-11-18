@@ -44,7 +44,7 @@ function nuevosCreyentesRouter(ctx) {
       <p class="sub" style="margin:0">Nueva Vida · ${esc(config.churchName)}</p>
       <p class="muted" style="font-size:14px">Para llenar el día de su conversión, en el momento de la decisión. Queda registrado en Nueva Vida para su seguimiento y consolidación.</p>
       ${errors.length ? `<div class="flash err">${errors.map(esc).join('<br>')}</div>` : ''}
-      <form method="post" autocomplete="off">${honey}
+      <form method="post" autocomplete="off" onsubmit="var b=this.querySelector('button.go');if(b){b.disabled=true;b.textContent='Registrando…'}">${honey}
         <label for="full_name">Nombre y apellido del nuevo creyente</label>
         <input id="full_name" type="text" name="full_name" maxlength="120" required value="${esc(v.full_name || '')}" placeholder="Ej.: María Pérez">
         <label for="phone">Su número de WhatsApp</label>
@@ -68,6 +68,16 @@ function nuevosCreyentesRouter(ctx) {
         <input id="address" type="text" name="address" maxlength="300" value="${esc(v.address || '')}">
         <button class="go">Registrar su decisión</button>
       </form>`;
+  }
+
+  function duplicate(token, v) {
+    const fecha = v.decision_date ? v.decision_date.split('-').reverse().join('/') : '';
+    return `<div class="card" style="text-align:center">
+      <h1>Ya quedó registrado hoy ✅</h1>
+      <p><strong>${esc(v.full_name || '')}</strong> ya tiene su registro${fecha ? ` con fecha <strong>${esc(fecha)}</strong>` : ''} en Nueva Vida, así que <strong>no se creó otro</strong> para no duplicarlo.</p>
+      <p class="muted">Si algún dato quedó mal, el equipo lo corrige desde el panel de Nueva Vida.</p>
+      <p><a class="btn" href="/nuevos-creyentes/${esc(token)}">Registrar a otro nuevo creyente</a></p>
+    </div>`;
   }
 
   function success(token, v) {
@@ -105,6 +115,8 @@ function nuevosCreyentesRouter(ctx) {
         const back = { full_name: body.full_name, phone: body.phone, email: body.email, decision_date: body.decision_date, sede: body.sede, service: body.service, first_time: body.first_time, decision_type: body.decision_type, age: body.age, civil_status: body.civil_status, address: body.address, how_arrived: body.how_arrived };
         return send(res, shell('Registro de nuevo creyente', form(req.params.token, back, errors, sedes)));
       }
+      const dup = await nb.findSameDay(db, value);
+      if (dup) return send(res, shell('Ya quedó registrado', duplicate(req.params.token, value)));
       await nb.submit(db, value);
       send(res, shell('Registro de nuevo creyente', success(req.params.token, value)));
     })
