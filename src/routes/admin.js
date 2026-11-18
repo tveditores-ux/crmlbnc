@@ -9,7 +9,7 @@ const { csvToRecords, toCsv } = require('../csv');
 const repo = require('../repo');
 const members = require('../members');
 const { memberDataCard } = require('./member-requests');
-const { parsePhoto } = require('../care-groups');
+const { parsePhoto, CONGREGATIONS } = require('../care-groups');
 const mm = require('../ministries-merge');
 const { EVENT_TYPES, parseEventType } = require('../event-types');
 const reminders = require('../reminders');
@@ -335,6 +335,11 @@ function adminRouter(ctx) {
           .map((c) => `<option value="${c}" ${p.preferred_channel === c ? 'selected' : ''}>${CHANNEL_LABEL[c]}</option>`)
           .join('')}</select></div>
       </div>
+      <div class="row">
+        <div><label>Congregación</label><select name="congregation"><option value="">Sin definir</option>${[...CONGREGATIONS, ...(p.congregation && !CONGREGATIONS.includes(p.congregation) ? [p.congregation] : [])]
+          .map((c) => `<option${p.congregation === c ? ' selected' : ''}>${esc(c)}</option>`)
+          .join('')}</select></div>
+      </div>
       <label>Ministerios</label>
       <div class="checks">${
         ministries
@@ -378,6 +383,7 @@ function adminRouter(ctx) {
       opt_in: b.opt_in === '1',
       active: b.active === '1',
       notes: b.notes,
+      congregation: b.congregation,
     };
   }
 
