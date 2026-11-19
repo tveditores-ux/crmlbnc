@@ -3,7 +3,7 @@ const express = require('express');
 const { layout } = require('../views/layout');
 const { esc } = require('../util');
 const { createRateLimiter } = require('../attendance-store');
-const { parseReport, STAGES: cgStages } = require('../care-groups');
+const { parseReport, STAGES: cgStages, leaderLabel } = require('../care-groups');
 const crl = require('../care-report-link');
 const { CSS } = require('./care-remote');
 
@@ -29,7 +29,8 @@ function reporteComunRouter(ctx) {
     shell('Enlace no válido', '<div class="card"><h1>Enlace no válido</h1><p class="muted">Este enlace ya no está activo. Pídele uno nuevo a quien administra el panel.</p></div>', 404);
   const honey = '<div class="hp" aria-hidden="true"><label>No llenar<input type="text" name="web" tabindex="-1"></label></div>';
 
-  function form(token, v = {}, errors = []) {
+  /** `choices`: los grupos de un líder que lleva más de uno; entonces el formulario le pide elegir a cuál va el reporte. */
+  function form(token, v = {}, errors = [], choices = null) {
     const num = (key, label) =>
       `<div><label for="${key}">${label}</label><input id="${key}" type="number" min="0" step="1" inputmode="numeric" name="${key}" value="${esc(v[key] ?? '')}"></div>`;
     const area = (key, label, hint = '') =>
@@ -41,6 +42,14 @@ function reporteComunRouter(ctx) {
       <form method="post" autocomplete="off">${honey}
         <label for="leader_name">Tu nombre y apellido</label>
         <input id="leader_name" type="text" name="leader_name" maxlength="80" required value="${esc(v.leader_name || '')}" placeholder="Ej.: María Pérez">
+        ${
+          choices && choices.length > 1
+            ? `<label for="group_id">¿De cuál de tus grupos es este reporte?</label>
+        <select id="group_id" name="group_id" required style="font-size:18px;padding:12px;width:100%;border-radius:10px;border:2px solid var(--accent, #2563eb)"><option value="">Elige tu grupo…</option>${choices
+          .map((g) => `<option value="${g.id}" ${String(v.group_id || '') === String(g.id) ? 'selected' : ''}>${esc(g.name)}${leaderLabel(g) ? ` · ${esc(leaderLabel(g))}` : ''}</option>`)
+          .join('')}</select>`
+            : ''
+        }
         <label for="meeting_date">Fecha de la reunión</label>
         <input id="meeting_date" type="date" name="meeting_date" required value="${esc(v.meeting_date || today())}">
         <div class="pair">
@@ -102,7 +111,12 @@ function reporteComunRouter(ctx) {
       const { value, errors } = parseReport(req.body, today());
       if (name.error) errors.unshift(name.error);
       if (errors.length) return send(res, shell('Reporte semanal', form(req.params.token, { ...req.body, leader_name: req.body.leader_name }, errors), 400));
-      const out = await crl.saveCommonReport(db, name.value, value);
+      const out = await crl.saveCommonReport(db, name.value, value, req.body.group_id);
+      if (out.needsChoice) {
+        // Lleva más de un grupo: no se guarda nada todavía; vuelve el mismo formulario, con lo escrito, para elegir el grupo.
+        const msg = req.body.group_id ? 'Ese grupo no es uno de los tuyos. Elige tu grupo en la lista.' : 'Llevas más de un grupo: elige de cuál es este reporte y envíalo otra vez.';
+        return send(res, shell('Reporte semanal', form(req.params.token, { ...req.body, group_id: '' }, [msg], out.groups), 400));
+      }
       if (out.applied) {
         await db.query('UPDATE care_groups SET uses = uses + 1, last_used_at = now() WHERE id = $1', [out.group.id]);
         return send(
@@ -124,7 +138,7 @@ function reporteComunRouter(ctx) {
           'Reporte enviado',
           `<h1>¡Gracias, ${esc(name.value.split(' ')[0])}!</h1>
           <div class="ok"><strong>Reporte recibido</strong><br>${esc(value.meeting_date)} · Asistentes: ${value.attendance ?? '—'}</div>
-          <p class="muted">Tu reporte llegó. Como tu nombre no coincide con un solo grupo, Administración lo asigna al tuyo en el panel; no tienes que enviarlo otra vez.</p>`
+          <p class="muted">Tu reporte llegó. Como tu nombre no coincide con ningún grupo, Administración lo asigna al tuyo en el panel; no tienes que enviarlo otra vez.</p>`
         )
       );
     })

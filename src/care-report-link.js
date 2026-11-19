@@ -4,8 +4,8 @@ const cg = require('./care-groups');
 /**
  * Remoto de reporte APARTE del enlace del grupo: un solo enlace para todos los líderes (`/reportes/<token>`),
  * pensado para guardarlo en el teléfono y reportar cada semana sin generar ni enviar enlaces nuevos.
- * El líder solo escribe su nombre. Si ese nombre coincide con el `leader_name` de UN solo grupo activo,
- * el reporte entra directo a ese grupo; si no se reconoce (o dos grupos comparten líder), queda guardado
+ * El líder solo escribe su nombre (si lleva varios grupos, además elige cuál). Si ese nombre coincide con el `leader_name` de UN solo grupo activo,
+ * el reporte entra directo a ese grupo; si lleva varios grupos, elige el suyo en el remoto; si no se reconoce, queda guardado
  * como pendiente en `care_group_report_submissions` para que el panel lo asigne — nunca se pierde.
  * El token vive en `care_settings` (`reporte_token` / `reporte_active`), como la libretica y `/registro`.
  */
@@ -50,23 +50,40 @@ function parseLeaderName(raw) {
   return { value: name };
 }
 
+/**
+ * Los grupos activos que lidera esa persona: su nombre coincide (sin tildes ni mayúsculas) con el líder o con el
+ * co-líder del grupo. Un líder puede llevar más de un grupo; entonces el remoto le pide elegir.
+ */
+async function groupsForLeaderName(db, name) {
+  const key = keyOf(name);
+  if (!key) return [];
+  const { rows } = await db.query('SELECT id, name, leader_name, co_leader_name FROM care_groups WHERE active ORDER BY name, id');
+  return rows.filter((g) => keyOf(g.leader_name) === key || keyOf(g.co_leader_name) === key);
+}
+
 /** El grupo del líder por su nombre: solo si hay exactamente UN grupo activo con ese líder. */
 async function findGroupByLeaderName(db, name) {
-  const key = keyOf(name);
-  if (!key) return null;
-  const { rows } = await db.query('SELECT id, name, leader_name FROM care_groups WHERE active');
-  const hits = rows.filter((g) => keyOf(g.leader_name) === key);
+  const hits = await groupsForLeaderName(db, name);
   return hits.length === 1 ? hits[0] : null;
 }
 
 const REPORT_COLS = ['meeting_date', 'members_count', 'guests_count', 'attendance', 'offering', 'offering_fx', 'payment_ref', 'snack', 'dynamics', 'testimonies', 'songs', 'key_element', 'notes', 'followup', 'advisor_visit', 'start_time', 'end_time', 'stage', 'stage_week', 'recent_guests', 'leader_wed', 'leader_sun'];
 
 /**
- * Guarda el reporte que llegó por el enlace común. Devuelve { applied: true, group, created } si entró directo
- * a su grupo, o { applied: false, submissionId } si quedó pendiente de asignar en el panel.
+ * Guarda el reporte que llegó por el enlace común. Devuelve:
+ * - { applied: true, group, created } si entró directo a su grupo;
+ * - { needsChoice: true, groups } si la persona lidera más de un grupo y no eligió uno de los suyos (no guarda nada:
+ *   el remoto le muestra sus grupos para que elija);
+ * - { applied: false, submissionId } si el nombre no coincide con ningún grupo: queda pendiente de asignar en el panel.
+ * `groupId` solo vale si es uno de los grupos de esa persona: no se puede reportar en un grupo ajeno.
  */
-async function saveCommonReport(db, leaderName, value) {
-  const group = await findGroupByLeaderName(db, leaderName);
+async function saveCommonReport(db, leaderName, value, groupId = null) {
+  const hits = await groupsForLeaderName(db, leaderName);
+  let group = hits.length === 1 ? hits[0] : null;
+  if (hits.length > 1) {
+    group = hits.find((g) => String(g.id) === String(groupId || '')) || null;
+    if (!group) return { needsChoice: true, groups: hits };
+  }
   if (group) {
     const out = await cg.upsertReport(db, group.id, value, SOURCE);
     return { applied: true, group, created: out.created };
@@ -106,4 +123,4 @@ async function discardSubmission(db, id) {
   return r.rowCount > 0;
 }
 
-module.exports = { SOURCE, keyOf, getLink, ensureLink, regenerateLink, setLinkActive, linkIsValid, parseLeaderName, findGroupByLeaderName, saveCommonReport, listPending, countPending, applySubmission, discardSubmission };
+module.exports = { SOURCE, keyOf, getLink, ensureLink, regenerateLink, setLinkActive, linkIsValid, parseLeaderName, groupsForLeaderName, findGroupByLeaderName, saveCommonReport, listPending, countPending, applySubmission, discardSubmission };
