@@ -208,3 +208,17 @@ test('vaciar los datos de grupos: pide escribir BORRAR, borra todo en cascada y 
     assert.match(await (await get('/grupos')).text(), /Aún no hay grupos/);
   });
 });
+
+test('el cruce a Personas: al guardar sus datos desde su enlace, el líder también queda en Personas', async (t) => {
+  await withApp(t, async ({ db, post }) => {
+    const g = await mkGroup(db);
+    assert.equal((await post(`/g/${g.token}/datos`, { ...required, photo_data: dataUrl(fakeJpeg(11)) })).status, 200);
+    const grow = (await db.query('SELECT * FROM care_groups WHERE id = $1', [g.id])).rows[0];
+    const people = (await db.query('SELECT * FROM people WHERE phone = $1', [grow.leader_phone])).rows;
+    assert.equal(people.length, 1);
+    assert.equal(people[0].full_name, 'Líder Uno');
+    assert.equal(people[0].care_group_name, g.name);
+    assert.equal(people[0].role, 'Líder de grupo de cuidado');
+    assert.equal(people[0].opt_in, false); // registrarse nunca marca el consentimiento
+  });
+});

@@ -80,6 +80,64 @@ async function submit(pool, sub) {
 }
 
 /**
+ * El cruce que pidió el pastor (2026-11-19): quien se inscribe por el enlace de líderes TAMBIÉN aparece en
+ * Personas. El líder de un GdC vivía solo como texto en su grupo (`care_groups.leader_*`, sin ficha), así que
+ * alguien podía ser líder y no existir en Personas (caso Livia Mijares de Paredes). Aquí se busca su ficha por
+ * el teléfono; si no existe, se crea (sin consentimiento: registrarse nunca marca opt_in). A una ficha
+ * existente solo se le llena lo vacío — nunca se le pisa el nombre ni el correo — y se le deja su grupo como
+ * grupo de cuidado y «Líder de grupo de cuidado» como rol solo si no tenía ninguno: aparecer en Personas no
+ * convierte a nadie en líder; el liderazgo sigue dependiendo del rol. Devuelve el id o null si no hay teléfono.
+ */
+async function ensureLeaderPerson(db, p, groupName) {
+  const phone = String(p.leader_phone || '').trim();
+  if (!phone) return null;
+  const email = String(p.leader_email || '').trim();
+  const emailTaken = async (exceptId) =>
+    email ? (await db.query('SELECT 1 FROM people WHERE lower(email) = lower($1) AND id <> $2', [email, exceptId || 0])).rows.length > 0 : false;
+  let person = (await db.query('SELECT * FROM people WHERE phone = $1', [phone])).rows[0];
+  if (!person) {
+    person = (
+      await db.query("INSERT INTO people (full_name, phone, email, preferred_channel, opt_in, active) VALUES ($1, $2, NULLIF($3, ''), 'whatsapp', FALSE, TRUE) RETURNING *", [
+        p.leader_name,
+        phone,
+        (await emailTaken(0)) ? '' : email,
+      ])
+    ).rows[0];
+  }
+  const sets = [];
+  const params = [person.id];
+  for (const [f, v] of [
+    ['birth_date', p.leader_birth_date],
+    ['cedula', p.leader_cedula],
+    ['address', p.leader_address],
+    ['occupation', p.leader_occupation],
+    ['congregation', p.congregation],
+    ['care_group_name', groupName],
+  ]) {
+    if (v && !person[f]) {
+      sets.push(`${f} = $${params.length + 1}`);
+      params.push(v);
+    }
+  }
+  if (email && !person.email && !(await emailTaken(person.id))) {
+    sets.push(`email = NULLIF($${params.length + 1}, '')`);
+    params.push(email);
+  }
+  if (!person.role) {
+    sets.push(`role = $${params.length + 1}`);
+    params.push('Líder de grupo de cuidado');
+  }
+  if (sets.length) {
+    sets.push('profile_updated_at = now()', 'updated_at = now()');
+    await db.query(`UPDATE people SET ${sets.join(', ')} WHERE id = $1`, params);
+  }
+  if (p.photo) {
+    await db.query('INSERT INTO people_photos (person_id, data) VALUES ($1, $2) ON CONFLICT (person_id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()', [person.id, Buffer.from(p.photo)]);
+  }
+  return person.id;
+}
+
+/**
  * Aplica una respuesta al grupo: solo copia lo que vino lleno (nunca deja un dato en blanco), pone la foto
  * y marca los datos como confirmados. Si era de un grupo nuevo, lo crea. Todo en una transacción.
  * Devuelve { error } si no se puede, o { groupId }.
@@ -104,6 +162,9 @@ async function apply(pool, submissionId, { auto = false, groupId: assignTo = nul
     const sql = `UPDATE care_groups SET ${[...set.map((f, i) => `${f} = $${i + 2}`), 'profile_updated_at = now()'].join(', ')} WHERE id = $1`;
     await db.query(sql, [groupId, ...set.map((f) => sub[f])]);
     if (sub.photo) await cg.savePhoto(db, groupId, Buffer.from(sub.photo));
+    // el cruce a Personas: el líder también queda con su ficha (ver ensureLeaderPerson)
+    const groupRow = (await db.query('SELECT name FROM care_groups WHERE id = $1', [groupId])).rows[0];
+    await ensureLeaderPerson(db, sub, groupRow ? groupRow.name : '');
     await db.query("UPDATE care_group_submissions SET status = 'aplicada', auto_applied = $2, group_id = $3, resolved_at = now(), photo = NULL, leader_cedula = '', leader_address = '' WHERE id = $1", [submissionId, auto, groupId]);
     return { groupId };
   });
@@ -126,4 +187,4 @@ async function listPending(db) {
 }
 const countPending = async (db) => (await db.query("SELECT count(*)::int AS n FROM care_group_submissions WHERE status = 'pendiente'")).rows[0].n;
 
-module.exports = { FIELDS, LABELS, getSettings, ensureToken, regenerateToken, setActive, tokenIsValid, parseSubmission, submit, apply, discard, listPending, countPending };
+module.exports = { FIELDS, LABELS, getSettings, ensureToken, regenerateToken, setActive, tokenIsValid, parseSubmission, submit, apply, discard, listPending, countPending, ensureLeaderPerson };

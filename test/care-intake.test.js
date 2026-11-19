@@ -262,3 +262,37 @@ test('borrar un grupo borra sus respuestas (cascada) y el panel escapa el texto'
     assert.equal((await db.query('SELECT count(*)::int AS n FROM care_group_submissions WHERE group_id IS NOT NULL')).rows[0].n, 0);
   });
 });
+
+test('el cruce a Personas: al aplicar el registro del líder, también queda su ficha en Personas', async (t) => {
+  await withApp(t, async ({ db }) => {
+    // grupo nuevo: la respuesta espera revisión y el panel la aplica creando el grupo
+    const parsed = intake.parseSubmission(base, [], '58', TODAY);
+    assert.deepEqual(parsed.errors, []);
+    const r = await intake.submit(db, parsed);
+    assert.equal(r.applied, false);
+    const applied = await intake.apply(db, r.id);
+    assert.ok(applied.groupId);
+    const people = (await db.query('SELECT * FROM people')).rows;
+    assert.equal(people.length, 1);
+    const p = people[0];
+    assert.equal(p.full_name, 'Líder X');
+    assert.equal(p.phone, '584140000001');
+    assert.equal(p.email, 'lider@ejemplo.com');
+    assert.equal(p.role, 'Líder de grupo de cuidado');
+    assert.equal(p.care_group_name, 'Mujeres · Líder X');
+    assert.equal(p.congregation, 'Mujeres');
+    assert.equal(p.cedula, 'V-12345678');
+    assert.equal(p.occupation, 'Comerciante');
+    assert.equal(p.opt_in, false); // registrarse nunca marca el consentimiento
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM people_photos WHERE person_id = $1', [p.id])).rows[0].n, 1);
+
+    // segunda inscripción del mismo teléfono: no duplica la ficha ni le pisa el nombre
+    await db.query("UPDATE people SET full_name = 'Nombre Corregido' WHERE id = $1", [p.id]);
+    const g2 = (await db.query('SELECT * FROM care_groups WHERE id = $1', [applied.groupId])).rows[0];
+    const r2 = await intake.submit(db, intake.parseSubmission(base, [g2], '58', TODAY));
+    assert.equal(r2.applied, true); // se reconoce por el teléfono y se aplica en el acto
+    const after = (await db.query('SELECT * FROM people')).rows;
+    assert.equal(after.length, 1);
+    assert.equal(after[0].full_name, 'Nombre Corregido');
+  });
+});
