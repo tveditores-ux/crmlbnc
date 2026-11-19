@@ -279,6 +279,7 @@ test('el cruce a Personas: al aplicar el registro del líder, también queda su 
     assert.equal(p.phone, '584140000001');
     assert.equal(p.email, 'lider@ejemplo.com');
     assert.equal(p.role, 'Líder de grupo de cuidado');
+    assert.equal(p.membership, 'miembro'); // el líder también es miembro de la iglesia
     assert.equal(p.care_group_name, 'Mujeres · Líder X');
     assert.equal(p.congregation, 'Mujeres');
     assert.equal(p.cedula, 'V-12345678');

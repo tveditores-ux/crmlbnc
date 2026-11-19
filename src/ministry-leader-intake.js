@@ -276,7 +276,9 @@ async function apply(pool, submissionId, { auto = false, consent = false } = {})
       }
       // y en la lista de gente de su grupo de cuidado, si dijo a cuál asiste y no estaba ya
       if (sub.grupo_cuidado_id) {
-        const names = (await db.query('SELECT name FROM care_group_people WHERE group_id = $1', [sub.grupo_cuidado_id])).rows.map((x) => keyOf(x.name));
+        // quien está en un grupo de cuidado es miembro de la iglesia
+        await db.query(`UPDATE people SET membership = 'miembro' WHERE id = $1 AND membership <> 'miembro'`, [person.id]);
+        const names =(await db.query('SELECT name FROM care_group_people WHERE group_id = $1', [sub.grupo_cuidado_id])).rows.map((x) => keyOf(x.name));
         if (!names.includes(keyOf(sub.full_name))) {
           const sort = (await db.query('SELECT COALESCE(max(sort), -1) + 1 AS s FROM care_group_people WHERE group_id = $1', [sub.grupo_cuidado_id])).rows[0].s;
           await db.query('INSERT INTO care_group_people (group_id, name, sort) VALUES ($1, $2, $3)', [sub.grupo_cuidado_id, sub.full_name, sort]);

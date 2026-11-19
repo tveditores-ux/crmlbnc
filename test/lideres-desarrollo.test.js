@@ -165,6 +165,7 @@ test('un líder nuevo queda pendiente; al aprobar entra a Personas, a sus minist
     assert.equal(await count(db, 'person_ministries', `WHERE person_id = ${p.id} AND ministry_id = ${mujeres.id}`), 1);
     assert.notEqual(mujeres.coordinator_id, p.id); // sirve en él, no lo coordina
     assert.equal(await count(db, 'care_group_people', `WHERE group_id = ${gid} AND name = 'María Torres'`), 1); // quedó en la lista de gente de su grupo de cuidado
+    assert.equal((await db.query('SELECT membership FROM people WHERE id = $1', [p.id])).rows[0].membership, 'miembro'); // y es miembro de la iglesia
     const sub = (await db.query('SELECT * FROM ministry_leader_submissions')).rows[0];
     assert.equal(sub.grupo_cuidado, 'Grupo Esperanza');
     assert.equal(sub.status, 'aplicada');

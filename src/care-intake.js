@@ -127,6 +127,8 @@ async function ensureLeaderPerson(db, p, groupName) {
     sets.push(`role = $${params.length + 1}`);
     params.push('Líder de grupo de cuidado');
   }
+  // el líder de un grupo de cuidado es miembro de la iglesia, como la gente que se registra en su grupo
+  if (person.membership !== 'miembro') sets.push(`membership = 'miembro'`);
   if (sets.length) {
     sets.push('profile_updated_at = now()', 'updated_at = now()');
     await db.query(`UPDATE people SET ${sets.join(', ')} WHERE id = $1`, params);

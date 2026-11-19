@@ -293,3 +293,32 @@ test('al aplicar, la persona queda vinculada a su grupo: entra en la lista de ge
     await h.close();
   }
 });
+
+test('quien se registra en un grupo de cuidado queda como miembro de la iglesia (aunque estuviera como amigo); sin grupo no cambia', async (t) => {
+  const h = await openTestDb();
+  if (!h) return t.skip('sin base de datos de prueba (instala @electric-sql/pglite o define DATABASE_URL_TEST)');
+  const db = h.db;
+  try {
+    await db.query("INSERT INTO care_groups (name, leader_name, leader_phone, token) VALUES ('Grupo Dos', 'Líder Dos', '584140000099', 'tok-grupo-dos')");
+    await db.query("INSERT INTO people (full_name, phone, active, membership) VALUES ('Beto Amigo', '584140000201', TRUE, 'amigo'), ('Carla Sin Grupo', '584140000202', TRUE, 'amigo')");
+    const respuesta = async (name, phone, group) =>
+      (await db.query(
+        `INSERT INTO member_submissions (full_name, phone, email, birth_date, cedula, address, occupation, civil_status, congregation, care_group_name, wants_messages)
+         VALUES ($1, $2, '', '1990-05-01', 'V-12345678', 'Su casa', 'Docente', 'Casado(a)', 'Mujeres', $3, FALSE) RETURNING id`,
+        [name, phone, group]
+      )).rows[0].id;
+    const tipo = async (phone) => (await db.query('SELECT membership FROM people WHERE phone = $1', [phone])).rows[0].membership;
+    assert.ok(!(await intake.apply(db, await respuesta('Beto Amigo', '584140000201', 'Grupo Dos'))).error);
+    assert.ok(!(await intake.apply(db, await respuesta('Dora Nueva', '584140000203', 'Grupo Dos'))).error);
+    assert.ok(!(await intake.apply(db, await respuesta('Carla Sin Grupo', '584140000202', ''))).error); // «Todavía no estoy en un grupo»
+    assert.deepEqual([await tipo('584140000201'), await tipo('584140000203'), await tipo('584140000202')], ['miembro', 'miembro', 'amigo']);
+
+    // la puesta al día (migración 048): quien ya tenía su grupo, o es líder de un grupo activo, pasa a miembro
+    await db.query("INSERT INTO people (full_name, phone, active, membership, care_group_name) VALUES ('Eva Vieja', '584140000204', TRUE, '', 'grupo dos'), ('Líder Dos', '584140000099', TRUE, 'amigo', ''), ('Fito Otro', '584140000205', TRUE, '', 'Grupo que no existe')");
+    const sql = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'migrations', '048_grupo_cuidado_es_miembro.sql'), 'utf8');
+    await db.query(sql);
+    assert.deepEqual([await tipo('584140000204'), await tipo('584140000099'), await tipo('584140000205'), await tipo('584140000202')], ['miembro', 'miembro', '', 'amigo']);
+  } finally {
+    await h.close();
+  }
+});

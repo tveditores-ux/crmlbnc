@@ -174,6 +174,8 @@ async function apply(pool, submissionId, { auto = false, consent = false } = {})
       // líder la tenga en su ruta y Grace pastoral sepa quiénes están en cada grupo. Solo se agrega: quitar a
       // alguien de la lista es decisión del líder en su ruta de crecimiento.
       const groupName = set.includes('care_group_name') ? sub.care_group_name : person.care_group_name;
+      // quien se registra en un grupo de cuidado queda como miembro de la iglesia (aunque estuviera como amigo)
+      if (set.includes('care_group_name')) await db.query(`UPDATE people SET membership = 'miembro' WHERE id = $1 AND membership <> 'miembro'`, [person.id]);
       if (groupName) {
         const matches = (await db.query('SELECT id FROM care_groups WHERE active AND name = $1 ORDER BY id', [groupName])).rows;
         if (matches.length === 1) {
