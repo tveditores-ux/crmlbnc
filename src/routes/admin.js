@@ -262,8 +262,7 @@ function adminRouter(ctx) {
           <button class="sec">Filtrar</button></form>
         <div class="table-scroll"><table><tr><th>Nombre</th><th>Contacto</th><th>Ministerios</th><th>Tipo</th><th>Grupo oficial</th><th>Canal</th><th>Acepta</th><th></th></tr>${
           list || '<tr><td colspan="8" class="muted">Sin resultados.</td></tr>'
-        }</table></div>
-        <p class="muted" style="font-size:13px;margin-top:18px"><a href="/personas/borrar-todas">Borrar toda la lista de personas…</a></p>`
+        }</table></div>`
       );
     })
   );

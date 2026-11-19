@@ -5,7 +5,6 @@ const { adminRouter } = require('./routes/admin');
 const { publicRouter } = require('./routes/public');
 const { conversationsRouter } = require('./routes/conversations');
 const { asistenteRouter } = require('./routes/asistente');
-const { peopleWipeRouter } = require('./routes/people-wipe');
 const { leaderGuideRouter } = require('./routes/leader-guide');
 const { ministriesMergeRouter } = require('./routes/ministries-merge');
 const { googleRouter } = require('./routes/google');
@@ -152,7 +151,6 @@ function createApp(ctx) {
 
   app.use(conversationsRouter(ctx));
   app.use(asistenteRouter(ctx));
-  app.use(peopleWipeRouter(ctx));
   app.use(leaderGuideRouter(ctx));
   app.use(ministriesMergeRouter(ctx));
   app.use(memberRequestsRouter(ctx));
