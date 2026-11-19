@@ -39,7 +39,7 @@ function careGroupsRouter(ctx) {
     return `${errors.length ? `<div class="flash err">${errors.map(esc).join('<br>')}</div>` : ''}
       <form method="post" action="${action}" class="card">
         <div class="row">
-          ${t('name', 'Nombre del grupo', 'required maxlength="120"')}${t('leader_name', 'Líder')}
+          ${t('name', 'Nombre del grupo', 'required maxlength="120"')}${t('leader_name', 'Líder')}${t('co_leader_name', 'Co-líder (lidera junto al líder)')}
           ${t('leader_phone', 'Teléfono del líder', 'inputmode="tel"')}${t('leader_email', 'Correo del líder', 'type="text"')}
           ${t('advisor_name', 'Líder asesor')}${t('belongs_to', 'Pertenece a')}
           ${t('congregation', 'Congregación')}${t('place', 'Lugar de reunión')}
@@ -86,7 +86,7 @@ function careGroupsRouter(ctx) {
           return `<tr style="${g.active ? '' : 'opacity:.55'}">
             <td><input type="checkbox" name="ids" value="${g.id}" aria-label="Elegir el grupo ${esc(g.name)}"></td>
             <td>${g.has_photo ? `<img src="/grupos/${g.id}/foto" alt="" width="36" height="36" style="float:left;margin:0 8px 0 0;border-radius:50%;object-fit:cover">` : ''}<a href="/grupos/${g.id}"><strong>${esc(g.name)}</strong></a><div class="muted">${esc([g.stage, g.congregation].filter(Boolean).join(' · '))}</div></td>
-            <td>${esc(g.leader_name)}<div class="muted">${esc(displayPhone(g.leader_phone))}</div></td>
+            <td>${esc(cg.leaderLabel(g))}<div class="muted">${esc(displayPhone(g.leader_phone))}</div></td>
             <td>${esc([g.meeting_day, g.meeting_time].filter(Boolean).join(' '))}<div class="muted">${esc(g.place)}</div></td>
             <td>${badge}<div class="muted">${g.last_report ? esc(short(g.last_report)) : ''}</div></td>
             <td>${g.reports_30d}</td>
@@ -199,8 +199,8 @@ function careGroupsRouter(ctx) {
       const waiting = await intake.countPending(db);
       const rows = groups
         .map(
-          (g) => `<tr data-name="${esc(g.leader_name || g.name)}" data-phone="${esc(g.leader_phone)}">
-            <td><strong>${esc(g.name)}</strong><div class="muted">${esc(g.leader_name)}</div></td>
+          (g) => `<tr data-name="${esc(cg.leaderLabel(g) || g.name)}" data-phone="${esc(g.leader_phone)}">
+            <td><strong>${esc(g.name)}</strong><div class="muted">${esc(cg.leaderLabel(g))}</div></td>
             <td>${g.profile_updated_at ? '<span class="badge b-ok">Confirmados</span>' : '<span class="badge b-warn">Pendientes</span>'}</td>
             <td style="white-space:nowrap">${g.leader_phone ? '<a class="btn small wa" target="_blank" rel="noopener" href="#">WhatsApp</a>' : '<span class="muted">Sin teléfono</span>'}</td>
             <td>${delButton(g)}</td></tr>`
@@ -257,14 +257,14 @@ function careGroupsRouter(ctx) {
     ah(async (req, res) => {
       const link = await reportLink.ensureLink(db);
       const url = `${String(config.publicUrl || '').replace(/\/$/, '')}/reportes/${link.token}`;
-      const groups = (await db.query('SELECT id, name, leader_name FROM care_groups WHERE active ORDER BY lower(name)')).rows;
+      const groups = (await db.query('SELECT id, name, leader_name, co_leader_name FROM care_groups WHERE active ORDER BY lower(name)')).rows;
       const pending = await reportLink.listPending(db);
       const cards = pending
         .map(
           (s) => `<div class="card"><h3 style="margin-top:0">${esc(s.leader_name)} <span class="badge b-warn">Sin grupo claro</span></h3>
             <p class="muted" style="font-size:13px">Reunión del ${esc(short(typeof s.meeting_date === 'string' ? s.meeting_date : new Date(s.meeting_date).toLocaleDateString('en-CA', { timeZone: 'UTC' })))} · Asistentes: ${s.attendance ?? '—'}${s.guests_count ? ` · Invitados: ${s.guests_count}` : ''}${s.offering ? ` · Ofrenda: ${esc(s.offering)}` : ''}</p>
             ${s.notes ? `<p style="margin:6px 0">${esc(s.notes)}</p>` : ''}
-            <p class="toolbar" style="margin:10px 0 0"><form class="inline" method="post" action="/grupos/reporte-comun/pendientes/${s.id}/aplicar"><select name="group_id" style="max-width:280px">${groups.map((g) => `<option value="${g.id}">${esc(g.name)}${g.leader_name ? ` · ${esc(g.leader_name)}` : ''}</option>`).join('')}</select> <button class="small">Asignar a este grupo</button></form>
+            <p class="toolbar" style="margin:10px 0 0"><form class="inline" method="post" action="/grupos/reporte-comun/pendientes/${s.id}/aplicar"><select name="group_id" style="max-width:280px">${groups.map((g) => `<option value="${g.id}">${esc(g.name)}${g.leader_name ? ` · ${esc(cg.leaderLabel(g))}` : ''}</option>`).join('')}</select> <button class="small">Asignar a este grupo</button></form>
               <form class="inline" method="post" action="/grupos/reporte-comun/pendientes/${s.id}/descartar"><button class="small danger">Descartar</button></form></p></div>`
         )
         .join('');
@@ -406,9 +406,9 @@ function careGroupsRouter(ctx) {
       const { value, errors } = cg.parseGroup(req.body, config.defaultCountryCode);
       if (errors.length) return page(req, res, 'Nuevo grupo', `<h1>Nuevo grupo de cuidado</h1>${groupForm(req.body, '/grupos', errors)}`);
       const ins = await db.query(
-        `INSERT INTO care_groups (name, leader_name, leader_phone, leader_email, advisor_name, belongs_to, congregation, address, place, meeting_day, meeting_time, stage, token)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
-        [value.name, value.leader_name, value.leader_phone, value.leader_email, value.advisor_name, value.belongs_to, value.congregation, value.address, value.place, value.meeting_day, value.meeting_time, value.stage, cg.newToken()]
+        `INSERT INTO care_groups (name, leader_name, co_leader_name, leader_phone, leader_email, advisor_name, belongs_to, congregation, address, place, meeting_day, meeting_time, stage, token)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+        [value.name, value.leader_name, value.co_leader_name, value.leader_phone, value.leader_email, value.advisor_name, value.belongs_to, value.congregation, value.address, value.place, value.meeting_day, value.meeting_time, value.stage, cg.newToken()]
       );
       go(res, `/grupos/${ins.rows[0].id}`, { ok: 'Grupo creado. Copia su enlace y envíaselo al líder.' });
     })
@@ -487,11 +487,12 @@ function careGroupsRouter(ctx) {
         g.name,
         `<p><a href="/grupos">← Grupos de cuidado</a></p>
         <h1>${esc(g.name)} ${g.active ? '' : '<span class="badge b-muted">Inactivo</span>'}</h1>
-        <p class="sub">${esc([g.stage, g.leader_name && `Líder: ${g.leader_name}`, g.advisor_name && `Asesor: ${g.advisor_name}`, [g.meeting_day, g.meeting_time].filter(Boolean).join(' '), g.place].filter(Boolean).join(' · '))}</p>
-        ${hasPhoto || g.leader_birth_date || g.leader_cedula || g.leader_address ? `<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+        <p class="sub">${esc([g.stage, g.leader_name && `Líder: ${cg.leaderLabel(g)}`, g.advisor_name && `Asesor: ${g.advisor_name}`, [g.meeting_day, g.meeting_time].filter(Boolean).join(' '), g.place].filter(Boolean).join(' · '))}</p>
+        ${hasPhoto || g.leader_birth_date || g.leader_cedula || g.leader_address || g.co_leader_name ? `<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
           ${hasPhoto ? `<img src="/grupos/${g.id}/foto" alt="Foto del líder" width="96" height="96" style="border-radius:16px;object-fit:cover">` : ''}
           <div><h3 style="margin:0 0 4px">Datos del líder</h3>
             <div>${esc(g.leader_name)}${g.leader_birth_date ? ` <span class="muted">· nació el ${esc(short(g.leader_birth_date))}</span>` : ''}</div>
+            ${g.co_leader_name ? `<div class="muted">Co-líder: ${esc(g.co_leader_name)}</div>` : ''}
             ${g.leader_cedula ? `<div class="muted">C.I. ${esc(g.leader_cedula)}</div>` : ''}${g.leader_address ? `<div class="muted">${esc(g.leader_address)}</div>` : ''}
           </div></div>` : ''}
         <div class="card"><h3>Enlace del líder</h3>
@@ -543,8 +544,8 @@ function careGroupsRouter(ctx) {
       const { value, errors } = cg.parseGroup(req.body, config.defaultCountryCode);
       if (errors.length) return page(req, res, g.name, `<p><a href="/grupos/${g.id}">← Volver</a></p><h1>${esc(g.name)}</h1>${groupForm(req.body, `/grupos/${g.id}/editar`, errors)}`);
       await db.query(
-        `UPDATE care_groups SET name=$2, leader_name=$3, leader_phone=$4, leader_email=$5, advisor_name=$6, belongs_to=$7, congregation=$8, address=$9, place=$10, meeting_day=$11, meeting_time=$12, stage=$13 WHERE id=$1`,
-        [g.id, value.name, value.leader_name, value.leader_phone, value.leader_email, value.advisor_name, value.belongs_to, value.congregation, value.address, value.place, value.meeting_day, value.meeting_time, value.stage]
+        `UPDATE care_groups SET name=$2, leader_name=$3, co_leader_name=$4, leader_phone=$5, leader_email=$6, advisor_name=$7, belongs_to=$8, congregation=$9, address=$10, place=$11, meeting_day=$12, meeting_time=$13, stage=$14 WHERE id=$1`,
+        [g.id, value.name, value.leader_name, value.co_leader_name, value.leader_phone, value.leader_email, value.advisor_name, value.belongs_to, value.congregation, value.address, value.place, value.meeting_day, value.meeting_time, value.stage]
       );
       go(res, `/grupos/${g.id}`, { ok: 'Datos guardados.' });
     })

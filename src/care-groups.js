@@ -14,12 +14,21 @@ const MAX_TEXT = 2000;
 const clean = (v, max = 200) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 const cleanLong = (v) => String(v ?? '').replace(/\r\n/g, '\n').trim().slice(0, MAX_TEXT);
 
+/** El liderazgo del grupo como se muestra: «Fernando Paredes y Livia Mijares de Paredes» cuando hay co-líder. */
+const leaderLabel = (g) => {
+  const l = String((g && g.leader_name) || '').trim();
+  const c = String((g && g.co_leader_name) || '').trim();
+  if (!c || c.toLowerCase() === l.toLowerCase()) return l;
+  return l ? `${l} y ${c}` : c;
+};
+
 /** Datos del grupo desde un formulario. Devuelve { value, errors }. */
 function parseGroup(src, countryCode = '58') {
   const errors = [];
   const v = {
     name: clean(src.name, 120),
     leader_name: clean(src.leader_name, 120),
+    co_leader_name: clean(src.co_leader_name, 120),
     leader_phone: '',
     leader_email: '',
     advisor_name: clean(src.advisor_name, 120),
@@ -150,13 +159,14 @@ function daysSince(lastReport, today) {
 const IMPORT_ALIASES = {
   grupo: 'name', nombre: 'name', nombre_del_grupo: 'name', gdc: 'name',
   lider: 'leader_name', lider_del_grupo: 'leader_name',
+  colider: 'co_leader_name', co_lider: 'co_leader_name', colider_del_grupo: 'co_leader_name',
   telefono: 'leader_phone', telefono_del_lider: 'leader_phone', whatsapp: 'leader_phone', celular: 'leader_phone',
   correo: 'leader_email', email: 'leader_email', correo_del_lider: 'leader_email',
   lider_asesor: 'advisor_name', asesor: 'advisor_name',
   pertenece_a: 'belongs_to', congregacion: 'congregation', direccion: 'address',
   lugar: 'place', dia: 'meeting_day', hora: 'meeting_time', etapa: 'stage',
 };
-const FIELDS = ['leader_name', 'leader_phone', 'leader_email', 'advisor_name', 'belongs_to', 'congregation', 'address', 'place', 'meeting_day', 'meeting_time', 'stage'];
+const FIELDS = ['leader_name', 'co_leader_name', 'leader_phone', 'leader_email', 'advisor_name', 'belongs_to', 'congregation', 'address', 'place', 'meeting_day', 'meeting_time', 'stage'];
 const keyOf = (name) => String(name).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
 /**
@@ -201,8 +211,8 @@ async function importGroups(pool, text, countryCode = '58', { dryRun = false } =
     for (const { value, id } of plan) {
       if (!id) {
         await db.query(
-          'INSERT INTO care_groups (name, leader_name, leader_phone, leader_email, advisor_name, belongs_to, congregation, address, place, meeting_day, meeting_time, stage, token) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)',
-          [value.name, value.leader_name, value.leader_phone, value.leader_email, value.advisor_name, value.belongs_to, value.congregation, value.address, value.place, value.meeting_day, value.meeting_time, value.stage, newToken()]
+          'INSERT INTO care_groups (name, leader_name, co_leader_name, leader_phone, leader_email, advisor_name, belongs_to, congregation, address, place, meeting_day, meeting_time, stage, token) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',
+          [value.name, value.leader_name, value.co_leader_name, value.leader_phone, value.leader_email, value.advisor_name, value.belongs_to, value.congregation, value.address, value.place, value.meeting_day, value.meeting_time, value.stage, newToken()]
         );
       } else {
         const set = FIELDS.filter((f) => value[f] !== '');
@@ -363,4 +373,4 @@ async function wipeAll(pool) {
   });
 }
 
-module.exports = { deleteGroups, wipeCounts, wipeAll, parseBirthDate, parseCedula, parseLeaderProfile, leaderRequiredErrors, parsePhoto, savePhoto, upcomingBirthdays, MAX_PHOTO_BYTES, importGroups, STAGES, CONGREGATIONS, DAYS, parseGroup, parseReport, upsertReport, listGroups, daysSince, newToken };
+module.exports = { deleteGroups, wipeCounts, wipeAll, parseBirthDate, parseCedula, parseLeaderProfile, leaderRequiredErrors, parsePhoto, savePhoto, upcomingBirthdays, MAX_PHOTO_BYTES, importGroups, STAGES, CONGREGATIONS, DAYS, parseGroup, parseReport, upsertReport, listGroups, daysSince, newToken, leaderLabel };

@@ -103,7 +103,7 @@ async function ministryOptions(db) {
 
 /** Los grupos de cuidado activos que la persona puede decir que es el suyo (con su líder, para distinguirlos). */
 async function careGroupOptions(db) {
-  const { rows } = await db.query('SELECT id, name, leader_name FROM care_groups WHERE active ORDER BY lower(name)');
+  const { rows } = await db.query('SELECT id, name, leader_name, co_leader_name FROM care_groups WHERE active ORDER BY lower(name)');
   return rows;
 }
 

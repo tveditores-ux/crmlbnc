@@ -76,11 +76,11 @@ const TOOLS = [
   {
     name: 'grupos_cuidado',
     description:
-      'Lista de grupos de cuidado (GdC): nombre, líder, líder asesor, congregación, a quién pertenece, etapa, día, hora y lugar de reunión, cuántas personas tiene en su lista y la fecha de su último reporte.',
+      'Lista de grupos de cuidado (GdC): nombre, líder, co-líder, líder asesor, congregación, a quién pertenece, etapa, día, hora y lugar de reunión, cuántas personas tiene en su lista y la fecha de su último reporte.',
     input_schema: {
       type: 'object',
       properties: {
-        buscar: { type: 'string', description: 'Parte del nombre del grupo, del líder o de la congregación (opcional).' },
+        buscar: { type: 'string', description: 'Parte del nombre del grupo, del líder, del co-líder o de la congregación (opcional).' },
         incluir_inactivos: { type: 'boolean', description: 'Incluir grupos inactivos (por defecto no).' },
       },
     },
@@ -92,7 +92,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        grupo: { type: 'string', description: 'Parte del nombre del grupo o del líder (opcional).' },
+        grupo: { type: 'string', description: 'Parte del nombre del grupo, del líder o del co-líder (opcional).' },
       },
     },
   },
@@ -199,18 +199,18 @@ async function runTool(db, config, name, input = {}, now = new Date()) {
     case 'grupos_cuidado': {
       const q = String(input.buscar || '').trim();
       const { rows } = await db.query(
-        `SELECT g.name, g.leader_name, g.advisor_name, g.congregation, g.belongs_to, g.stage, g.meeting_day, g.meeting_time, g.place, g.active,
+        `SELECT g.name, g.leader_name, g.co_leader_name, g.advisor_name, g.congregation, g.belongs_to, g.stage, g.meeting_day, g.meeting_time, g.place, g.active,
                 (SELECT count(*)::int FROM care_group_people p WHERE p.group_id = g.id) AS personas,
                 (SELECT max(r.meeting_date) FROM care_group_reports r WHERE r.group_id = g.id) AS ultimo_reporte
            FROM care_groups g
-          WHERE ($1 OR g.active) AND ($2 = '' OR lower(g.name || ' ' || g.leader_name || ' ' || g.congregation) LIKE $3)
+          WHERE ($1 OR g.active) AND ($2 = '' OR lower(g.name || ' ' || g.leader_name || ' ' || g.co_leader_name || ' ' || g.congregation) LIKE $3)
           ORDER BY g.congregation, g.name LIMIT 120`,
         [Boolean(input.incluir_inactivos), q, like(q)]
       );
       return {
         grupos_encontrados: rows.length,
         grupos: rows.map((g) => ({
-          grupo: g.name, lider: g.leader_name, lider_asesor: g.advisor_name, congregacion: g.congregation, pertenece_a: g.belongs_to,
+          grupo: g.name, lider: g.leader_name, colider: g.co_leader_name || null, lider_asesor: g.advisor_name, congregacion: g.congregation, pertenece_a: g.belongs_to,
           etapa: g.stage, dia: g.meeting_day, hora: g.meeting_time, lugar: clip(g.place, 80), activo: g.active,
           personas_en_lista: g.personas, ultimo_reporte: day(g.ultimo_reporte),
         })),
@@ -219,8 +219,8 @@ async function runTool(db, config, name, input = {}, now = new Date()) {
     case 'miembros_grupo_cuidado': {
       const q = String(input.grupo || '').trim();
       const { rows } = await db.query(
-        `SELECT g.id, g.name, g.leader_name, g.congregation FROM care_groups g
-          WHERE g.active AND ($1 = '' OR lower(g.name || ' ' || g.leader_name) LIKE $2)
+        `SELECT g.id, g.name, g.leader_name, g.co_leader_name, g.congregation FROM care_groups g
+          WHERE g.active AND ($1 = '' OR lower(g.name || ' ' || g.leader_name || ' ' || g.co_leader_name) LIKE $2)
           ORDER BY g.congregation, g.name LIMIT 25`,
         [q, like(q)]
       );
@@ -240,7 +240,7 @@ async function runTool(db, config, name, input = {}, now = new Date()) {
           seen.add(key);
           miembros.push(nombre);
         }
-        grupos.push({ grupo: g.name, lider: g.leader_name, congregacion: g.congregation, total: miembros.length, miembros });
+        grupos.push({ grupo: g.name, lider: g.leader_name, colider: g.co_leader_name || null, congregacion: g.congregation, total: miembros.length, miembros });
       }
       return { grupos_encontrados: grupos.length, grupos };
     }

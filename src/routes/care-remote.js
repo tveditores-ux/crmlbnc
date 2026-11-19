@@ -4,7 +4,7 @@ const { layout } = require('../views/layout');
 const { esc } = require('../util');
 const { displayPhone } = require('../phone');
 const { createRateLimiter } = require('../attendance-store');
-const { parseReport, upsertReport, parseLeaderProfile, parsePhoto, savePhoto, STAGES: cgStages, CONGREGATIONS: cgCongregations, DAYS: cgDays } = require('../care-groups');
+const { parseReport, upsertReport, parseLeaderProfile, parsePhoto, savePhoto, leaderLabel, STAGES: cgStages, CONGREGATIONS: cgCongregations, DAYS: cgDays } = require('../care-groups');
 const fmt = require('../care-formats');
 const lg = require('../leader-guide');
 const views = require('../views/care-formats');
@@ -148,7 +148,7 @@ function careRemoteRouter(ctx) {
     const area = (key, label, hint = '') =>
       `<label for="${key}">${label}</label><textarea id="${key}" name="${key}" placeholder="${esc(hint)}">${esc(v[key] || '')}</textarea>`;
     return `${tabs(g.token, 'reporte')}<h1>Reporte del grupo</h1>
-      <p class="sub" style="margin:0"><strong>${esc(g.name)}</strong>${g.leader_name ? ` · ${esc(g.leader_name)}` : ''}</p>
+      <p class="sub" style="margin:0"><strong>${esc(g.name)}</strong>${g.leader_name ? ` · ${esc(leaderLabel(g))}` : ''}</p>
       ${errors.length ? `<div class="flash err">${errors.map(esc).join('<br>')}</div>` : ''}
       <form method="post" autocomplete="off">
         <div class="hp" aria-hidden="true"><label>No llenar<input type="text" name="web" tabindex="-1"></label></div>
@@ -203,7 +203,7 @@ function careRemoteRouter(ctx) {
         <form method="post" action="/g/${esc(token)}/redil" autocomplete="off">${honey}<input type="hidden" name="event_id" value="${e.event_id}">
           <div class="pair"><button name="r" value="si" class="go" style="margin-top:0">Voy</button><button name="r" value="no" class="go sec" style="margin-top:0">No puedo</button></div></form></div>`;
     return `${tabs(token, 'redil')}<h1>REDIL</h1>
-      <p class="sub" style="margin:0"><strong>${esc(g.name)}</strong>${g.leader_name ? ` · ${esc(g.leader_name)}` : ''}</p>
+      <p class="sub" style="margin:0"><strong>${esc(g.name)}</strong>${g.leader_name ? ` · ${esc(leaderLabel(g))}` : ''}</p>
       ${flash}
       ${libretaCard(token)}
       ${list.length ? list.map(card).join('') : '<div class="card"><p style="margin:0">No tienes ningún REDIL por confirmar. Si hay uno próximo y no lo ves aquí, avisa a quien administra el panel: puede que falte convocarte.</p></div>'}
