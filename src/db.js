@@ -5,11 +5,14 @@ const { Pool } = require('pg');
 
 function createPool(databaseUrl) {
   const useSsl = /^(1|true|si)$/i.test(process.env.DATABASE_SSL || '');
-  return new Pool({
+  const pool = new Pool({
     connectionString: databaseUrl,
     max: 5,
     ssl: useSsl ? { rejectUnauthorized: false } : undefined,
   });
+  // si Postgres corta una conexión inactiva (p. ej. al reiniciarse en Railway), sin esto el proceso entero se cae
+  pool.on('error', (err) => console.error('[base de datos] conexión inactiva perdida:', err.message));
+  return pool;
 }
 
 const MIGRATION_LOCK = 724001;

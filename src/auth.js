@@ -39,7 +39,12 @@ function parseCookies(header) {
   for (const part of String(header || '').split(';')) {
     const i = part.indexOf('=');
     if (i < 0) continue;
-    out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    const raw = part.slice(i + 1).trim();
+    try {
+      out[part.slice(0, i).trim()] = decodeURIComponent(raw);
+    } catch {
+      out[part.slice(0, i).trim()] = raw; // una cookie mal escrita (p. ej. "%") no debe tumbar la página
+    }
   }
   return out;
 }

@@ -88,14 +88,19 @@ function publicRouter(ctx) {
   r.post(
     '/webhooks/whatsapp',
     ah(async (req, res) => {
-      if (config.whatsapp.appSecret) {
-        const sig = String(req.get('x-hub-signature-256') || '');
-        const expected =
-          'sha256=' + crypto.createHmac('sha256', config.whatsapp.appSecret).update(req.rawBody || '').digest('hex');
-        const a = Buffer.from(sig);
-        const b = Buffer.from(expected);
-        if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return res.sendStatus(401);
+      // Con WeCall los mensajes llegan por /webhooks/wecall; este queda cerrado. Y sin el secreto de Meta no se acepta
+      // nada: cualquiera podría inventar un mensaje "de" otro número (darlo de baja, confirmar por él, gastar a Grace).
+      if (config.whatsappProvider === 'wecall') return res.sendStatus(404);
+      if (!config.whatsapp.appSecret) {
+        console.error('[webhook] falta WHATSAPP_APP_SECRET: se rechaza el aviso de Meta');
+        return res.sendStatus(401);
       }
+      const sig = String(req.get('x-hub-signature-256') || '');
+      const expected =
+        'sha256=' + crypto.createHmac('sha256', config.whatsapp.appSecret).update(req.rawBody || '').digest('hex');
+      const a = Buffer.from(sig);
+      const b = Buffer.from(expected);
+      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return res.sendStatus(401);
       // Siempre respondemos 200 para que Meta no reintente en bucle; los errores quedan en el registro.
       try {
         await responses.handleWhatsAppWebhook(ctx, req.body);
