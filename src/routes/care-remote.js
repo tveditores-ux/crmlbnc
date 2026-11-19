@@ -13,6 +13,7 @@ const redil = require('../redil-remote');
 const lib = require('../redil-libreta');
 const libretaViews = require('../views/redil-libreta');
 const { formatEventDate } = require('../time');
+const { ensureLeaderPerson } = require('../care-intake');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -346,6 +347,8 @@ function careRemoteRouter(ctx) {
         [g.id, value.leader_name, value.leader_phone, value.leader_email, value.congregation, value.address, value.place, value.meeting_day, value.meeting_time, value.stage, value.leader_birth_date, value.leader_cedula, value.leader_address, value.leader_occupation]
       );
       if (photo.buffer) await savePhoto(db, g.id, photo.buffer);
+      // el cruce a Personas: al confirmar sus datos, el líder también queda con su ficha (ver care-intake)
+      await ensureLeaderPerson(db, { ...value, photo: photo.buffer }, g.name);
       send(res, saved(req.params.token, '/datos', 'Datos del grupo guardados. ¡Gracias!'));
     })
   );
