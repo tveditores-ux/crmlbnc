@@ -14,7 +14,11 @@ const wecall = require('./channels/wecall');
 const MAX = { body: 2000, name: 120 };
 const KINDS = { oracion: 'Petición de oración', informacion: 'Información' };
 const STATUSES = { nueva: 'Nueva', enviada: 'Enviada', archivada: 'Archivada' };
-const PRAYER_RE = /oraci[oó]n|\borar\b/i; // el motivo con que Grace escala ("Petición de oración: …")
+const SOURCES = { whatsapp: 'llegó por Grace (WhatsApp)', pastor: 'la anotó Grace a pedido del pastor', panel: 'escrita en el panel' };
+// una petición de oración, en el motivo con que Grace escala ("Petición de oración: …") o en el mensaje de la persona
+// ("oren por mi hijo", "necesito oración"). Palabra entera con letras de verdad (\p{L}), para que "señora" u "oro" no cuenten.
+const PRAYER_RE = /oraci[oó]n|(?<!\p{L})(or(a|ar|en|e|emos|amos|ad|ando|aran|ara)|interce(sión|sion|der|dan|da))(?!\p{L})|clam(en|ar) (a dios|al señor)/iu;
+const MERGE_HOURS = 12; // mensajes seguidos de la misma persona se juntan en su petición nueva de las últimas 12 h
 
 const clean = (s, n) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
 const cleanBody = (s) => String(s ?? '').replace(/\r/g, '').trim().slice(0, MAX.body);
@@ -36,29 +40,54 @@ function parseRequest(src, groupIds = null) {
 
 async function create(db, v, source = 'panel') {
   const { rows } = await db.query(
-    `INSERT INTO prayer_requests (kind, requester_name, body, care_group_id, congregation, source) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-    [v.kind, v.requester_name, v.body, v.care_group_id, v.congregation, source]
+    `INSERT INTO prayer_requests (kind, requester_name, body, care_group_id, congregation, source, person_id) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+    [v.kind, v.requester_name, v.body, v.care_group_id, v.congregation, source, v.person_id || null]
   );
   return rows[0].id;
 }
 
+/** El grupo de cuidado activo de una persona: el que dijo en "Mis datos" (por nombre), si existe. */
+async function groupOf(db, careGroupName) {
+  if (!careGroupName) return null;
+  const g = await db.query('SELECT id FROM care_groups WHERE active AND lower(name) = lower($1) LIMIT 1', [String(careGroupName).trim()]);
+  return g.rows[0] ? g.rows[0].id : null;
+}
+
 /**
- * Cuando Grace pasa una petición de oración al equipo pastoral, queda también en el buzón, con el grupo y la congregación
- * de la persona si se conocen. Nunca falla hacia afuera (no debe dejar sin respuesta a quien escribió).
+ * Cuando Grace escala una petición de oración (por el motivo que escribió o porque el mensaje la pide), queda también en
+ * el buzón, con el grupo y la congregación de la persona si se conocen. Si la misma persona ya tiene una petición nueva
+ * de las últimas horas, el mensaje se agrega a esa en vez de crear otra. Una crisis ("URGENTE") no entra: se atiende en
+ * persona, no se reenvía. Nunca falla hacia afuera (no debe dejar sin respuesta a quien escribió).
  */
 async function fromAgent(db, { person, text, reason }) {
-  if (!PRAYER_RE.test(String(reason || ''))) return null;
+  const why = String(reason || '');
+  if (/^URGENTE/i.test(why) || !(PRAYER_RE.test(why) || PRAYER_RE.test(String(text || '')))) return null;
+  const body = cleanBody(text);
+  if (!body) return null;
   try {
-    const p = person && person.id ? (await db.query('SELECT full_name, congregation, care_group_name FROM people WHERE id = $1', [person.id])).rows[0] || {} : {};
-    let groupId = null;
-    if (p.care_group_name) {
-      // el grupo que la persona dijo en "Mis datos", si coincide con un grupo activo
-      const g = await db.query('SELECT id FROM care_groups WHERE active AND lower(name) = lower($1) LIMIT 1', [String(p.care_group_name).trim()]);
-      if (g.rows[0]) groupId = g.rows[0].id;
+    const pid = person && person.id ? person.id : null;
+    if (pid) {
+      const prev = (
+        await db.query(
+          `SELECT id, body FROM prayer_requests WHERE person_id = $1 AND source = 'whatsapp' AND status = 'nueva'
+              AND created_at > now() - make_interval(hours => $2) ORDER BY id DESC LIMIT 1`,
+          [pid, MERGE_HOURS]
+        )
+      ).rows[0];
+      if (prev) {
+        if (!prev.body.includes(body)) {
+          await db.query('UPDATE prayer_requests SET body = $2, updated_at = now() WHERE id = $1', [prev.id, `${prev.body}\n\n${body}`.slice(0, MAX.body)]);
+        }
+        return prev.id;
+      }
     }
+    const p = pid ? (await db.query('SELECT full_name, congregation, care_group_name FROM people WHERE id = $1', [pid])).rows[0] || {} : {};
     return await create(
       db,
-      { kind: 'oracion', requester_name: clean(p.full_name || (person && person.full_name), MAX.name), body: cleanBody(text), care_group_id: groupId, congregation: CONGREGATIONS.includes(p.congregation) ? p.congregation : '' },
+      {
+        kind: 'oracion', requester_name: clean(p.full_name || (person && person.full_name), MAX.name), body,
+        care_group_id: await groupOf(db, p.care_group_name), congregation: CONGREGATIONS.includes(p.congregation) ? p.congregation : '', person_id: pid,
+      },
       'whatsapp'
     );
   } catch (err) {
@@ -165,4 +194,4 @@ async function savePastors(db, src, countryCode = '58') {
   return { saved: rows.filter((r) => r[1] || r[2]).length };
 }
 
-module.exports = { parseRequest, create, fromAgent, recipients, messageText, oneLine, send, savePastors, KINDS, STATUSES, MAX, PRAYER_RE };
+module.exports = { parseRequest, create, fromAgent, recipients, messageText, oneLine, send, savePastors, KINDS, STATUSES, SOURCES, MAX, PRAYER_RE };

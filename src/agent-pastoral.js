@@ -6,12 +6,15 @@
  *
  * - Grace no recibe la base entera: tiene herramientas (tool use de Anthropic) y pide solo lo que necesita.
  * - Las herramientas nunca devuelven teléfonos, direcciones, cédulas, correos ni referencias de pago.
- * - Todo es lectura: no hay herramienta que cambie, borre o envíe nada.
+ * - Todo es lectura, con una sola excepción: anotar una petición de oración en el Buzón de oración (no la envía a nadie;
+ *   el envío lo decide quien administra, desde el panel).
  */
 const brain = require('./agent-brain');
 const leaderGuide = require('./leader-guide');
 const { normalizePhone } = require('./phone');
 const { formatEventDate } = require('./time');
+const prayer = require('./prayer');
+const { CONGREGATIONS } = require('./care-groups');
 
 const MAX_ROUNDS = 6; // vueltas de herramientas antes de exigir la respuesta final
 const MAX_REPLY = 3500; // WhatsApp acepta hasta 4096
@@ -132,6 +135,27 @@ const TOOLS = [
     name: 'buscar_persona',
     description: 'Busca personas por nombre: rol, congregación, grupo de cuidado, ministerios, si está activa y su fecha de nacimiento. Nunca trae teléfono, dirección ni cédula.',
     input_schema: { type: 'object', properties: { nombre: { type: 'string', description: 'Nombre o apellido.' } }, required: ['nombre'] },
+  },
+  {
+    name: 'anotar_peticion_oracion',
+    description:
+      'Anota una petición de oración (o una información) en el Buzón de oración del CRM, para enviarla después al líder del grupo de cuidado o al pastor de la congregación desde el panel. No la envía a nadie. Úsala solo cuando el pastor te pida anotarla o pasarla al buzón.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        peticion: { type: 'string', description: 'El texto de la petición, como lo dijo el pastor.' },
+        persona: { type: 'string', description: 'Por quién o de quién es la petición (nombre), si lo dijo. Opcional.' },
+        grupo: { type: 'string', description: 'Parte del nombre del grupo de cuidado o de su líder, si lo dijo. Opcional.' },
+        congregacion: { type: 'string', description: 'Congregación, si la dijo. Opcional.' },
+        tipo: { type: 'string', enum: ['oracion', 'informacion'], description: 'oracion (por defecto) o informacion.' },
+      },
+      required: ['peticion'],
+    },
+  },
+  {
+    name: 'peticiones_oracion',
+    description: 'Las peticiones del Buzón de oración: de quién, el texto, el grupo, la congregación, si llegaron por WhatsApp o por el panel, y su estado (nueva, enviada, archivada).',
+    input_schema: { type: 'object', properties: { estado: { type: 'string', enum: ['nueva', 'enviada', 'archivada', 'todas'], description: 'Por defecto: nueva.' } } },
   },
 ];
 
@@ -366,6 +390,44 @@ async function runTool(db, config, name, input = {}, now = new Date()) {
         personas: rows.map((p) => ({ nombre: p.full_name, rol: p.role, congregacion: p.congregation, grupo_de_cuidado: p.care_group_name, ministerios: p.ministerios, activa: p.active, nacimiento: p.birth_date || null })),
       };
     }
+    case 'anotar_peticion_oracion': {
+      const texto = String(input.peticion || '').trim();
+      if (!texto) return { error: 'Falta el texto de la petición.' };
+      let grupo = null;
+      const gq = String(input.grupo || '').trim();
+      if (gq.length >= 2) {
+        const { rows } = await db.query(
+          'SELECT id, name, congregation FROM care_groups WHERE active AND (lower(name) LIKE $1 OR lower(leader_name) LIKE $1) ORDER BY name LIMIT 3',
+          [like(gq)]
+        );
+        if (rows.length > 1) return { error: `Hay varios grupos que coinciden con "${gq}": ${rows.map((g) => g.name).join(', ')}. Pregunta cuál es.` };
+        if (!rows.length) return { error: `No encontré un grupo activo que coincida con "${gq}". Pregunta el nombre del grupo o anótala sin grupo.` };
+        grupo = rows[0];
+      }
+      const congQ = String(input.congregacion || '').trim().toLowerCase();
+      const congregacion = CONGREGATIONS.find((c) => c.toLowerCase() === congQ) || (grupo && CONGREGATIONS.includes(grupo.congregation) ? grupo.congregation : '');
+      const parsed = prayer.parseRequest({ kind: input.tipo, requester_name: input.persona, body: texto, care_group_id: grupo ? grupo.id : '', congregation: congregacion });
+      if (parsed.errors) return { error: parsed.errors.join(' ') };
+      const id = await prayer.create(db, parsed.value, 'pastor');
+      return {
+        anotada: true, numero: id, tipo: prayer.KINDS[parsed.value.kind], persona: parsed.value.requester_name || null, grupo: grupo ? grupo.name : null, congregacion: congregacion || null,
+        nota: 'Quedó en el Buzón de oración como nueva. No se envió a nadie: se envía desde el panel (Buzón de oración).',
+      };
+    }
+    case 'peticiones_oracion': {
+      const estado = ['nueva', 'enviada', 'archivada', 'todas'].includes(input.estado) ? input.estado : 'nueva';
+      const { rows } = await db.query(
+        `SELECT r.id, r.kind, r.requester_name, r.body, r.congregation, r.source, r.status, g.name AS grupo,
+                to_char(r.created_at AT TIME ZONE $2, 'DD/MM/YYYY HH24:MI') AS cuando
+           FROM prayer_requests r LEFT JOIN care_groups g ON g.id = r.care_group_id
+          WHERE ($1 = 'todas' OR r.status = $1) ORDER BY r.id DESC LIMIT 25`,
+        [estado, tz]
+      );
+      return {
+        estado, encontradas: rows.length,
+        peticiones: rows.map((r) => ({ numero: r.id, tipo: prayer.KINDS[r.kind], de: r.requester_name || null, texto: r.body.slice(0, 500), grupo: r.grupo || null, congregacion: r.congregation || null, llego_por: prayer.SOURCES[r.source] || r.source, estado: r.status, cuando: r.cuando })),
+      };
+    }
     default:
       return { error: `Herramienta desconocida: ${name}` };
   }
@@ -378,7 +440,7 @@ Quien te escribe está autorizado en el CRM como pastor principal o súper admin
 - Si te piden "el último servicio", primero consulta la asistencia para saber qué fecha fue y luego consulta lo demás con esa fecha.
 - Responde para WhatsApp: claro y ordenado, con listas cortas con guiones y *negritas* de WhatsApp si ayudan, sin tablas ni markdown de encabezados. Si la lista es muy larga, da los totales y los primeros, y ofrece el resto.
 - Las herramientas nunca traen teléfonos, direcciones, cédulas ni referencias de pago, y tú tampoco los das.
-- Todo es de solo lectura: no puedes cambiar, borrar ni enviar nada. Si te lo piden, dilo con sencillez.
+- Todo es de solo lectura: no puedes cambiar, borrar ni enviar nada. Si te lo piden, dilo con sencillez. La única excepción: si te pide anotar una petición de oración o pasarla al buzón, usa anotar_peticion_oracion y confírmale que quedó en el Buzón de oración (sin enviarse todavía; se envía desde el panel).
 - Si te piden que le avises cada día quién cumple años, dile que eso es el "Aviso diario de cumpleaños" y se enciende en Configuración → Asistente del CRM; mientras tanto, puedes decirle los cumpleaños de hoy, de la semana o del mes con la herramienta.
 - La respuesta final puede ser más larga que con otras personas (hasta unos 3000 caracteres).
 - Hoy es {HOY} (hora de Venezuela).`;

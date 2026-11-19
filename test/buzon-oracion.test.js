@@ -152,3 +152,43 @@ test('buzón: pantalla solo para administración; se escribe, se envía, se arch
     await h.close();
   }
 });
+
+test('buzón con Grace: el mensaje que pide oración entra aunque el motivo no lo diga; mensajes seguidos se juntan; una crisis no entra', async (t) => {
+  await withDb(t, async (db) => {
+    const [g1] = await seed(db);
+    const p = (await db.query(`INSERT INTO people (full_name, phone, active, congregation, care_group_name) VALUES ('Luis Prueba', '584140000002', TRUE, 'Matrimonios', 'Luz del Este') RETURNING id, full_name`)).rows[0];
+    assert.equal(await prayer.fromAgent(db, { person: p, text: 'Quiero hablar con la señora del grupo', reason: 'Pide hablar con alguien' }), null);
+    assert.equal(await prayer.fromAgent(db, { person: p, text: 'Estoy muy mal, oren por mí', reason: 'URGENTE: posible crisis (palabras de riesgo en el mensaje)' }), null);
+    const id = await prayer.fromAgent(db, { person: p, text: 'Pido que oren por mi hijo, tiene examen', reason: 'Necesidad pastoral: hijo con examen' });
+    assert.ok(id);
+    assert.equal(await prayer.fromAgent(db, { person: p, text: 'Es el viernes, y también por mi esposa', reason: 'Petición de oración' }), id);
+    assert.equal(await prayer.fromAgent(db, { person: p, text: 'Es el viernes, y también por mi esposa', reason: 'Petición de oración' }), id); // repetido: no se duplica
+    const rows = (await db.query('SELECT * FROM prayer_requests')).rows;
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].body, 'Pido que oren por mi hijo, tiene examen\n\nEs el viernes, y también por mi esposa');
+    assert.deepEqual([rows[0].person_id, rows[0].care_group_id, rows[0].congregation], [p.id, g1, 'Matrimonios']);
+    // ya enviada: un mensaje nuevo abre otra petición
+    await db.query(`UPDATE prayer_requests SET status = 'enviada'`);
+    assert.notEqual(await prayer.fromAgent(db, { person: p, text: 'Oren por mi trabajo', reason: 'Petición de oración' }), id);
+  });
+});
+
+test('buzón con Grace pastoral: el pastor dicta una petición y Grace la anota (sin enviarla) y la consulta', async (t) => {
+  const pastoral = require('../src/agent-pastoral');
+  await withDb(t, async (db) => {
+    const [g1] = await seed(db);
+    const c = cfg();
+    const run = (name, input) => pastoral.runTool(db, c, name, input);
+    assert.match((await run('anotar_peticion_oracion', { peticion: '  ' })).error, /Falta/);
+    assert.match((await run('anotar_peticion_oracion', { peticion: 'x', grupo: 'nadie así' })).error, /No encontré/);
+    const r = await run('anotar_peticion_oracion', { peticion: 'Orar por la cirugía de Marta', persona: 'Marta Prueba', grupo: 'carla' });
+    assert.deepEqual([r.anotada, r.grupo, r.congregacion], [true, 'Luz del Este', 'Matrimonios']);
+    const row = (await db.query('SELECT * FROM prayer_requests WHERE id = $1', [r.numero])).rows[0];
+    assert.deepEqual([row.source, row.status, row.care_group_id, row.requester_name], ['pastor', 'nueva', g1, 'Marta Prueba']);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM prayer_sends')).rows[0].n, 0); // no se envió a nadie
+    const list = await run('peticiones_oracion', {});
+    assert.equal(list.encontradas, 1);
+    assert.equal(list.peticiones[0].llego_por, 'la anotó Grace a pedido del pastor');
+    assert.ok(!JSON.stringify(list).includes('58424')); // sin teléfonos
+  });
+});

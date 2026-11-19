@@ -91,8 +91,8 @@ function oracionRouter(ctx) {
             .join('');
           return `<form method="post" action="/oracion/${q.id}/enviar" class="card">
             <p style="margin:0 0 6px"><span class="badge ${badge[q.status]}">${prayer.STATUSES[q.status]}</span>
-              <strong>${prayer.KINDS[q.kind]}</strong>${q.requester_name ? ` de ${esc(q.requester_name)}` : ''}
-              <span class="muted">· ${esc(q.cuando)} · ${q.source === 'whatsapp' ? 'llegó por Grace (WhatsApp)' : 'escrita en el panel'}</span></p>
+              <strong>${prayer.KINDS[q.kind]}</strong>${q.requester_name ? ` de ${q.person_id ? `<a href="/personas/${q.person_id}">${esc(q.requester_name)}</a>` : esc(q.requester_name)}` : ''}
+              <span class="muted">· ${esc(q.cuando)} · ${prayer.SOURCES[q.source] || ''}</span></p>
             <p style="white-space:pre-wrap;margin:0 0 10px">${esc(q.body)}</p>
             <div class="row"><div><label>Grupo de cuidado</label>${groupSelect(q.care_group_id)}</div><div><label>Congregación</label>${congSelect(q.congregation)}</div></div>
             <div class="actions">
