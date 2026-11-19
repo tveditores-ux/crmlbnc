@@ -77,36 +77,86 @@ test('nombre reconocido (sin tildes): el reporte entra directo a su grupo y reen
   });
 });
 
-test('nombre no reconocido o ambiguo: queda pendiente y el panel lo asigna a su grupo', async (t) => {
+test('nombre no reconocido: queda pendiente y el panel lo asigna a su grupo', async (t) => {
   await withApp(t, async ({ db, get, post }) => {
     const g1 = await newGroup(post, db, { name: 'GdC Uno', leader_name: 'Ana Díaz' });
-    await newGroup(post, db, { name: 'GdC Dos', leader_name: 'Ana Díaz' });
     const link = await crl.ensureLink(db);
 
     const unknown = await post(`/reportes/${link.token}`, { leader_name: 'Persona Desconocida', meeting_date: TODAY, attendance: '5' });
+    assert.equal(unknown.status, 200);
     assert.match(await unknown.text(), /Administración lo asigna/);
-    const amb = await post(`/reportes/${link.token}`, { leader_name: 'Ana Díaz', meeting_date: TODAY, attendance: '6' });
-    assert.equal(amb.status, 200);
-    assert.equal(await crl.countPending(db), 2);
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM care_group_reports')).rows[0].n, 0, 'ninguno entró solo');
+    assert.equal(await crl.countPending(db), 1);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM care_group_reports')).rows[0].n, 0, 'no entró solo');
 
     const pageHtml = await (await get('/grupos/reporte-comun')).text();
     assert.match(pageHtml, /Reporte semanal: enlace común/);
     assert.match(pageHtml, new RegExp(`/reportes/${link.token}`));
-    assert.match(pageHtml, /Reportes por asignar \(2\)/);
+    assert.match(pageHtml, /Reportes por asignar \(1\)/);
 
-    const pend = await crl.listPending(db);
-    const target = pend.find((s) => s.leader_name === 'Ana Díaz');
+    const [target] = await crl.listPending(db);
     const applied = await post(`/grupos/reporte-comun/pendientes/${target.id}/aplicar`, { group_id: String(g1.id) });
     assert.equal(applied.status, 303);
     const rows = (await db.query('SELECT * FROM care_group_reports WHERE group_id = $1', [g1.id])).rows;
     assert.equal(rows.length, 1);
-    assert.equal(rows[0].attendance, 6);
-    assert.equal(await crl.countPending(db), 1);
+    assert.equal(rows[0].attendance, 5);
+    assert.equal(await crl.countPending(db), 0);
 
-    const other = pend.find((s) => s.leader_name === 'Persona Desconocida');
+    await post(`/reportes/${link.token}`, { leader_name: 'Otra Desconocida', meeting_date: TODAY, attendance: '3' });
+    const [other] = await crl.listPending(db);
     await post(`/grupos/reporte-comun/pendientes/${other.id}/descartar`, {});
     assert.equal(await crl.countPending(db), 0);
+  });
+});
+
+test('líder con más de un grupo: el remoto le pide elegir cuál y el reporte entra a ese grupo', async (t) => {
+  await withApp(t, async ({ db, post }) => {
+    const g1 = await newGroup(post, db, { name: 'GdC Uno', leader_name: 'Ana Díaz' });
+    const g2 = await newGroup(post, db, { name: 'GdC Dos', leader_name: 'Ana Díaz' });
+    const ajeno = await newGroup(post, db, { name: 'GdC Ajeno', leader_name: 'Otra Persona' });
+    const link = await crl.ensureLink(db);
+    const count = async () => (await db.query('SELECT count(*)::int AS n FROM care_group_reports')).rows[0].n;
+
+    // Sin elegir: no se guarda nada; vuelve el formulario con lo escrito y la lista de SUS grupos.
+    const first = await post(`/reportes/${link.token}`, { leader_name: 'ana diaz', meeting_date: TODAY, attendance: '6', notes: 'Nota de prueba' });
+    assert.equal(first.status, 400);
+    const html = await first.text();
+    assert.match(html, /Llevas más de un grupo/);
+    assert.match(html, /name="group_id"/);
+    assert.match(html, new RegExp(`value="${g1.id}"[^>]*>GdC Uno`));
+    assert.match(html, new RegExp(`value="${g2.id}"[^>]*>GdC Dos`));
+    assert.ok(!html.includes('GdC Ajeno'), 'no muestra grupos de otros líderes');
+    assert.match(html, /Nota de prueba/, 'conserva lo escrito');
+    assert.equal(await count(), 0);
+    assert.equal(await crl.countPending(db), 0, 'tampoco queda pendiente');
+
+    // Un grupo que no es suyo no vale.
+    const wrong = await post(`/reportes/${link.token}`, { leader_name: 'Ana Díaz', meeting_date: TODAY, attendance: '6', group_id: String(ajeno.id) });
+    assert.equal(wrong.status, 400);
+    assert.match(await wrong.text(), /no es uno de los tuyos/);
+    assert.equal(await count(), 0);
+
+    // Eligiendo uno de los suyos: entra directo a ese grupo.
+    const ok = await post(`/reportes/${link.token}`, { leader_name: 'Ana Díaz', meeting_date: TODAY, attendance: '6', group_id: String(g2.id) });
+    assert.equal(ok.status, 200);
+    const okHtml = await ok.text();
+    assert.match(okHtml, /Reporte recibido/);
+    assert.match(okHtml, /GdC Dos/);
+    const rows = (await db.query('SELECT group_id, attendance, source FROM care_group_reports')).rows;
+    assert.deepEqual(rows.map((r) => [r.group_id, r.attendance, r.source]), [[g2.id, 6, 'enlace_comun']]);
+
+    // El otro grupo, la misma semana, es otro reporte (no pisa el primero).
+    await post(`/reportes/${link.token}`, { leader_name: 'Ana Díaz', meeting_date: TODAY, attendance: '4', group_id: String(g1.id) });
+    assert.equal(await count(), 2);
+  });
+});
+
+test('el co-líder también es reconocido por su nombre', async (t) => {
+  await withApp(t, async ({ db, post }) => {
+    const g = await newGroup(post, db, { name: 'Matrimonios Prueba', leader_name: 'Pedro Gómez', co_leader_name: 'Luisa Ríos de Gómez' });
+    const link = await crl.ensureLink(db);
+    const r = await post(`/reportes/${link.token}`, { leader_name: 'Luisa Rios de Gomez', meeting_date: TODAY, attendance: '8' });
+    assert.match(await r.text(), /Reporte recibido/);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM care_group_reports WHERE group_id = $1', [g.id])).rows[0].n, 1);
   });
 });
 
