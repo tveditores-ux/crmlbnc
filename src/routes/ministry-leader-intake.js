@@ -3,7 +3,7 @@ const express = require('express');
 const { layout } = require('../views/layout');
 const { esc } = require('../util');
 const { createRateLimiter } = require('../attendance-store');
-const { CONGREGATIONS } = require('../care-groups');
+const { CONGREGATIONS, leaderLabel } = require('../care-groups');
 const intake = require('../ministry-leader-intake');
 const { CIVIL_STATUS } = require('../member-intake');
 const { birthRoll, photoScript } = require('../views/care-leader-form');
@@ -33,7 +33,7 @@ function ministryLeaderIntakeRouter(ctx) {
         .map((o) => `<option ${v[name] === o ? 'selected' : ''}>${esc(o)}</option>`)
         .join('')}</select>`;
     const groupOpts = [
-      ...groups.map((g) => ({ value: String(g.id), label: g.leader_name ? `${g.name} — líder: ${g.leader_name}` : g.name })),
+      ...groups.map((g) => ({ value: String(g.id), label: g.leader_name ? `${g.name} — líder: ${leaderLabel(g)}` : g.name })),
       { value: intake.SIN_GRUPO, label: 'No asisto a un grupo de cuidado' },
     ];
     const selGrupo = `<label for="grupo_cuidado">¿A qué grupo de cuidado perteneces o asistes?</label><select id="grupo_cuidado" name="grupo_cuidado" required style="${st}"><option value="">Elige…</option>${groupOpts

@@ -260,3 +260,17 @@ test('miembros de un grupo de cuidado: une la lista del líder con las fichas qu
     assert.equal((await pastoral.runTool(db, cfg(), 'miembros_grupo_cuidado', { grupo: 'nadie' }, NOW)).grupos_encontrados, 0);
   });
 });
+
+test('co-líder: el grupo se encuentra por el nombre de la esposa y Grace nombra a los dos', async (t) => {
+  await withDb(t, async (db) => {
+    await db.query(`INSERT INTO care_groups (name, leader_name, co_leader_name, leader_phone, congregation, token) VALUES ('Matrimonios Paredes', 'Fernando Paredes', 'Livia Mijares de Paredes', '584240000007', 'Matrimonios', 'tok-c')`);
+    const grupos = await pastoral.runTool(db, cfg(), 'grupos_cuidado', { buscar: 'Livia' }, NOW);
+    assert.equal(grupos.grupos_encontrados, 1);
+    assert.equal(grupos.grupos[0].lider, 'Fernando Paredes');
+    assert.equal(grupos.grupos[0].colider, 'Livia Mijares de Paredes');
+    const miembros = await pastoral.runTool(db, cfg(), 'miembros_grupo_cuidado', { grupo: 'Livia' }, NOW);
+    assert.equal(miembros.grupos_encontrados, 1);
+    assert.equal(miembros.grupos[0].colider, 'Livia Mijares de Paredes');
+    assert.ok(!JSON.stringify([grupos, miembros]).includes('5842')); // el teléfono del líder nunca sale
+  });
+});

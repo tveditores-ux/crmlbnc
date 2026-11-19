@@ -39,6 +39,16 @@ test('parseGroup: exige nombre, normaliza el teléfono y descarta valores descon
   assert.ok(cg.parseGroup({ name: 'X', leader_phone: '12' }).errors.length);
 });
 
+test('co-líder: parseGroup lo trae y leaderLabel muestra a la pareja junta', () => {
+  const g = cg.parseGroup({ name: 'Matrimonios Paredes', leader_name: 'Fernando Paredes', co_leader_name: '  Livia Mijares de Paredes ' });
+  assert.deepEqual(g.errors, []);
+  assert.equal(g.value.co_leader_name, 'Livia Mijares de Paredes');
+  assert.equal(cg.leaderLabel(g.value), 'Fernando Paredes y Livia Mijares de Paredes');
+  assert.equal(cg.leaderLabel({ leader_name: 'Fernando Paredes', co_leader_name: '' }), 'Fernando Paredes');
+  assert.equal(cg.leaderLabel({ leader_name: 'Fernando Paredes', co_leader_name: 'fernando paredes' }), 'Fernando Paredes'); // el mismo nombre no se repite
+  assert.equal(cg.leaderLabel({ leader_name: '', co_leader_name: 'Livia Mijares de Paredes' }), 'Livia Mijares de Paredes');
+});
+
 test('daysSince', () => {
   assert.equal(cg.daysSince(null, TODAY), null);
   assert.equal(cg.daysSince(day(-9), TODAY), 9);
