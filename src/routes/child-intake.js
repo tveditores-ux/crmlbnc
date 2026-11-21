@@ -60,7 +60,7 @@ function childIntakeRouter(ctx) {
             [prefix + '_cam', prefix + '_gal'].forEach(function (id) { document.getElementById(id).addEventListener('change', function (e) { take(e.target.files[0]); }); });
             return { ok: function () { return !!(data.value || prev.getAttribute('src')); }, falta: function () { msg.textContent = 'Falta esta foto para completar el registro.'; msg.style.color = 'var(--bad)'; prev.scrollIntoView({ block: 'center' }); } };
           }
-          var nino = foto('pc', 'photo_child_data'), padre = foto('pp', 'photo_parent_data');
+          var nino = foto('pc', 'pc_data'), padre = foto('pp', 'pp_data');
           document.querySelector('form').addEventListener('submit', function (e) {
             if (!nino.ok()) { e.preventDefault(); nino.falta(); return; }
             if (!padre.ok()) { e.preventDefault(); padre.falta(); }
