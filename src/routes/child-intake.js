@@ -60,7 +60,7 @@ function childIntakeRouter(ctx) {
             [prefix + '_cam', prefix + '_gal'].forEach(function (id) { document.getElementById(id).addEventListener('change', function (e) { take(e.target.files[0]); }); });
             return { ok: function () { return !!(data.value || prev.getAttribute('src')); }, falta: function () { msg.textContent = 'Falta esta foto para completar el registro.'; msg.style.color = 'var(--bad)'; prev.scrollIntoView({ block: 'center' }); } };
           }
-          var nino = foto('pc', 'photo_child_data'), padre = foto('pp', 'photo_parent_data');
+          var nino = foto('pc', 'pc_data'), padre = foto('pp', 'pp_data');
           document.querySelector('form').addEventListener('submit', function (e) {
             if (!nino.ok()) { e.preventDefault(); nino.falta(); return; }
             if (!padre.ok()) { e.preventDefault(); padre.falta(); }
@@ -78,7 +78,7 @@ function childIntakeRouter(ctx) {
         <div class="hp" aria-hidden="true"><label>No llenar<input type="text" name="web" tabindex="-1"></label></div>
         <h2>El niño o adolescente</h2>
         ${t('child_name', 'Nombre y apellido del niño o adolescente', 'maxlength="120" required placeholder="Nombre y apellido"')}
-        ${birthRoll(v, today(), 'Fecha de nacimiento del niño o adolescente')}
+        ${birthRoll(v, today(), 'Fecha de nacimiento del niño o adolescente', { minAge: 0 })}
         ${t('food_allergy', 'Alergias o alimentos que no puede comer (si tiene, opcional)', 'maxlength="300" placeholder="Ej.: maní, leche, gluten…"')}
         <p class="muted" style="font-size:13px;margin-top:-6px">Esto ayuda al equipo con las meriendas, pero no sustituye avisar también al maestro de tu hijo.</p>
         ${photoBlock('pc', 'photo_child_data', 'Foto del niño o adolescente', v)}
