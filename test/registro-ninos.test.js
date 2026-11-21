@@ -96,6 +96,10 @@ test('remoto: registra, el panel aplica y el niño entra en Personas con su cong
     const formHtml = await form.text();
     assert.match(formHtml, /Si tu hijo asiste a nuestra congregación/);
     assert.match(formHtml, new RegExp(`<option value="${TODAY.slice(0, 4)}"`), 'la rueda de años llega al año en curso');
+    // el guion de las dos fotos busca los campos ocultos por su id: tienen que ser los mismos que el HTML trae
+    assert.match(formHtml, /id="pc_data" name="photo_child_data"/);
+    assert.match(formHtml, /id="pp_data" name="photo_parent_data"/);
+    assert.match(formHtml, /foto\('pc', 'pc_data'\), padre = foto\('pp', 'pp_data'\)/);
 
     const r = await post(`/ninos/${token}`, base(7));
     assert.equal(r.status, 200);
