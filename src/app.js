@@ -33,6 +33,8 @@ const { pastorIntakeRouter } = require('./routes/pastor-intake');
 const { pastorRequestsRouter } = require('./routes/pastor-requests');
 const { ministryLeaderIntakeRouter } = require('./routes/ministry-leader-intake');
 const { ministryLeaderRequestsRouter } = require('./routes/ministry-leader-requests');
+const { childIntakeRouter } = require('./routes/child-intake');
+const { childRequestsRouter } = require('./routes/child-requests');
 const { chatLideresRouter } = require('./routes/chat-lideres');
 const { chatLideresPanelRouter } = require('./routes/chat-lideres-panel');
 const { registrosRouter } = require('./routes/registros');
@@ -116,6 +118,7 @@ function createApp(ctx) {
   app.use(careRemoteRouter(ctx)); // reporte del líder de grupo de cuidado: igual, enlace secreto
   app.use(reporteComunRouter(ctx)); // reporte semanal APARTE: un solo enlace para todos los líderes, solo con su nombre
   app.use(nuevosCreyentesRouter(ctx)); // registro de nuevos creyentes el día de su conversión: un solo enlace, entra a Nueva Vida por revisar
+  app.use(childIntakeRouter(ctx)); // registro de niños y adolescentes: un solo enlace para los padres, entra por revisar
 
   app.get('/entrar', (req, res) => res.send(loginPage()));
 
@@ -158,6 +161,7 @@ function createApp(ctx) {
   app.use(memberRequestsRouter(ctx));
   app.use(pastorRequestsRouter(ctx));
   app.use(ministryLeaderRequestsRouter(ctx));
+  app.use(childRequestsRouter(ctx));
   app.use(chatLideresPanelRouter(ctx));
   app.use(registrosRouter(ctx)); // «Registros»: todos los enlaces de registro en un solo lugar
   app.use(attendanceRouter(ctx));
