@@ -10,17 +10,26 @@ const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch
 
 /**
  * Las secciones de la hoja: una por líder/coordinador, con su punto expuesto y su solución clave
- * (solo lectura, dato en código) y las tres casillas que se llenan. `d` trae los valores
- * guardados (vacío en la libreta del teléfono).
+ * y las tres casillas que se llenan. `d` trae los valores guardados de las casillas (vacío en la
+ * libreta del teléfono) y `textos` los textos efectivos de las propuestas (el guardado en la base
+ * o el de código). Con `editable` (solo el panel del CRM) el punto y la solución van en áreas de
+ * texto que se guardan solas; sin él (el teléfono) van de solo lectura, como texto fijo.
  */
-function sheet(d = {}) {
+function sheet(d = {}, { textos = ll.resolveTextos({}), editable = false } = {}) {
   const ta = (k, val) => `<textarea data-k="${k}" rows="3" spellcheck="false" autocomplete="off" aria-label="${esc(k)}">${esc(val || '')}</textarea>`;
+  const porN = new Map(textos.map((t) => [t.n, t]));
   let h = '';
   let seed = 11;
   for (const p of ll.PERSONAS) {
+    const t = porN.get(p.n);
     h += `<section><h2>${p.n}. ${esc(p.name)}${squig((seed += 7))}</h2>`;
-    h += `<p class="lbl">Punto que expuso</p><p class="q" style="text-transform:none">${esc(p.punto)}</p>`;
-    h += `<p class="lbl">Solución clave</p><p class="q" style="text-transform:none">${esc(p.solucion)}</p>`;
+    if (editable) {
+      h += `<p class="lbl">Punto que expuso — el texto de la propuesta, se puede corregir aquí</p>${ta(ll.textKeyOf(p.n, 'punto'), t.punto)}`;
+      h += `<p class="lbl">Solución clave — el texto de la propuesta, se puede corregir aquí</p>${ta(ll.textKeyOf(p.n, 'sol'), t.solucion)}`;
+    } else {
+      h += `<p class="lbl">Punto que expuso</p><p class="q" style="text-transform:none">${esc(t.punto)}</p>`;
+      h += `<p class="lbl">Solución clave</p><p class="q" style="text-transform:none">${esc(t.solucion)}</p>`;
+    }
     for (const [c, l] of ll.CAMPOS) h += `<p class="lbl">${esc(l)}</p>${ta(ll.keyOf(p.n, c), d[ll.keyOf(p.n, c)])}`;
     h += '</section>';
   }
@@ -102,11 +111,13 @@ const SCRIPT = `
   };
 })();`;
 
-function compile(d) {
+function compile(d, textos = ll.resolveTextos(d)) {
   const v = (k) => (d[k] || '').trim() || '—';
+  const porN = new Map(textos.map((t) => [t.n, t]));
   const o = ['LIBRETA DE LÍDERES — PROPUESTAS', ''];
   for (const p of ll.PERSONAS) {
-    o.push(`${p.n}. ${p.name.toUpperCase()}`, `Punto que expuso: ${p.punto}`, `Solución clave: ${p.solucion}`);
+    const t = porN.get(p.n);
+    o.push(`${p.n}. ${p.name.toUpperCase()}`, `Punto que expuso: ${t.punto}`, `Solución clave: ${t.solucion}`);
     for (const [c, l] of ll.CAMPOS) o.push(`${l}:`, v(ll.keyOf(p.n, c)));
     o.push('');
   }
@@ -126,13 +137,14 @@ function libretaLideresRouter(ctx) {
     '/libreta-lideres',
     ah(async (req, res) => {
       const d = await ll.loadAll(db);
-      const h = sheet(d);
+      const textos = ll.resolveTextos(d);
+      const h = sheet(d, { textos, editable: true });
       const link = await ll.ensureLink(db);
       const nResp = await ll.countSubmissions(db);
       const url = `${String(config.publicUrl || '').replace(/\/$/, '')}/libreta-lideres/${link.token}`;
       const body = `<style>${CSS}</style>
         <h1>Libreta de líderes — propuestas</h1>
-        <p class="sub">Las 7 propuestas de los líderes y coordinadores, con el punto que cada uno expuso y su solución clave. Lo que se escribe en las casillas se guarda solo y lo ve cualquiera que entre al panel. El equipo pastoral no está en esta libreta.</p>
+        <p class="sub">Las 7 propuestas de los líderes y coordinadores, con el punto que cada uno expuso y su solución clave. Esos textos se pueden corregir aquí, en el panel, y se guardan solos; en la libreta del teléfono los líderes solo los leen, no los pueden cambiar. Lo que se escribe en las casillas también se guarda solo y lo ve cualquiera que entre al panel. El equipo pastoral no está en esta libreta.</p>
         <div class="card">
           <h2 style="margin-top:0">Libreta para los líderes</h2>
           <p class="muted" style="margin:0 0 10px">Envía este enlace por WhatsApp: cada persona abre solo esta libreta en el teléfono, sin entrar al CRM. Lo que escribe se queda en su teléfono hasta que toque «Enviar a la iglesia»; entonces llega a <a href="/libreta-lideres/respuestas">Respuestas de los líderes (${nResp})</a>.</p>
@@ -146,8 +158,8 @@ function libretaLideresRouter(ctx) {
         <div class="re-state"><span id="re-state"></span></div>
         <div class="re">${h}</div>
         <div class="actions"><button type="button" class="sec" id="re-copy">Copiar todo</button>
-          <form class="inline" method="post" action="/libreta-lideres/borrar" onsubmit="return confirm('¿Borrar todo lo escrito en la hoja? No se puede deshacer.')"><button class="danger">Borrar todo</button></form></div>
-        <textarea id="re-text" hidden readonly style="min-height:200px">${esc(compile(d))}</textarea>
+          <form class="inline" method="post" action="/libreta-lideres/borrar" onsubmit="return confirm('¿Borrar todo lo escrito en la hoja? Los textos corregidos de las propuestas también se borran y vuelven a los originales. No se puede deshacer.')"><button class="danger">Borrar todo</button></form></div>
+        <textarea id="re-text" hidden readonly style="min-height:200px">${esc(compile(d, textos))}</textarea>
         <script>${SCRIPT}</script>`;
       res.send(layout({ title: 'Libreta de líderes', active: '/libreta-lideres', body, config, query: req.query }));
     })
@@ -234,7 +246,10 @@ function libretaLideresRouter(ctx) {
 }
 
 /**
- * Libreta de los líderes: sin sesión, protegida por el enlace secreto. No lee ni escribe la hoja del panel.
+ * Libreta de los líderes: sin sesión, protegida por el enlace secreto. De la base solo lee los
+ * textos efectivos de las propuestas (para mostrarlos de solo lectura: si el panel corrigió un
+ * punto o una solución, el teléfono muestra el texto corregido); no lee las casillas de la hoja
+ * del panel ni escribe nada en ella, y su envío solo acepta las claves de casilla.
  * El panel comparte el prefijo /libreta-lideres: los segmentos cortos de sus rutas (respuestas,
  * guardar, …) no son tokens (un token tiene 16+ caracteres), así que se dejan pasar con next()
  * para que los atienda el guardia de sesión y el router del panel.
@@ -266,11 +281,12 @@ function libretaLideresRemotaRouter(ctx) {
       if (!(await ll.linkIsValid(db, req.params.token))) {
         return send(res, page(404, '<div class="re"><h2>Enlace no válido</h2><p class="q">Pídele uno nuevo a quien administra el panel.</p></div>'));
       }
+      const textos = ll.resolveTextos(await ll.loadAll(db));
       send(
         res,
         page(
           200,
-          `<div class="re"><p class="lbl" style="margin-top:0">Mi nombre</p><input data-k="nombre" maxlength="80" autocomplete="name" style="border-bottom:1px solid #b9b6ae;height:36px;margin-bottom:40px">${sheet()}<div class="tools"><button type="button" id="send">Enviar a la iglesia</button><button type="button" id="copy">Copiar todo</button><button type="button" id="wa">Enviar por WhatsApp</button><button type="button" id="clear">Borrar</button><span id="msg"></span></div></div>`,
+          `<div class="re"><p class="lbl" style="margin-top:0">Mi nombre</p><input data-k="nombre" maxlength="80" autocomplete="name" style="border-bottom:1px solid #b9b6ae;height:36px;margin-bottom:40px">${sheet({}, { textos })}<div class="tools"><button type="button" id="send">Enviar a la iglesia</button><button type="button" id="copy">Copiar todo</button><button type="button" id="wa">Enviar por WhatsApp</button><button type="button" id="clear">Borrar</button><span id="msg"></span></div></div>`,
           `<script>${REMOTE_SCRIPT}</script>`
         )
       );

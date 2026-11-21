@@ -27,7 +27,7 @@ const NAV_HELP = {
   '/oracion': 'Buzón de oración: las peticiones de oración que llegan por Grace o que escribes tú, para enviarlas por WhatsApp al líder del grupo o al pastor de la congregación.',
   '/guia': 'Guía del líder: las respuestas aprobadas a las dudas de los líderes. Grace solo usa las confirmadas.',
   '/reunion-equipo': 'Reunión de equipo: la hoja de la reunión y las respuestas que el equipo manda desde su teléfono.',
-  '/libreta-lideres': 'Libreta de líderes: las 7 propuestas de los líderes y coordinadores, su hoja para llenar y las respuestas que mandan desde su teléfono.',
+  '/libreta-lideres': 'Libreta de líderes: las 7 propuestas de los líderes y coordinadores (sus textos se pueden corregir en esta hoja; en el teléfono solo se leen), su hoja para llenar y las respuestas que mandan desde su teléfono.',
   '/redil/libreta': 'Libretica REDIL: los puntos de la reunión de liderazgo y su enlace para verla desde el teléfono.',
   '/redil/preguntas': 'Preguntas REDIL: las preguntas que hacen los líderes sobre la libretica, para contestarlas.',
   '/conversaciones': 'Conversaciones: los mensajes de WhatsApp que llegan al número de la iglesia y lo que respondió Grace. Los casos que Grace pasó a una persona salen marcados.',
