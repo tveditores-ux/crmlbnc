@@ -192,6 +192,21 @@ test('cambiar el tipo, lista, filtros, búsqueda y contadores', async (t) => {
   });
 });
 
+test('la lista de Personas se puede filtrar por congregación', async (t) => {
+  await withDb(t, async (db) => {
+    await db.query(`INSERT INTO people (full_name, congregation) VALUES ('Niño Uno', 'Niños'), ('Niña Dos', 'Niños'), ('Pre Tres', 'Preadolescentes'), ('Adulto Cuatro', 'Mujeres'), ('Sin Cinco', '')`);
+    const names = async (f) => (await members.list(db, f)).map((r) => r.full_name);
+    assert.deepEqual(await names({ c: 'Niños' }), ['Niña Dos', 'Niño Uno']);
+    assert.deepEqual(await names({ c: 'Preadolescentes' }), ['Pre Tres']);
+    assert.equal((await names({ c: '' })).length, 5);
+    assert.equal((await names({})).length, 5);
+    // solo valores conocidos: una congregación inventada no entra como filtro
+    assert.equal(members.parseView({ c: 'Inventada' }).c, '');
+    assert.equal(members.parseView({ c: 'Niños' }).c, 'Niños');
+    assert.equal(members.viewQuery(members.parseView({ c: 'Niños' })), '?c=Ni%C3%B1os');
+  });
+});
+
 test('un archivo del tamaño del grupo (434 filas, datos inventados) con tildes, emojis, comas, varios países, ";" y BOM', async (t) => {
   await withDb(t, async (db) => {
     const pad = (i) => String(i).padStart(7, '0');

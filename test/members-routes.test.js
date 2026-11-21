@@ -45,7 +45,7 @@ test('Personas ahora trae tipo, grupo oficial, contadores, filtros, botones ráp
     assert.ok(!/miembros|Miembros/.test(nav)); // ya no hay pestaña aparte
     for (const label of ['miembros', 'amigos', 'por clasificar', 'en el grupo oficial']) assert.match(html, new RegExp(`stat-label">${label}<`));
     for (const f of ['Todos', 'Miembros', 'Amigos', 'Por clasificar']) assert.match(html, new RegExp(`>${f} <strong>`));
-    assert.match(html, /<th>Tipo<\/th><th>Grupo oficial<\/th>/);
+    assert.match(html, /<th>Tipo<\/th><th>Congregación<\/th><th>Grupo oficial<\/th>/);
     assert.match(html, /name="tipo"/);
     assert.match(html, /name="grupo"/);
     assert.match(html, /name="q"/);

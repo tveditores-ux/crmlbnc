@@ -47,6 +47,12 @@ function childRequestsRouter(ctx) {
         <div class="row" style="margin-top:8px"><form method="post" action="/ninos/enlace/nuevo"><button class="btn sec">Generar enlace nuevo</button></form>
         <form method="post" action="/ninos/enlace/${link.active ? 'apagar' : 'encender'}"><button class="btn sec">${link.active ? 'Apagar el enlace' : 'Encender el enlace'}</button></form></div>
       </div>
+      <div class="card"><h3 style="margin-top:0">Las congregaciones</h3>
+        <p class="sub">Al guardar un registro, el niño queda en Personas con su congregación según su edad. Desde aquí ves cada una por separado:</p>
+        <div class="row"><a class="btn sec" href="/personas?c=${encodeURIComponent('Niños')}">Niños (3 a 10)</a>
+        <a class="btn sec" href="/personas?c=${encodeURIComponent('Preadolescentes')}">Preadolescentes (11 a 13)</a>
+        <a class="btn sec" href="/personas?c=${encodeURIComponent('Adolescentes')}">Adolescentes (14 a 17)</a></div>
+      </div>
       <h2>Por revisar (${pending.length})</h2>
       ${
         pending.length
