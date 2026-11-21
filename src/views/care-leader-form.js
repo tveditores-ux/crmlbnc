@@ -3,13 +3,19 @@ const { esc } = require('../util');
 
 const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
-/** Fecha de nacimiento como tres selectores (día, mes y año): en el teléfono salen como ruedas. */
-function birthRoll(v, today, label = 'Fecha de nacimiento del líder') {
+/**
+ * Fecha de nacimiento como tres selectores (día, mes y año): en el teléfono salen como ruedas.
+ * El año más reciente ofrecido es el de hoy menos `minAge`: para líderes y pastores 10 (nadie se
+ * registra como líder con menos), pero los formularios de la gente y de los niños pasan 0 — un niño
+ * de la congregación nació hace pocos años y su año tiene que estar en la rueda (con el tope de
+ * líder, en 2026 la rueda llegaba solo a 2016 y un niño menor de 10 no se podía registrar).
+ */
+function birthRoll(v, today, label = 'Fecha de nacimiento del líder', { minAge = 10 } = {}) {
   const [y, m, d] = v.bd_year !== undefined ? [v.bd_year, v.bd_month, v.bd_day] : String(v.leader_birth_date || '').split('-');
   const opt = (value, label, cur) => `<option value="${value}" ${String(cur) === String(value) ? 'selected' : ''}>${label}</option>`;
   const days = Array.from({ length: 31 }, (_, i) => opt(String(i + 1).padStart(2, '0'), i + 1, d));
   const months = MONTHS.map((n, i) => opt(String(i + 1).padStart(2, '0'), n, m));
-  const last = Number(String(today).slice(0, 4)) - 10;
+  const last = Number(String(today).slice(0, 4)) - minAge;
   const years = Array.from({ length: last - 1909 }, (_, i) => opt(last - i, last - i, y));
   const st = 'font-size:18px;padding:12px 6px;width:100%;border-radius:10px;border:1px solid var(--line)';
   return `<label>${label}</label>
