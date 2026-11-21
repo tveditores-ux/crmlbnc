@@ -82,4 +82,4 @@ function confirmHtml(body, nombre) {
   <p class="muted" style="margin-top:10px">Si no quieres cambiar nada, cierra esta página: no se guardó ningún cambio.</p></div>`;
 }
 
-module.exports = { MENSAJE_OTRO, esLaMisma, verdict, desdePersonas, desdePendientes, desdeGrupos, desdePendientesGdC, confirmHtml };
+module.exports = { MENSAJE_OTRO, esLaMisma, verdict, desdePersonas, desdePendientes, desdeGrupos, desdePendientesGdC, confirmHtml, hiddenFields };

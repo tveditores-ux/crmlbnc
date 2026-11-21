@@ -230,6 +230,7 @@ function adminRouter(ctx) {
           <a class="btn sec" href="/personas/solicitud">Pedir datos a las personas</a>
           <a class="btn sec" href="/personas/pastores">Registro ministerial</a>
           <a class="btn sec" href="/personas/ministerios-desarrollo">Líderes de ministerios de desarrollo</a>
+          <a class="btn sec" href="/ninos">Registro de niños y adolescentes</a>
           <a class="btn sec" href="/chat-lideres">Chat de líderes</a>
           <a class="btn sec" href="/personas/exportar.csv${esc(members.viewQuery(v))}">Descargar lista${filtered ? ' (con estos filtros)' : ''}</a></div>
         <div class="grid">

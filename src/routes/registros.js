@@ -9,6 +9,7 @@ const lideres = require('../care-intake');
 const reporte = require('../care-report-link');
 const chat = require('../chat-lideres');
 const creyentes = require('../new-believer-intake');
+const ninos = require('../child-intake');
 
 const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -121,6 +122,19 @@ function registrosRouter(ctx) {
       setActive: (d, on) => creyentes.setLinkActive(d, on),
       pending: (d) => creyentes.countPending(d),
       ask: `Hola, la paz del Señor. Este es el enlace para registrar a los nuevos creyentes de ${church} el mismo día de su conversión: {enlace} Se llena en el momento de la decisión y queda en Nueva Vida para su seguimiento. Guárdalo en tu teléfono.`,
+    },
+    {
+      key: 'ninos',
+      title: 'Registro de niños y adolescentes',
+      para: 'Para que el papá, la mamá o el representante registre a su hijo que asiste a la congregación de Niños (3 a 10 años), Preadolescentes (11 a 13) o Adolescentes (14 a 17). Pide la fecha de nacimiento y dos fotos: la del niño y la del representante. Cada registro espera revisión antes de entrar en Personas.',
+      path: '/ninos/',
+      panel: '/ninos',
+      review: '/ninos',
+      ensure: (d) => ninos.ensureLink(d),
+      regen: (d) => ninos.regenerateLink(d),
+      setActive: (d, on) => ninos.setLinkActive(d, on),
+      pending: (d) => ninos.countPending(d),
+      ask: `Hola, la paz del Señor. Si tu hijo asiste a la congregación de niños, preadolescentes o adolescentes de ${church}, regístralo acá, por favor: {enlace} Se llena desde tu teléfono con su fecha de nacimiento y una foto suya y una tuya. ¡Gracias!`,
     },
   ];
 
