@@ -201,7 +201,7 @@ function adminRouter(ctx) {
       const list = rows
         .map(
           (p) => `<tr style="${p.active ? '' : 'opacity:.55'}">
-        <td><a href="/personas/${p.id}">${esc(p.full_name)}</a>${p.role ? `<div class="muted">${esc(p.role)}</div>` : ''}</td>
+        <td><a href="/personas/${p.id}">${esc(p.full_name)}</a>${p.role ? `<div class="muted">${esc(p.role)}</div>` : ''}<div style="margin-top:4px"><a class="btn sec small" href="/personas/${p.id}">Editar</a></div></td>
         <td>${esc(displayPhone(p.phone))}<div class="muted">${esc(p.email || '')}</div></td>
         <td>${p.mins.map((n) => `<span class="chip">${esc(n)}</span>`).join('')}</td>
         <td style="white-space:nowrap"><span class="badge ${TIPO_BADGE[p.membership] || 'b-muted'}">${esc(members.tipoLabel(p.membership))}</span></td>

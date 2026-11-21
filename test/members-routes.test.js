@@ -54,6 +54,7 @@ test('Personas ahora trae tipo, grupo oficial, contadores, filtros, botones ráp
     assert.match(rows, /0414-000\.00\.01/);
     assert.equal((rows.match(/>Miembro<\/button>/g) || []).length, 3); // un botón "Miembro" y uno "Amigo" por fila
     assert.equal((rows.match(/>Amigo<\/button>/g) || []).length, 3);
+    assert.equal((rows.match(/>Editar<\/a>/g) || []).length, 6); // Editar junto al nombre (visible en el teléfono sin desplazar la tabla) y en las acciones de la fila
     assert.equal((rows.match(/>Por clasificar<\/span>/g) || []).length, 3);
     // los importadores y la descarga, juntos
     assert.match(html, /href="\/personas\/importar">Importar desde hoja/);

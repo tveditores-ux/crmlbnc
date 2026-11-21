@@ -91,7 +91,7 @@ function careGroupsRouter(ctx) {
             <td>${badge}<div class="muted">${g.last_report ? esc(short(g.last_report)) : ''}</div></td>
             <td>${g.reports_30d}</td>
             <td>${g.profile_updated_at ? `<span class="badge b-ok">Confirmados</span><div class="muted">${esc(short(new Date(g.profile_updated_at).toLocaleDateString('en-CA', { timeZone: config.timezone })))}</div>` : '<span class="badge b-warn">Pendientes</span>'}</td>
-            <td style="white-space:nowrap">${delButton(g)}</td></tr>`;
+            <td style="white-space:nowrap"><a class="btn sec small" href="/grupos/${g.id}/editar">Editar</a> ${delButton(g)}</td></tr>`;
         })
         .join('');
       page(
@@ -488,6 +488,7 @@ function careGroupsRouter(ctx) {
         `<p><a href="/grupos">← Grupos de cuidado</a></p>
         <h1>${esc(g.name)} ${g.active ? '' : '<span class="badge b-muted">Inactivo</span>'}</h1>
         <p class="sub">${esc([g.stage, g.leader_name && `Líder: ${cg.leaderLabel(g)}`, g.advisor_name && `Asesor: ${g.advisor_name}`, [g.meeting_day, g.meeting_time].filter(Boolean).join(' '), g.place].filter(Boolean).join(' · '))}</p>
+        <div class="actions"><a class="btn" href="/grupos/${g.id}/editar">Editar grupo</a></div>
         ${hasPhoto || g.leader_birth_date || g.leader_cedula || g.leader_address || g.co_leader_name ? `<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
           ${hasPhoto ? `<img src="/grupos/${g.id}/foto" alt="Foto del líder" width="96" height="96" style="border-radius:16px;object-fit:cover">` : ''}
           <div><h3 style="margin:0 0 4px">Datos del líder</h3>
@@ -533,6 +534,23 @@ function careGroupsRouter(ctx) {
         <p class="sub">${esc(g.name)} · ${esc(fmt.quarterLabel(quarter))}</p>
         <p class="toolbar">${picker} <button type="button" class="sec" onclick="window.print()">Imprimir</button></p>${views.quarterlyView(t)}
         <h2>F.O.D.A.</h2>${views.fodaView(await fmt.getFoda(db, g.id, quarter))}`);
+    })
+  );
+
+  // Página propia de edición: el formulario del grupo sin tener que bajar hasta el final de la ficha.
+  r.get(
+    '/grupos/:id(\\d{1,9})/editar',
+    ah(async (req, res) => {
+      const g = await loadGroup(+req.params.id);
+      if (!g) return go(res, '/grupos', { err: 'Ese grupo no existe.' });
+      page(
+        req,
+        res,
+        `Editar · ${g.name}`,
+        `<p><a href="/grupos/${g.id}">← Volver al grupo</a></p><h1>Editar grupo</h1>
+        <p class="sub">Aquí cambias el líder, el co-líder, el teléfono del líder y los demás datos del grupo.</p>
+        ${groupForm(g, `/grupos/${g.id}/editar`)}`
+      );
     })
   );
 
