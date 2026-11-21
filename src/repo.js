@@ -64,6 +64,9 @@ function validatePerson(input, countryCode, { allowNoContact = false } = {}) {
       // La congregación solo se toca cuando el llamador la trae (la ficha del panel): los
       // importadores y demás guardados no la pisan (undefined = dejar la que tenga).
       congregation: input.congregation === undefined ? undefined : String(input.congregation || '').trim().slice(0, 60),
+      // Las alergias de comida (de la ficha de un niño) siguen la misma regla: solo se tocan cuando
+      // el llamador las trae; un guardado que no las conoce no las borra.
+      food_allergy: input.food_allergy === undefined ? undefined : String(input.food_allergy || '').trim().slice(0, 300),
     },
   };
 }
@@ -144,12 +147,15 @@ async function savePerson(db, id, v) {
         [id, v.full_name, v.phone, v.email, v.role, v.preferred_channel, v.opt_in, v.active, v.notes]
       );
     }
+    if (v.food_allergy !== undefined) {
+      await db.query('UPDATE people SET food_allergy = $2 WHERE id = $1', [id, v.food_allergy]);
+    }
     return id;
   }
   const { rows } = await db.query(
-    `INSERT INTO people (full_name, phone, email, role, preferred_channel, opt_in, active, notes, congregation)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
-    [v.full_name, v.phone, v.email, v.role, v.preferred_channel, v.opt_in, v.active, v.notes, v.congregation || '']
+    `INSERT INTO people (full_name, phone, email, role, preferred_channel, opt_in, active, notes, congregation, food_allergy)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+    [v.full_name, v.phone, v.email, v.role, v.preferred_channel, v.opt_in, v.active, v.notes, v.congregation || '', v.food_allergy || '']
   );
   return rows[0].id;
 }

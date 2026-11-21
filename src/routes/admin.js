@@ -340,6 +340,7 @@ function adminRouter(ctx) {
         <div><label>Congregación</label><select name="congregation"><option value="">Sin definir</option>${[...CONGREGATIONS, ...(p.congregation && !CONGREGATIONS.includes(p.congregation) ? [p.congregation] : [])]
           .map((c) => `<option${p.congregation === c ? ' selected' : ''}>${esc(c)}</option>`)
           .join('')}</select></div>
+        <div><label>Alergias o alimentos que no puede comer (niños)</label><input type="text" name="food_allergy" value="${esc(p.food_allergy || '')}" placeholder="Ej.: maní, leche, gluten…" maxlength="300"></div>
       </div>
       <label>Ministerios</label>
       <div class="checks">${
@@ -385,6 +386,7 @@ function adminRouter(ctx) {
       active: b.active === '1',
       notes: b.notes,
       congregation: b.congregation,
+      food_allergy: b.food_allergy,
     };
   }
 
@@ -465,7 +467,7 @@ function adminRouter(ctx) {
         res,
         rows[0].full_name,
         '/personas',
-        `<h1>${esc(rows[0].full_name)}</h1>${memberDataCard(rows[0], hasPhoto, config.timezone)}${personPhotoCard(rows[0], photoV)}${personForm(rows[0], ministries, sel, `/personas/${id}`)}
+        `<h1>${esc(rows[0].full_name)}</h1>${rows[0].food_allergy ? `<div class="card" style="border-left:5px solid var(--warn)"><strong>🍽️ Alergias o alimentos que no puede comer:</strong> ${esc(rows[0].food_allergy)}</div>` : ''}${memberDataCard(rows[0], hasPhoto, config.timezone)}${personPhotoCard(rows[0], photoV)}${personForm(rows[0], ministries, sel, `/personas/${id}`)}
         <div class="card"><strong>Su acceso al chat de líderes</strong>
           <p class="muted" style="margin:4px 0 10px">La sala donde los líderes y servidores conversan entre ellos y le preguntan a Grace. Cada quien entra con su propio enlace personal.</p>
           <a class="btn sec" href="/personas/${id}/chat">Dar o ver su acceso al chat</a></div>
