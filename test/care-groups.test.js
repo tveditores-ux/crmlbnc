@@ -115,6 +115,34 @@ test('crear grupo, abrir su enlace, reportar y ver el reporte en el panel', asyn
   });
 });
 
+test('Editar: botón en la lista y en la ficha, página propia de edición y guarda el cambio de líder', async (t) => {
+  await withApp(t, async ({ db, get, post }) => {
+    const g = await newGroup(post, db, { leader_phone: '0414-000.00.01' });
+
+    const list = await (await get('/grupos')).text();
+    assert.match(list, new RegExp(`href="/grupos/${g.id}/editar">Editar</a>`));
+
+    const detail = await (await get(`/grupos/${g.id}`)).text();
+    assert.match(detail, new RegExp(`href="/grupos/${g.id}/editar">Editar grupo</a>`));
+
+    const editPage = await get(`/grupos/${g.id}/editar`);
+    assert.equal(editPage.status, 200);
+    const form = await editPage.text();
+    assert.match(form, new RegExp(`action="/grupos/${g.id}/editar"`));
+    assert.match(form, /value="Líder Uno"/);
+
+    // el caso de corregir quién lidera: desde esa página se cambia el líder y su teléfono
+    const saved = await post(`/grupos/${g.id}/editar`, { name: 'GdC Prueba', leader_name: 'Líder Corregido', leader_phone: '0424-000.00.09' });
+    assert.equal(saved.status, 303);
+    const after = (await db.query('SELECT leader_name, leader_phone FROM care_groups WHERE id=$1', [g.id])).rows[0];
+    assert.equal(after.leader_name, 'Líder Corregido');
+    assert.equal(after.leader_phone, '584240000009');
+
+    const missing = await get('/grupos/999999/editar');
+    assert.equal(missing.status, 303);
+  });
+});
+
 test('barra del líder: sin «Datos del grupo» y con REDIL de último; la ruta /datos sigue viva para correcciones', async (t) => {
   await withApp(t, async ({ db, get, post }) => {
     const g = await newGroup(post, db);
