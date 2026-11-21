@@ -171,7 +171,10 @@ test('quien ya está en Personas y no trae nada distinto se completa sola, sin p
     await db.query("INSERT INTO people (full_name, phone, opt_in, active) VALUES ('Sin Consentimiento', '584140000002', FALSE, TRUE)");
     const token = await tokenOf(db);
 
-    const r = await post(`/mis-datos/${token}`, { ...base, full_name: 'maría pérez', email: 'maria@ejemplo.com', cedula: 'V-12345678', address: 'Calle 1', wants_messages: '1', photo_data: dataUrl(fakeJpeg()) });
+    const envio = { ...base, full_name: 'maría pérez', email: 'maria@ejemplo.com', cedula: 'V-12345678', address: 'Calle 1', wants_messages: '1', photo_data: dataUrl(fakeJpeg()) };
+    // su número ya está registrado a su nombre: primero el sistema le pregunta si es una actualización
+    assert.match(await (await post(`/mis-datos/${token}`, envio)).text(), /actualizar tus datos/);
+    const r = await post(`/mis-datos/${token}`, { ...envio, es_actualizacion: '1' });
     assert.match(await r.text(), /Tus datos quedaron guardados/);
     const p = await person(db, '584140000001');
     assert.equal(p.full_name, 'MARÍA  Pérez'); // su nombre no se pisa
@@ -183,8 +186,8 @@ test('quien ya está en Personas y no trae nada distinto se completa sola, sin p
     assert.equal(await count(db, 'people'), 2); // no duplicó a nadie
     assert.equal((await db.query('SELECT status, auto_applied FROM member_submissions')).rows[0].status, 'aplicada');
 
-    // pidió recibir recordatorios, pero eso nunca se aplica solo
-    await post(`/mis-datos/${token}`, { ...base, full_name: 'Sin Consentimiento', phone: '0414-000.00.02', wants_messages: '1' });
+    // pidió recibir recordatorios, pero eso nunca se aplica solo (confirmó que es su actualización)
+    await post(`/mis-datos/${token}`, { ...base, full_name: 'Sin Consentimiento', phone: '0414-000.00.02', wants_messages: '1', es_actualizacion: '1' });
     assert.equal((await person(db, '584140000002')).opt_in, false);
   });
 });
@@ -195,8 +198,8 @@ test('un dato distinto al de la ficha, o un correo que es de otra persona, esper
     await db.query("INSERT INTO people (full_name, phone, email) VALUES ('Otra Persona', '584140000009', 'ocupado@ejemplo.com')");
     const token = await tokenOf(db);
 
-    // 1) dirección distinta: pendiente, la ficha sigue igual
-    await post(`/mis-datos/${token}`, { ...base, address: 'Dirección nueva' });
+    // 1) dirección distinta: pendiente, la ficha sigue igual (confirmó que es su actualización)
+    await post(`/mis-datos/${token}`, { ...base, address: 'Dirección nueva', es_actualizacion: '1' });
     assert.equal((await person(db, '584140000001')).address, 'Dirección vieja');
     const html = await (await get('/personas/respuestas')).text();
     assert.match(html, /Ya está en Personas, con datos distintos/);
@@ -207,7 +210,7 @@ test('un dato distinto al de la ficha, o un correo que es de otra persona, esper
     assert.equal((await person(db, '584140000001')).address, 'Dirección nueva'); // al aprobar, lo enviado reemplaza
 
     // 2) correo de otra persona: no se aplica sola, y al aprobar se explica el problema sin cambiar nada
-    await post(`/mis-datos/${token}`, { ...base, email: 'ocupado@ejemplo.com', address: 'Dirección nueva' });
+    await post(`/mis-datos/${token}`, { ...base, email: 'ocupado@ejemplo.com', address: 'Dirección nueva', es_actualizacion: '1' });
     const id2 = (await db.query("SELECT id FROM member_submissions WHERE status = 'pendiente'")).rows[0].id;
     const bad = await post(`/personas/respuestas/${id2}/aplicar`);
     assert.match(loc(bad), /correo ya está en la ficha de otra persona/);
@@ -292,4 +295,24 @@ test('al aplicar, la persona queda vinculada a su grupo: entra en la lista de ge
   } finally {
     await h.close();
   }
+});
+
+test('un teléfono ya registrado no lo puede usar otra persona; y la misma persona con otra cédula tampoco pasa', async (t) => {
+  await withApp(t, async ({ db, post }) => {
+    await db.query("INSERT INTO people (full_name, phone, cedula, opt_in, active) VALUES ('Ana Pérez', '584140000001', 'V-12345678', FALSE, TRUE)");
+    const token = await tokenOf(db);
+
+    // otra persona con el mismo número: rechazado y no se guarda nada
+    const otro = await post(`/mis-datos/${token}`, { ...base, full_name: 'Beatriz Gómez', email: 'bea@ejemplo.com', cedula: 'V-87654321' });
+    assert.equal(otro.status, 400);
+    assert.match(await otro.text(), /ya está registrado con otros datos/);
+    assert.equal(await count(db, 'member_submissions'), 0);
+    assert.equal(await count(db, 'people'), 1);
+
+    // el mismo nombre pero una cédula distinta a la de su ficha: tampoco pasa
+    const cedulaDistinta = await post(`/mis-datos/${token}`, { ...base, cedula: 'V-99999999' });
+    assert.equal(cedulaDistinta.status, 400);
+    assert.match(await cedulaDistinta.text(), /ya está registrado con otros datos/);
+    assert.equal(await count(db, 'member_submissions'), 0);
+  });
 });

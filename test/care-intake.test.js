@@ -123,11 +123,16 @@ test('el formulario común pide la congregación, no lista grupos ni teléfonos,
 
 test('con el teléfono del líder, los datos y la foto se aplican solos al grupo y se guarda su congregación', async (t) => {
   await withApp(t, async ({ db, get, post }) => {
-    const g = await mkGroup(db, 'Grupo Uno', '584140000001', 'Nombre Viejo');
+    const g = await mkGroup(db, 'Grupo Uno', '584140000001', 'Nombre Nuevo');
     const token = await tokenOf(db);
-    const r = await post(`/registro/${token}`, {
+    const envio = {
       ...base, leader_name: 'Nombre Nuevo', leader_birth_date: '1985-11-05', meeting_day: 'Lunes', meeting_time: '18:00', place: 'Casa de prueba', photo_data: dataUrl(fakeJpeg(3)),
-    });
+    };
+    // su número ya está registrado a su nombre: primero el sistema le pregunta si es una actualización
+    const pregunta = await post(`/registro/${token}`, envio);
+    assert.match(await pregunta.text(), /actualizar tus datos/);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM care_group_submissions')).rows[0].n, 0); // aún no se guardó nada
+    const r = await post(`/registro/${token}`, { ...envio, es_actualizacion: '1' });
     assert.equal(r.status, 200);
     assert.match(await r.text(), /ya quedaron actualizados/);
     const row = (await db.query('SELECT * FROM care_groups WHERE id = $1', [g.id])).rows[0];
@@ -195,11 +200,14 @@ test('con un teléfono desconocido queda pendiente; se aprueba como grupo nuevo 
 test('un grupo nuevo con un nombre que ya existe no se duplica; se puede descartar; dos grupos del mismo teléfono van a revisión', async (t) => {
   await withApp(t, async ({ db, post }) => {
     await mkGroup(db, 'Mujeres · Líder X', '584140000009');
-    await mkGroup(db, 'Jóvenes · Hombres', '584140000010', 'Carlos', 'Jóvenes');
-    await mkGroup(db, 'Jóvenes · Chicas', '584140000010', 'Carlos', 'Jóvenes');
+    await mkGroup(db, 'Jóvenes · Hombres', '584140000010', 'Carlos Pérez', 'Jóvenes');
+    await mkGroup(db, 'Jóvenes · Chicas', '584140000010', 'Carlos Pérez', 'Jóvenes');
     const token = await tokenOf(db);
     await post(`/registro/${token}`, { ...base, leader_phone: '0424-000.00.77' }); // se llamaría "Mujeres · Líder X", como el que ya existe
-    await post(`/registro/${token}`, { ...base, leader_phone: '0414-000.00.10', congregation: 'Jóvenes' }); // ambiguo
+    // Carlos lidera los dos grupos con ese teléfono: el sistema le pregunta si es una actualización y al confirmar queda para revisar (ambiguo)
+    const envioCarlos = { ...base, leader_name: 'Carlos Pérez', leader_phone: '0414-000.00.10', congregation: 'Jóvenes' };
+    assert.match(await (await post(`/registro/${token}`, envioCarlos)).text(), /actualizar tus datos/);
+    await post(`/registro/${token}`, { ...envioCarlos, es_actualizacion: '1' });
     const subs = (await db.query('SELECT id, group_id FROM care_group_submissions ORDER BY id')).rows;
     assert.equal(subs.length, 2);
     assert.equal(subs[1].group_id, null); // quedó para revisar
@@ -294,5 +302,18 @@ test('el cruce a Personas: al aplicar el registro del líder, también queda su 
     const after = (await db.query('SELECT * FROM people')).rows;
     assert.equal(after.length, 1);
     assert.equal(after[0].full_name, 'Nombre Corregido');
+  });
+});
+
+test('el teléfono de un líder no lo puede registrar otra persona', async (t) => {
+  await withApp(t, async ({ db, post }) => {
+    await mkGroup(db, 'Grupo de Fernando', '584140000001', 'Fernando Paredes');
+    const token = await tokenOf(db);
+    const r = await post(`/registro/${token}`, { ...base, leader_name: 'Otra Persona', leader_cedula: 'V-87654321' });
+    assert.equal(r.status, 400);
+    assert.match(await r.text(), /ya está registrado con otros datos/);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM care_group_submissions')).rows[0].n, 0);
+    const row = (await db.query('SELECT leader_name FROM care_groups')).rows[0];
+    assert.equal(row.leader_name, 'Fernando Paredes'); // el grupo no se tocó
   });
 });

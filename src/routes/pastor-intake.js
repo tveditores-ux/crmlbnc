@@ -5,6 +5,7 @@ const { esc } = require('../util');
 const { createRateLimiter } = require('../attendance-store');
 const { CONGREGATIONS } = require('../care-groups');
 const intake = require('../pastor-intake');
+const phoneGuard = require('../phone-guard');
 const { CIVIL_STATUS } = require('../member-intake');
 const { birthRoll, photoScript } = require('../views/care-leader-form');
 const { CSS } = require('./care-remote');
@@ -88,6 +89,17 @@ function pastorIntakeRouter(ctx) {
       if (sub.errors.length) {
         const keep = sub.photo.error ? {} : { photo_data: req.body.photo_data };
         return send(res, shell('Registro ministerial', form({ ...req.body, ...keep }, sub.errors), 400));
+      }
+      // un teléfono es de una persona: si ya está registrado con otros datos no se acepta; si es la
+      // misma persona, primero se le pregunta si es una actualización (ver phone-guard)
+      const regs = [...(await phoneGuard.desdePersonas(db, sub.value.phone)), ...(await phoneGuard.desdePendientes(db, 'pastor_submissions', sub.value.phone))];
+      const guard = phoneGuard.verdict(regs, { nombre: sub.value.full_name, cedula: sub.value.cedula });
+      if (guard.state === 'otro') {
+        const keep = sub.photo.error ? {} : { photo_data: req.body.photo_data };
+        return send(res, shell('Registro ministerial', form({ ...req.body, ...keep }, [phoneGuard.MENSAJE_OTRO]), 400));
+      }
+      if (guard.state === 'misma' && req.body.es_actualizacion !== '1') {
+        return send(res, shell('Ya estás registrado', phoneGuard.confirmHtml(req.body, sub.value.full_name)));
       }
       const out = await intake.submit(db, sub);
       send(

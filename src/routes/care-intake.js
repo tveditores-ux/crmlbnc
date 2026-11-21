@@ -5,6 +5,7 @@ const { esc } = require('../util');
 const { createRateLimiter } = require('../attendance-store');
 const { STAGES, DAYS, CONGREGATIONS } = require('../care-groups');
 const intake = require('../care-intake');
+const phoneGuard = require('../phone-guard');
 const { leaderFields, PHOTO_SCRIPT } = require('../views/care-leader-form');
 const { CSS } = require('./care-remote');
 
@@ -65,6 +66,21 @@ function careIntakeRouter(ctx) {
       if (sub.errors.length) {
         const keep = sub.photo.error ? {} : { photo_data: req.body.photo_data };
         return send(res, shell('Datos de mi grupo', form({ ...req.body, ...keep, leader_phone_input: req.body.leader_phone }, sub.errors), 400));
+      }
+      // un teléfono es de una persona: si ya es de otro líder (o de otra ficha) no se acepta; si es el
+      // mismo líder, primero se le pregunta si es una actualización (ver phone-guard)
+      const regs = [
+        ...(await phoneGuard.desdePersonas(db, sub.value.leader_phone)),
+        ...(await phoneGuard.desdeGrupos(db, sub.value.leader_phone)),
+        ...(await phoneGuard.desdePendientesGdC(db, sub.value.leader_phone)),
+      ];
+      const guard = phoneGuard.verdict(regs, { nombre: sub.value.leader_name, cedula: sub.value.leader_cedula });
+      if (guard.state === 'otro') {
+        const keep = sub.photo.error ? {} : { photo_data: req.body.photo_data };
+        return send(res, shell('Datos de mi grupo', form({ ...req.body, ...keep, leader_phone_input: req.body.leader_phone }, [phoneGuard.MENSAJE_OTRO]), 400));
+      }
+      if (guard.state === 'misma' && req.body.es_actualizacion !== '1') {
+        return send(res, shell('Ya estás registrado', phoneGuard.confirmHtml(req.body, sub.value.leader_name)));
       }
       const out = await intake.submit(db, sub);
       send(

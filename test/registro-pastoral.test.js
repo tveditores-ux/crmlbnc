@@ -141,7 +141,9 @@ test('quien ya está en Personas sin rol y sin conflictos se completa solo, con 
   await withApp(t, async ({ db, post }) => {
     await db.query("INSERT INTO people (full_name, phone, opt_in, active) VALUES ('José Hernández', '584140000011', FALSE, TRUE)");
     const token = await tokenOf(db);
-    const r = await post(`/pastores/${token}`, { ...base, funcion: 'Pastor asistente' });
+    // su número ya está registrado a su nombre: primero el sistema le pregunta si es una actualización
+    assert.match(await (await post(`/pastores/${token}`, { ...base, funcion: 'Pastor asistente' })).text(), /actualizar tus datos/);
+    const r = await post(`/pastores/${token}`, { ...base, funcion: 'Pastor asistente', es_actualizacion: '1' });
     assert.match(await r.text(), /Tu registro quedó guardado/);
     const p = await person(db, '584140000011');
     assert.equal(p.role, 'Pastor asistente');
@@ -155,7 +157,7 @@ test('una función distinta a su rol actual espera revisión; al aprobar, el rol
   await withApp(t, async ({ db, get, post }) => {
     await db.query("INSERT INTO people (full_name, phone, role, opt_in, active) VALUES ('José Hernández', '584140000011', 'Líder', TRUE, TRUE)");
     const token = await tokenOf(db);
-    await post(`/pastores/${token}`, base);
+    await post(`/pastores/${token}`, { ...base, es_actualizacion: '1' }); // confirmó que es su actualización
     assert.equal((await person(db, '584140000011')).role, 'Líder'); // nada cambió solo
     const html = await (await get('/personas/pastores/respuestas')).text();
     assert.match(html, /Ya está en Personas, con datos distintos/);

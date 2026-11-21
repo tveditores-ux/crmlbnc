@@ -176,7 +176,10 @@ test('una persona ya registrada sin conflictos se guarda sola, queda en su minis
   await withApp(t, async ({ db, post }) => {
     const token = await tokenOf(db);
     await db.query("INSERT INTO people (full_name, phone, role, opt_in, active) VALUES ('Pedro Ruiz', '584140000033', 'Pastor', FALSE, TRUE)");
-    const r = await post(`/desarrollo/${token}`, { ...base, ministerio: 'Nueva Vida', full_name: 'Pedro Ruiz', phone: '0414-000.00.33' });
+    const envio = { ...base, ministerio: 'Nueva Vida', full_name: 'Pedro Ruiz', phone: '0414-000.00.33' };
+    // su número ya está registrado a su nombre: primero el sistema le pregunta si es una actualización
+    assert.match(await (await post(`/desarrollo/${token}`, envio)).text(), /actualizar tus datos/);
+    const r = await post(`/desarrollo/${token}`, { ...envio, es_actualizacion: '1' });
     assert.equal(r.status, 200);
     assert.match(await r.text(), /Tu registro quedó guardado/);
     const p = await person(db, '584140000033');
