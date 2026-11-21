@@ -43,7 +43,7 @@ function memberIntakeRouter(ctx) {
         <h2>Tú</h2>
         ${t('full_name', 'Nombre y apellido', 'maxlength="120" required placeholder="Nombre y apellido"')}
         <label for="phone">Teléfono (WhatsApp)</label><input id="phone" type="tel" inputmode="tel" name="phone" required value="${esc(v.phone || '')}" placeholder="0414-000.00.00">
-        ${birthRoll(v, today(), 'Fecha de nacimiento')}
+        ${birthRoll(v, today(), 'Fecha de nacimiento', { minAge: 0 })}
         ${sel('congregation', '¿Cuál es tu congregación?', CONGREGATIONS, 'Elige…', true)}
         ${sel('care_group_name', 'Tu grupo de cuidado', [...groups, intake.NO_GROUP], 'Elige…', true)}
         <h2>Más datos</h2>

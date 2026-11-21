@@ -5,6 +5,7 @@ const express = require('express');
 const { childIntakeRouter } = require('../src/routes/child-intake');
 const { childRequestsRouter } = require('../src/routes/child-requests');
 const intake = require('../src/child-intake');
+const { birthRoll } = require('../src/views/care-leader-form');
 const auth = require('../src/auth');
 const { openTestDb } = require('./helpers/db');
 
@@ -51,6 +52,15 @@ async function withApp(t, fn) {
   }
 }
 
+test('la rueda de años del niño llega hasta el año en curso; la de líderes conserva su tope', () => {
+  const anio = TODAY.slice(0, 4);
+  const deNino = birthRoll({}, TODAY, 'Fecha de nacimiento del niño o adolescente', { minAge: 0 });
+  assert.match(deNino, new RegExp(`<option value="${anio}"`));
+  const deLider = birthRoll({}, TODAY, 'Fecha de nacimiento del líder');
+  assert.doesNotMatch(deLider, new RegExp(`<option value="${anio}"`));
+  assert.match(deLider, new RegExp(`<option value="${Number(anio) - 10}"`));
+});
+
 test('la congregación sale de la edad: Niños 3–10, Preadolescentes 11–13, Adolescentes 14–17', () => {
   assert.equal(intake.congregationForAge(3), 'Niños');
   assert.equal(intake.congregationForAge(10), 'Niños');
@@ -83,7 +93,9 @@ test('remoto: registra, el panel aplica y el niño entra en Personas con su cong
     const { token } = await intake.ensureLink(db);
     const form = await get(`/ninos/${token}`);
     assert.equal(form.status, 200);
-    assert.match(await form.text(), /Si tu hijo asiste a nuestra congregación/);
+    const formHtml = await form.text();
+    assert.match(formHtml, /Si tu hijo asiste a nuestra congregación/);
+    assert.match(formHtml, new RegExp(`<option value="${TODAY.slice(0, 4)}"`), 'la rueda de años llega al año en curso');
 
     const r = await post(`/ninos/${token}`, base(7));
     assert.equal(r.status, 200);
