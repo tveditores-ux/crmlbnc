@@ -193,7 +193,7 @@ function adminRouter(ctx) {
       ).rows[0];
       const TIPO_BADGE = { miembro: 'b-ok', amigo: 'b-warn' };
       // Los filtros activos viajan con cada botón rápido, para volver a la misma vista.
-      const keep = `<input type="hidden" name="filtro" value="${esc(v.tipo)}"><input type="hidden" name="grupo" value="${esc(v.grupo)}"><input type="hidden" name="q" value="${esc(v.q)}"><input type="hidden" name="m" value="${v.m || ''}">`;
+      const keep = `<input type="hidden" name="filtro" value="${esc(v.tipo)}"><input type="hidden" name="grupo" value="${esc(v.grupo)}"><input type="hidden" name="q" value="${esc(v.q)}"><input type="hidden" name="m" value="${v.m || ''}"><input type="hidden" name="c" value="${esc(v.c || '')}">`;
       const quick = (p, tipo) =>
         `<form class="inline" method="post" action="/personas/${p.id}/tipo">
           <input type="hidden" name="tipo" value="${tipo}">${keep}
@@ -205,6 +205,7 @@ function adminRouter(ctx) {
         <td>${esc(displayPhone(p.phone))}<div class="muted">${esc(p.email || '')}</div></td>
         <td>${p.mins.map((n) => `<span class="chip">${esc(n)}</span>`).join('')}</td>
         <td style="white-space:nowrap"><span class="badge ${TIPO_BADGE[p.membership] || 'b-muted'}">${esc(members.tipoLabel(p.membership))}</span></td>
+        <td>${p.congregation ? esc(p.congregation) : '<span class="muted">—</span>'}</td>
         <td>${p.in_official_group ? 'Sí' : 'No'}</td>
         <td>${CHANNEL_LABEL[p.preferred_channel]}</td>
         <td>${p.opt_in ? '<span class="badge b-ok">Sí</span>' : '<span class="badge b-bad">No</span>'}</td>
@@ -216,7 +217,7 @@ function adminRouter(ctx) {
       const pills = Object.entries(members.FILTERS)
         .map(([k, label]) => `<a class="btn ${v.tipo === k ? '' : 'sec'} small" href="/personas${esc(members.viewQuery({ ...v, tipo: k }))}">${esc(label)} <strong>${counts[k]}</strong></a>`)
         .join(' ');
-      const filtered = v.tipo !== 'todos' || v.grupo !== 'todos' || v.q || v.m;
+      const filtered = v.tipo !== 'todos' || v.grupo !== 'todos' || v.q || v.m || v.c;
       page(
         req,
         res,
@@ -254,6 +255,9 @@ function adminRouter(ctx) {
           <div><label>Ministerio</label><select name="m"><option value="">Todos</option>${ministries
             .map((x) => `<option value="${x.id}" ${x.id === v.m ? 'selected' : ''}>${esc(x.name)}</option>`)
             .join('')}</select></div>
+          <div><label>Congregación</label><select name="c"><option value="">Todas</option>${CONGREGATIONS.map(
+            (c) => `<option ${v.c === c ? 'selected' : ''}>${esc(c)}</option>`
+          ).join('')}</select></div>
           <div><label>Tipo</label><select name="tipo">${Object.entries(members.FILTERS)
             .map(([k, label]) => `<option value="${k}" ${v.tipo === k ? 'selected' : ''}>${esc(label)}</option>`)
             .join('')}</select></div>
@@ -261,8 +265,8 @@ function adminRouter(ctx) {
             .map(([k, label]) => `<option value="${k}" ${v.grupo === k ? 'selected' : ''}>${esc(label)}</option>`)
             .join('')}</select></div>
           <button class="sec">Filtrar</button></form>
-        <div class="table-scroll"><table><tr><th>Nombre</th><th>Contacto</th><th>Ministerios</th><th>Tipo</th><th>Grupo oficial</th><th>Canal</th><th>Acepta</th><th></th></tr>${
-          list || '<tr><td colspan="8" class="muted">Sin resultados.</td></tr>'
+        <div class="table-scroll"><table><tr><th>Nombre</th><th>Contacto</th><th>Ministerios</th><th>Tipo</th><th>Congregación</th><th>Grupo oficial</th><th>Canal</th><th>Acepta</th><th></th></tr>${
+          list || '<tr><td colspan="9" class="muted">Sin resultados.</td></tr>'
         }</table></div>
         <p class="muted" style="font-size:13px;margin-top:18px"><a href="/personas/borrar-todas">Borrar toda la lista de personas…</a></p>`
       );

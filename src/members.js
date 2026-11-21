@@ -2,6 +2,7 @@
 const { normalizePhone, displayPhone } = require('./phone');
 const { csvToRecords } = require('./csv');
 const { tx } = require('./db');
+const { CONGREGATIONS } = require('./care-groups');
 
 /** Tipos de persona. '' = por clasificar. */
 const TIPOS = { miembro: 'Miembro', amigo: 'Amigo' };
@@ -159,6 +160,7 @@ function parseView(src = {}) {
     grupo: src.grupo === 'si' || src.grupo === 'no' ? src.grupo : 'todos',
     q: String(src.q || '').trim().slice(0, 80),
     m: /^\d{1,9}$/.test(String(src.m || '')) ? +src.m : null,
+    c: CONGREGATIONS.includes(String(src.c || '')) ? String(src.c) : '',
   };
 }
 
@@ -169,6 +171,7 @@ function viewQuery(v, extra = {}) {
   if (v.grupo && v.grupo !== 'todos') p.set('grupo', v.grupo);
   if (v.q) p.set('q', v.q);
   if (v.m) p.set('m', String(v.m));
+  if (v.c) p.set('c', v.c);
   for (const [k, x] of Object.entries(extra)) p.set(k, x);
   const s = p.toString();
   return s ? `?${s}` : '';
@@ -186,6 +189,10 @@ function filterSql(f) {
   }
   if (f.grupo === 'si') where.push('p.in_official_group');
   else if (f.grupo === 'no') where.push('NOT p.in_official_group');
+  if (f.c) {
+    params.push(f.c);
+    where.push(`p.congregation = $${params.length}`);
+  }
   const min = f.ministry ?? f.m;
   if (/^\d{1,9}$/.test(String(min ?? ''))) {
     params.push(+min);
