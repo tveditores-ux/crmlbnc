@@ -92,6 +92,9 @@ function parseSubmission(body, countryCode = '58', today) {
     }
   }
 
+  // Solo comida y solo si hace falta: alergias o alimentos que el niño no puede comer (opcional).
+  const food_allergy = clean(body.food_allergy, 300);
+
   const parent_name = clean(body.parent_name, 120);
   if (!parent_name) errors.push('Escribe tu nombre y apellido (papá, mamá o representante).');
   else if (parent_name.split(/\s+/).length < 2) errors.push('Escribe tu nombre y tu apellido (papá, mamá o representante).');
@@ -111,7 +114,7 @@ function parseSubmission(body, countryCode = '58', today) {
   if (photoParent.error) errors.push(photoParent.error);
   else if (!photoParent.buffer) errors.push('Falta tu foto (la del papá, la mamá o el representante).');
 
-  const value = { child_name, birth_date, congregation, parent_name, parent_relation, parent_phone };
+  const value = { child_name, birth_date, congregation, food_allergy, parent_name, parent_relation, parent_phone };
   return { value, photoChild, photoParent, errors: [...new Set(errors)] };
 }
 
@@ -135,9 +138,9 @@ async function findRegistered(db, v) {
 async function submit(db, sub) {
   const v = sub.value;
   const { rows } = await db.query(
-    `INSERT INTO child_submissions (child_name, birth_date, congregation, parent_name, parent_relation, parent_phone, photo_child, photo_parent)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-    [v.child_name, v.birth_date, v.congregation, v.parent_name, v.parent_relation, v.parent_phone, sub.photoChild.buffer, sub.photoParent.buffer]
+    `INSERT INTO child_submissions (child_name, birth_date, congregation, food_allergy, parent_name, parent_relation, parent_phone, photo_child, photo_parent)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+    [v.child_name, v.birth_date, v.congregation, v.food_allergy, v.parent_name, v.parent_relation, v.parent_phone, sub.photoChild.buffer, sub.photoParent.buffer]
   );
   return rows[0].id;
 }
@@ -160,8 +163,8 @@ async function apply(pool, submissionId) {
     if (!person) {
       person = (
         await db.query(
-          "INSERT INTO people (full_name, birth_date, congregation, notes, preferred_channel, opt_in, active) VALUES ($1, $2, $3, $4, 'whatsapp', FALSE, TRUE) RETURNING *",
-          [sub.child_name, sub.birth_date, sub.congregation, line]
+          "INSERT INTO people (full_name, birth_date, congregation, food_allergy, notes, preferred_channel, opt_in, active) VALUES ($1, $2, $3, $4, $5, 'whatsapp', FALSE, TRUE) RETURNING *",
+          [sub.child_name, sub.birth_date, sub.congregation, sub.food_allergy || '', line]
         )
       ).rows[0];
     } else {
@@ -171,6 +174,8 @@ async function apply(pool, submissionId) {
         sub.congregation,
         notes.includes(sub.parent_phone) ? notes : [notes, line].filter(Boolean).join('\n'),
       ]);
+      // una actualización sin el dato no borra la alergia ya conocida; con el dato, la reemplaza
+      if (sub.food_allergy) await db.query('UPDATE people SET food_allergy = $2 WHERE id = $1', [person.id, sub.food_allergy]);
     }
     if (sub.photo_child) {
       await db.query('INSERT INTO people_photos (person_id, data) VALUES ($1, $2) ON CONFLICT (person_id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()', [person.id, Buffer.from(sub.photo_child)]);
@@ -191,7 +196,7 @@ async function discard(db, submissionId) {
 /** Respuestas por revisar (sin las fotos en sí, solo si las tiene). */
 async function listPending(db) {
   const { rows } = await db.query(
-    `SELECT id, child_name, birth_date, congregation, parent_name, parent_relation, parent_phone, created_at,
+    `SELECT id, child_name, birth_date, congregation, food_allergy, parent_name, parent_relation, parent_phone, created_at,
             (photo_child IS NOT NULL) AS has_child_photo, (photo_parent IS NOT NULL) AS has_parent_photo
        FROM child_submissions WHERE status = 'pendiente' ORDER BY created_at`
   );

@@ -79,6 +79,8 @@ function childIntakeRouter(ctx) {
         <h2>El niño o adolescente</h2>
         ${t('child_name', 'Nombre y apellido del niño o adolescente', 'maxlength="120" required placeholder="Nombre y apellido"')}
         ${birthRoll(v, today(), 'Fecha de nacimiento del niño o adolescente')}
+        ${t('food_allergy', 'Alergias o alimentos que no puede comer (si tiene, opcional)', 'maxlength="300" placeholder="Ej.: maní, leche, gluten…"')}
+        <p class="muted" style="font-size:13px;margin-top:-6px">Esto ayuda al equipo con las meriendas, pero no sustituye avisar también al maestro de tu hijo.</p>
         ${photoBlock('pc', 'photo_child_data', 'Foto del niño o adolescente', v)}
         <h2>El papá, la mamá o el representante</h2>
         ${t('parent_name', 'Tu nombre y apellido', 'maxlength="120" required placeholder="Nombre y apellido"')}
