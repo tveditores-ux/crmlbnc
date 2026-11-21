@@ -57,6 +57,7 @@ function childRequestsRouter(ctx) {
           <div style="text-align:center">${s.has_parent_photo ? `<img src="/ninos/respuestas/${s.id}/foto-representante" alt="Foto del representante" style="width:110px;height:110px;object-fit:cover;border-radius:10px">` : '<span class="sub">Sin foto</span>'}<div class="sub">El representante</div></div>
           <div style="flex:1;min-width:240px"><strong>${esc(s.child_name)}</strong> <span class="badge b-info">${esc(s.congregation)}</span>
             <div class="sub">Nació el ${shortDate(s.birth_date)} · Llegó el ${short(s.created_at)}</div>
+            ${s.food_allergy ? `<div style="margin-top:6px">🍽️ <strong>Alergias o alimentos que no puede comer:</strong> ${esc(s.food_allergy)}</div>` : ''}
             <div style="margin-top:6px">Representante: <strong>${esc(s.parent_name)}</strong> (${esc(s.parent_relation)}) · ${esc(displayPhone(s.parent_phone))}</div>
             <div class="row" style="margin-top:10px"><form method="post" action="/ninos/respuestas/${s.id}/aplicar"><button>Guardar en Personas</button></form>
             <form method="post" action="/ninos/respuestas/${s.id}/descartar" onsubmit="return confirm('¿Descartar este registro? Se borran las fotos y no se puede deshacer.')"><button class="btn danger">Descartar</button></form></div>

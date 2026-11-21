@@ -112,6 +112,38 @@ test('remoto: registra, el panel aplica y el niño entra en Personas con su cong
   });
 });
 
+test('las alergias de comida son opcionales, llegan a la ficha y una actualización sin el dato no las borra', async (t) => {
+  const conDato = intake.parseSubmission({ ...base(), food_allergy: 'Maní y leche' }, '58', TODAY);
+  assert.deepEqual(conDato.errors, []);
+  assert.equal(conDato.value.food_allergy, 'Maní y leche');
+  const sinDato = intake.parseSubmission(base(), '58', TODAY);
+  assert.deepEqual(sinDato.errors, []);
+  assert.equal(sinDato.value.food_allergy, '');
+
+  await withApp(t, async ({ db, get, post, admin }) => {
+    const { token } = await intake.ensureLink(db);
+    const form = await get(`/ninos/${token}`);
+    assert.match(await form.text(), /Alergias o alimentos que no puede comer/);
+
+    await post(`/ninos/${token}`, { ...base(7), food_allergy: 'Maní y leche' });
+    const panel = await get('/ninos', admin);
+    assert.match(await panel.text(), /Maní y leche/);
+    const sub = (await db.query("SELECT * FROM child_submissions WHERE status = 'pendiente'")).rows[0];
+    await post(`/ninos/respuestas/${sub.id}/aplicar`, {}, admin);
+    let person = (await db.query("SELECT * FROM people WHERE full_name = 'Samuel Prueba'")).rows[0];
+    assert.equal(person.food_allergy, 'Maní y leche');
+
+    // el representante reenvía sin escribir la alergia: se confirma la actualización y la ficha la conserva
+    const otra = await post(`/ninos/${token}`, base(7));
+    assert.match(await otra.text(), /actualizar sus datos/);
+    await post(`/ninos/${token}`, { ...base(7), es_actualizacion: '1' });
+    const sub2 = (await db.query("SELECT * FROM child_submissions WHERE status = 'pendiente'")).rows[0];
+    await post(`/ninos/respuestas/${sub2.id}/aplicar`, {}, admin);
+    person = (await db.query("SELECT * FROM people WHERE full_name = 'Samuel Prueba'")).rows[0];
+    assert.equal(person.food_allergy, 'Maní y leche');
+  });
+});
+
 test('el mismo niño otra vez pregunta si es una actualización; un hermano con el mismo teléfono entra directo', async (t) => {
   await withApp(t, async ({ db, post }) => {
     const { token } = await intake.ensureLink(db);
