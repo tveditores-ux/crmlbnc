@@ -138,7 +138,7 @@ function reporteComunRouter(ctx) {
           'Reporte enviado',
           `<h1>¡Gracias, ${esc(name.value.split(' ')[0])}!</h1>
           <div class="ok"><strong>Reporte recibido</strong><br>${esc(value.meeting_date)} · Asistentes: ${value.attendance ?? '—'}</div>
-          <p class="muted">Tu reporte llegó. Como tu nombre no coincide con ningún grupo, Administración lo asigna al tuyo en el panel; no tienes que enviarlo otra vez.</p>`
+          <p class="muted">Tu reporte quedó guardado. Entra solo a tu grupo en cuanto tu nombre coincida con el del líder o co-líder registrado; no tienes que enviarlo otra vez.</p>`
         )
       );
     })
