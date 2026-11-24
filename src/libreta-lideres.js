@@ -151,6 +151,14 @@ async function saveSubmission(db, { device, name, answers }) {
      ON CONFLICT (device_id) DO UPDATE SET name = EXCLUDED.name, answers = EXCLUDED.answers, updated_at = now()`,
     [device, name, JSON.stringify(answers)]
   );
+  /* Lo enviado entra también en la hoja misma (libreta_lideres): como en la libretica del REDIL,
+   * lo que llega por el enlace se ve al abrir la libreta, en las casillas de cada propuesta.
+   * Solo se llenan las casillas que traen texto; una casilla vacía no borra lo que ya tenga la hoja. */
+  for (const [k, v] of Object.entries(answers || {})) {
+    if (!KEYS.has(k)) continue;
+    if (!String(v ?? '').trim()) continue;
+    await saveField(db, k, v);
+  }
 }
 async function listSubmissions(db) {
   const { rows } = await db.query('SELECT id, name, answers, updated_at FROM libreta_lideres_respuestas ORDER BY lower(name), id');
