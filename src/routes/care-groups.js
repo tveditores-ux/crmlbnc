@@ -257,15 +257,15 @@ function careGroupsRouter(ctx) {
     ah(async (req, res) => {
       const link = await reportLink.ensureLink(db);
       const url = `${String(config.publicUrl || '').replace(/\/$/, '')}/reportes/${link.token}`;
-      const groups = (await db.query('SELECT id, name, leader_name, co_leader_name FROM care_groups WHERE active ORDER BY lower(name)')).rows;
+      // Asignación automática: al abrir esta página, todo reporte guardado cuyo nombre ya apunta
+      // a un solo grupo entra directo a ese grupo. No hay asignación manual.
+      await reportLink.autoAssignPending(db);
       const pending = await reportLink.listPending(db);
       const cards = pending
         .map(
-          (s) => `<div class="card"><h3 style="margin-top:0">${esc(s.leader_name)} <span class="badge b-warn">Sin grupo claro</span></h3>
+          (s) => `<div class="card"><h3 style="margin-top:0">${esc(s.leader_name)} <span class="badge b-warn">Sin reconocer</span></h3>
             <p class="muted" style="font-size:13px">Reunión del ${esc(short(typeof s.meeting_date === 'string' ? s.meeting_date : new Date(s.meeting_date).toLocaleDateString('en-CA', { timeZone: 'UTC' })))} · Asistentes: ${s.attendance ?? '—'}${s.guests_count ? ` · Invitados: ${s.guests_count}` : ''}${s.offering ? ` · Ofrenda: ${esc(s.offering)}` : ''}</p>
-            ${s.notes ? `<p style="margin:6px 0">${esc(s.notes)}</p>` : ''}
-            <p class="toolbar" style="margin:10px 0 0"><form class="inline" method="post" action="/grupos/reporte-comun/pendientes/${s.id}/aplicar"><select name="group_id" style="max-width:280px">${groups.map((g) => `<option value="${g.id}">${esc(g.name)}${g.leader_name ? ` · ${esc(cg.leaderLabel(g))}` : ''}</option>`).join('')}</select> <button class="small">Asignar a este grupo</button></form>
-              <form class="inline" method="post" action="/grupos/reporte-comun/pendientes/${s.id}/descartar"><button class="small danger">Descartar</button></form></p></div>`
+            ${s.notes ? `<p style="margin:6px 0">${esc(s.notes)}</p>` : ''}</div>`
         )
         .join('');
       page(
@@ -273,15 +273,16 @@ function careGroupsRouter(ctx) {
         res,
         'Reporte semanal (enlace común)',
         `<p><a href="/grupos">← Grupos de cuidado</a></p><h1>Reporte semanal: enlace común</h1>
-        <p class="sub">Este es el remoto de reporte <strong>aparte</strong> del enlace de cada grupo: un solo enlace para todos los líderes, sin pestañas ni nada más. El líder lo guarda en su teléfono como «Reporte», escribe su nombre y envía cada semana; no hay que generar ni mandar enlaces nuevos. Si su nombre coincide con el de su grupo, el reporte entra solo; si no, queda aquí abajo para asignarlo.</p>
+        <p class="sub">Este es el remoto de reporte <strong>aparte</strong> del enlace de cada grupo: un solo enlace para todos los líderes, sin pestañas ni nada más. El líder lo guarda en su teléfono como «Reporte», escribe su nombre y envía cada semana; no hay que generar ni mandar enlaces nuevos. El reporte entra <strong>directo al grupo de quien lo envía</strong>: se reconoce por el nombre del líder o del co-líder del grupo, aunque lo escriba corto o junto al de su pareja. Nadie asigna nada a mano.</p>
         <div class="card"><h3>Enlace del reporte para todos los líderes</h3>
           <input type="text" id="reportUrl" readonly value="${esc(url)}" onclick="this.select()" style="font-size:13px" ${link.active ? '' : 'disabled'}>
           <p class="toolbar" style="margin-top:8px"><button type="button" class="small sec" id="copyReportUrl">Copiar enlace</button>
             <form class="inline" method="post" action="/grupos/reporte-comun/enlace/${link.active ? 'apagar' : 'encender'}"><button class="small ${link.active ? 'danger' : 'sec'}">${link.active ? 'Apagar enlace' : 'Encender enlace'}</button></form>
             <form class="inline" method="post" action="/grupos/reporte-comun/enlace/regenerar" onsubmit="return confirm('El enlace anterior dejará de funcionar y los líderes tendrán que guardar el nuevo. ¿Generar uno nuevo?')"><button class="small sec">Generar enlace nuevo</button></form></p>
           <p class="muted" style="font-size:13px;margin:0">Compártelo solo con los líderes de grupo de cuidado. Está en Grupos de cuidado → «Reporte semanal (enlace común)».</p></div>
-        <h2>Reportes por asignar (${pending.length})</h2>
-        ${cards || '<p class="muted">No hay reportes esperando asignación.</p>'}
+        <h2>Reportes sin reconocer (${pending.length})</h2>
+        ${cards || '<p class="muted">Ninguno: todos los reportes entraron directo a su grupo.</p>'}
+        ${pending.length ? '<p class="muted" style="font-size:13px">Estos nombres no coinciden todavía con el líder o el co-líder de un solo grupo, así que el reporte quedó guardado sin entrar. En cuanto el nombre coincida — por ejemplo, al corregir quién lidera el grupo con su botón Editar — entra solo al abrir esta página. No se pierde.</p>' : ''}
         <script>document.getElementById('copyReportUrl').addEventListener('click', function(){ var b = this, f = document.getElementById('reportUrl'); (navigator.clipboard ? navigator.clipboard.writeText(f.value) : Promise.reject()).then(function(){ b.textContent = '¡Copiado!'; setTimeout(function(){ b.textContent = 'Copiar enlace'; }, 1500); }, function(){ f.select(); b.textContent = 'Selecciona y copia'; }); });</script>`
       );
     })
@@ -296,21 +297,6 @@ function careGroupsRouter(ctx) {
       }
       await reportLink.setLinkActive(db, req.params.accion === 'encender');
       go(res, '/grupos/reporte-comun', { ok: req.params.accion === 'encender' ? 'Enlace encendido.' : 'Enlace apagado.' });
-    })
-  );
-
-  r.post(
-    '/grupos/reporte-comun/pendientes/:id/aplicar',
-    ah(async (req, res) => {
-      const ok = await reportLink.applySubmission(db, Number(req.params.id), Number(req.body.group_id));
-      go(res, '/grupos/reporte-comun', ok ? { ok: 'Reporte asignado a su grupo.' } : { err: 'No pude asignar ese reporte. Revisa que el grupo esté activo.' });
-    })
-  );
-  r.post(
-    '/grupos/reporte-comun/pendientes/:id/descartar',
-    ah(async (req, res) => {
-      await reportLink.discardSubmission(db, Number(req.params.id));
-      go(res, '/grupos/reporte-comun', { ok: 'Reporte descartado.' });
     })
   );
 
