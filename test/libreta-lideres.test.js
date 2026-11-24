@@ -173,3 +173,23 @@ test('respuestas: borrar una respuesta desde el panel', async (t) => {
     assert.equal((await db.query('SELECT 1 FROM libreta_lideres_respuestas')).rows.length, 0);
   });
 });
+
+test('respuestas: al enviar, también entran en las casillas de la libreta (la misma hoja, como el REDIL)', async (t) => {
+  await withApp(t, async ({ db, get, base }) => {
+    const token = tokenOf(await (await get('/libreta-lideres')).text());
+    await sendTo(base, token, { device: DEV, name: 'Laura', answers: { l3a: 'Acuerdo de Laura', l3b: 'El lunes' } });
+    await sendTo(base, token, { device: 'otro-aparato-00000002', name: 'Silmar', answers: { l5a: 'Acuerdo de Silmar' } });
+    const d = await ll.loadAll(db);
+    assert.equal(d.l3a, 'Acuerdo de Laura');
+    assert.equal(d.l3b, 'El lunes');
+    assert.equal(d.l5a, 'Acuerdo de Silmar');
+    assert.equal(d.l1a, undefined); // lo no enviado no aparece
+    const panel = await (await get('/libreta-lideres')).text();
+    assert.ok(panel.includes('Acuerdo de Laura') && panel.includes('Acuerdo de Silmar'));
+    // Una casilla vacía en un reenvío no borra lo que ya entró a la hoja.
+    await sendTo(base, token, { device: DEV, name: 'Laura', answers: { l3a: 'Acuerdo corregido' } });
+    const d2 = await ll.loadAll(db);
+    assert.equal(d2.l3a, 'Acuerdo corregido');
+    assert.equal(d2.l3b, 'El lunes');
+  });
+});

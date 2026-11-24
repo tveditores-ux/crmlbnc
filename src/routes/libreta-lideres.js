@@ -62,7 +62,7 @@ const REMOTE_SCRIPT = `
     if(name.trim().length<2){say('Escribe tu nombre arriba');return}
     say('Enviando…');
     fetch(location.pathname+'/enviar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({device:dev,name:name,answers:ans})})
-      .then(function(r){if(r.ok)say('Enviado. Gracias');else if(r.status===400)return r.json().then(function(j){say((j.errors||['No se pudo enviar'])[0])});else throw 0})
+      .then(function(r){if(r.ok)say('Enviado: ya está en la libreta');else if(r.status===400)return r.json().then(function(j){say((j.errors||['No se pudo enviar'])[0])});else throw 0})
       .catch(function(){say('No se pudo enviar. Intenta de nuevo')});
   };
   document.getElementById('copy').onclick=function(){var t=compile();try{navigator.clipboard.writeText(t).then(function(){say('Copiado')},function(){fb(t)})}catch(e){fb(t)}};
@@ -135,7 +135,7 @@ function libretaLideresRouter(ctx) {
         <p class="sub">Las 7 propuestas de los líderes y coordinadores, con el punto que cada uno expuso y su solución clave. Lo que se escribe en las casillas se guarda solo y lo ve cualquiera que entre al panel. El equipo pastoral no está en esta libreta.</p>
         <div class="card">
           <h2 style="margin-top:0">Libreta para los líderes</h2>
-          <p class="muted" style="margin:0 0 10px">Envía este enlace por WhatsApp: cada persona abre solo esta libreta en el teléfono, sin entrar al CRM. Lo que escribe se queda en su teléfono hasta que toque «Enviar a la iglesia»; entonces llega a <a href="/libreta-lideres/respuestas">Respuestas de los líderes (${nResp})</a>.</p>
+          <p class="muted" style="margin:0 0 10px">Envía este enlace por WhatsApp: cada persona abre solo esta libreta en el teléfono, sin entrar al CRM. Lo que escribe se queda en su teléfono hasta que toque «Enviar a la iglesia»; entonces entra aquí mismo, en las casillas de esta libreta, y queda también en <a href="/libreta-lideres/respuestas">Respuestas de los líderes (${nResp})</a>.</p>
           ${link.active ? `<input type="text" readonly value="${esc(url)}" onclick="this.select()" class="mono">` : '<p><span class="badge b-warn">Enlace apagado</span></p>'}
           <div class="actions">
             ${link.active ? `<a class="btn small" href="https://wa.me/?text=${encodeURIComponent('Libreta de líderes — propuestas: ' + url)}" target="_blank" rel="noopener">Enviar por WhatsApp</a>` : ''}
@@ -234,7 +234,9 @@ function libretaLideresRouter(ctx) {
 }
 
 /**
- * Libreta de los líderes: sin sesión, protegida por el enlace secreto. No lee ni escribe la hoja del panel.
+ * Libreta de los líderes: sin sesión, protegida por el enlace secreto. La página no lee la base;
+ * al enviar, las respuestas se guardan por aparato Y llenan las casillas de la hoja del panel
+ * (la misma libreta), como en la libretica del REDIL.
  * El panel comparte el prefijo /libreta-lideres: los segmentos cortos de sus rutas (respuestas,
  * guardar, …) no son tokens (un token tiene 16+ caracteres), así que se dejan pasar con next()
  * para que los atienda el guardia de sesión y el router del panel.
