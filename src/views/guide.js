@@ -23,6 +23,7 @@ const NAV_HELP = {
   '/nueva-vida': 'Nueva Vida: las personas que tomaron la decisión de seguir a Jesús, con su carta de bienvenida y su seguimiento.',
   '/consolidacion': 'Consolidación: el camino de cada nuevo creyente. Llamada en 48 horas, reunión, Primeros Pasos, bautismo y grupo de cuidado.',
   '/bautizados': 'Bautizados: el registro de bautismos con fecha, sede y quién bautizó, sus fotos y un reporte para imprimir.',
+  '/presentacion-ninos': 'Presentación de Niños: el registro de los niños presentados al Señor, con su fecha, sede, padres o representantes y quién los presentó.',
   '/grupos': 'Grupos de cuidado: cada GdC con su líder, día y lugar, sus reportes semanales y el enlace del líder para reportar desde el teléfono.',
   '/oracion': 'Buzón de oración: las peticiones de oración que llegan por Grace o que escribes tú, para enviarlas por WhatsApp al líder del grupo o al pastor de la congregación.',
   '/guia': 'Guía del líder: las respuestas aprobadas a las dudas de los líderes. Grace solo usa las confirmadas.',

@@ -119,6 +119,7 @@ const NAV_GROUPS = [
       ['/nueva-vida', 'Nueva Vida'],
       ['/consolidacion', 'Consolidación'],
       ['/bautizados', 'Bautizados'],
+      ['/presentacion-ninos', 'Presentación de Niños'],
       ['/oracion', 'Buzón de oración'],
     ],
   },

@@ -16,6 +16,7 @@ const { reportRouter } = require('./routes/report');
 const { consolidationRouter } = require('./routes/consolidation');
 const { nuevaVidaRouter } = require('./routes/nueva-vida');
 const { bautizadosRouter } = require('./routes/bautizados');
+const { presentacionesNinosRouter } = require('./routes/presentaciones-ninos');
 const { reunionEquipoRouter, reunionRemotaRouter } = require('./routes/reunion-equipo');
 const { libretaLideresRouter, libretaLideresRemotaRouter } = require('./routes/libreta-lideres');
 const { remoteRouter } = require('./routes/attendance-remote');
@@ -171,6 +172,7 @@ function createApp(ctx) {
   app.use(consolidationRouter(ctx));
   app.use(nuevaVidaRouter(ctx));
   app.use(bautizadosRouter(ctx));
+  app.use(presentacionesNinosRouter(ctx));
   app.use(reunionEquipoRouter(ctx));
   app.use(libretaLideresRouter(ctx));
   app.use(careGroupsRouter(ctx));
