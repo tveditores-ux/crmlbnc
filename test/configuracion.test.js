@@ -326,3 +326,33 @@ test('asistente: errores no guardan nada; probar la clave del modelo es de solo 
     await s.close();
   }
 });
+
+test('pausa de envíos: desde Configuración no sale ningún WhatsApp hasta reactivar', async (t) => {
+  const s = await setup(t);
+  if (!s) return;
+  try {
+    await s.post('/configuracion/wecall', { provider: 'wecall', base_url: 'https://wecall.ejemplo.com/', api_key: KEY, webhook_secret: WH });
+    s.setStatus(200);
+    await s.ctx.channels.whatsapp.sendText('584145551212', 'Hola');
+    assert.equal(s.calls.length, 1); // sin pausa, envía
+
+    const page = await (await s.get('/configuracion')).text();
+    assert.ok(page.includes('/configuracion/pausa') && page.includes('Activos'));
+
+    const r = await s.post('/configuracion/pausa', { paused: 'si' });
+    assert.ok(s.flash(r).includes('PAUSADOS'));
+    assert.equal(s.config.whatsappPaused, true);
+    assert.equal(s.ctx.channels.whatsapp.paused, true);
+    await assert.rejects(() => s.ctx.channels.whatsapp.sendText('584145551212', 'Hola'), /pausados/);
+    await assert.rejects(() => s.ctx.channels.whatsapp.sendTemplate('584145551212', 'confirmacion_redil', ['Ana']), /pausados/);
+    assert.equal(s.calls.length, 1); // nada más salió a la red
+
+    const r2 = await s.post('/configuracion/pausa', { paused: 'no' });
+    assert.ok(s.flash(r2).includes('reactivados'));
+    assert.equal(s.config.whatsappPaused, false);
+    await s.ctx.channels.whatsapp.sendText('584145551212', 'Hola de nuevo');
+    assert.equal(s.calls.length, 2);
+  } finally {
+    await s.close();
+  }
+});

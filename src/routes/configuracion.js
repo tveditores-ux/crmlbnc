@@ -68,6 +68,15 @@ function configuracionRouter(ctx) {
         ${stored[key] ? `<label style="font-weight:400;font-size:13px;margin-top:6px"><input type="checkbox" name="${clearName}" value="1" style="width:auto"> Borrar la que guardé en el panel${src(key) === 'panel' && config._env && (key === 'wecallApiKey' ? config._env.wecall.apiKey : config._env.wecall.webhookSecret) ? ' (volvería a valer la de Railway)' : ''}</label>` : ''}</div>`;
       const body = `<h1>Configuración</h1>
         <p class="sub">Aquí se escriben las claves de WeCall, sin entrar a Railway. Lo que guardes aquí se aplica al instante y manda sobre lo que diga Railway.</p>
+        <div class="card"><h2 style="margin-top:0">Envíos de WhatsApp ${SOURCE[src('whatsappPaused')]}</h2>
+          <p style="margin:0 0 10px">Estado: ${config.whatsappPaused ? '<span class="badge b-bad">PAUSADOS: no sale ningún mensaje de WhatsApp</span>' : '<span class="badge b-ok">Activos</span>'}</p>
+          <p class="muted" style="margin:0 0 10px;font-size:13px">Al pausar, no sale nada por WhatsApp: ni respuestas del asistente, ni recordatorios, ni envíos del panel. Los mensajes que la gente escriba siguen llegando y quedando guardados. Sirve, por ejemplo, mientras se crean y aprueban las plantillas nuevas en Meta.</p>
+          <form method="post" action="/configuracion/pausa" autocomplete="off">
+            <label for="wa_paused">Envíos de WhatsApp</label>
+            <select id="wa_paused" name="paused"><option value="no" ${config.whatsappPaused ? '' : 'selected'}>Activos: el CRM envía con normalidad</option><option value="si" ${config.whatsappPaused ? 'selected' : ''}>Pausados: no sale ningún mensaje</option></select>
+            <div class="actions"><button>Guardar</button></div>
+          </form>
+        </div>
         <div class="card"><h2 style="margin-top:0">WhatsApp por WeCall</h2>
           <p style="margin:0 0 10px">Estado: ${isWc ? '<span class="badge b-ok">El CRM envía y recibe por WeCall</span>' : '<span class="badge b-warn">Usando Meta directo (WeCall apagado)</span>'}
             ${isWc && missing.length ? ` <span class="badge b-bad">Falta: ${esc(missing.join(', '))}</span>` : ''}</p>
@@ -135,6 +144,17 @@ function configuracionRouter(ctx) {
           <p style="margin:0">${config.dryRun ? '<span class="badge b-warn">Prueba (DRY_RUN): los mensajes se registran pero no se envían</span>' : '<span class="badge b-ok">Envíos reales</span>'}</p>
           <p class="muted" style="margin:6px 0 0;font-size:13px">Este interruptor es de seguridad y solo se cambia en Railway (variable <span class="mono">DRY_RUN</span>), a propósito.</p></div>`;
       res.send(layout({ title: 'Configuración', active: '/configuracion', body, config, query: req.query }));
+    })
+  );
+
+  r.post(
+    '/configuracion/pausa',
+    ah(async (req, res) => {
+      const b = req.body || {};
+      if (!['si', 'no'].includes(b.paused)) return go(res, { err: 'Elige si los envíos de WhatsApp van activos o pausados.' });
+      await settings.setValue(db, config.sessionSecret, 'whatsappPaused', b.paused);
+      await settings.apply(ctx);
+      go(res, { ok: b.paused === 'si' ? 'Envíos de WhatsApp PAUSADOS: no saldrá ningún mensaje hasta que los reactives aquí.' : 'Envíos de WhatsApp reactivados.' });
     })
   );
 
