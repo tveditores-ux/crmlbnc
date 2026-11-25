@@ -114,6 +114,11 @@ const TOOLS = [
     input_schema: { type: 'object', properties: { ...DATES } },
   },
   {
+    name: 'presentaciones_ninos',
+    description: 'Niños presentados al Señor: nombre del niño, fecha de presentación, sede, padres o representantes y quién lo presentó. Sin fechas: últimos 12 meses.',
+    input_schema: { type: 'object', properties: { ...DATES } },
+  },
+  {
     name: 'eventos',
     description: 'Eventos de la iglesia con fecha, lugar y cuántos confirmaron, no pueden o no han respondido. Sin fechas: de hoy a 30 días.',
     input_schema: { type: 'object', properties: { ...DATES } },
@@ -306,6 +311,14 @@ async function runTool(db, config, name, input = {}, now = new Date()) {
         [desde, hasta]
       );
       return { rango: { desde, hasta }, total: rows.length, personas: rows.map((r) => ({ nombre: r.full_name, fecha: day(r.baptism_date), sede: r.sede, bautizo: r.minister })) };
+    }
+    case 'presentaciones_ninos': {
+      const { desde, hasta } = range(input, now, tz, { back: 365 });
+      const { rows } = await db.query(
+        `SELECT child_name, presentation_date, sede, parents, presented_by FROM presentaciones_ninos WHERE presentation_date BETWEEN $1 AND $2 ORDER BY presentation_date DESC, child_name LIMIT 200`,
+        [desde, hasta]
+      );
+      return { rango: { desde, hasta }, total: rows.length, ninos: rows.map((r) => ({ nombre: r.child_name, fecha: day(r.presentation_date), sede: r.sede, padres: r.parents, presento: r.presented_by })) };
     }
     case 'eventos': {
       const { desde, hasta } = range(input, now, tz, { back: 0, ahead: 30 });

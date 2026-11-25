@@ -11,8 +11,8 @@ test('menú agrupado: los 6 grupos con sus sub-pestañas y todas las rutas de si
   for (const g of ['Personas y grupos', 'Seguimiento', 'Equipo y reuniones', 'Agenda y servicios', 'Comunicación', 'Configuración'])
     assert.ok(nav.includes(`<summary>${g}</summary>`), g);
   const hrefs = [...nav.matchAll(/<a href="([^"]+)"/g)].map((m) => m[1]);
-  assert.equal(hrefs.length, 24);
-  for (const h of ['/', '/personas', '/grupos', '/ministerios', '/registros', '/nueva-vida', '/consolidacion', '/bautizados', '/oracion', '/reunion-equipo', '/libreta-lideres', '/redil/libreta', '/redil/preguntas', '/guia', '/eventos', '/calendario', '/asistencia', '/reporte', '/mensajes', '/conversaciones', '/asistente', '/configuracion', '/pruebas', '/grace'])
+  assert.equal(hrefs.length, 25);
+  for (const h of ['/', '/personas', '/grupos', '/ministerios', '/registros', '/nueva-vida', '/consolidacion', '/bautizados', '/presentacion-ninos', '/oracion', '/reunion-equipo', '/libreta-lideres', '/redil/libreta', '/redil/preguntas', '/guia', '/eventos', '/calendario', '/asistencia', '/reporte', '/mensajes', '/conversaciones', '/asistente', '/configuracion', '/pruebas', '/grace'])
     assert.ok(hrefs.includes(h), h);
 });
 
