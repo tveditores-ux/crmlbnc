@@ -4,8 +4,24 @@
  * Presentación de niños: registro de los niños presentados al Señor, como Bautizados pero de niños.
  * Lista independiente (sin FK a people): registrar aquí no crea personas ni toca opt_in.
  */
+const { parseCsv, normalizeHeader } = require('./csv');
+const { normName } = require('./consolidation/match');
+const { tx } = require('./db');
 
 const SEDES = ['Las Mercedes', 'Nuarito'];
+const MAX_ROWS = 2000;
+
+/** Columnas del archivo de carga (sin tildes ni mayúsculas) y el campo al que van. */
+const HEADERS = {
+  nombre: 'name', nino: 'name', nombre_del_nino: 'name', nombre_completo: 'name',
+  nacimiento: 'birth_date', fecha_nacimiento: 'birth_date', fecha_de_nacimiento: 'birth_date',
+  fecha_presentacion: 'presentation_date', presentacion: 'presentation_date', fecha: 'presentation_date',
+  sede: 'sede',
+  padres: 'parents', representantes: 'parents', padres_o_representantes: 'parents',
+  presentado_por: 'presented_by', presentado: 'presented_by',
+  nota: 'note', fuente: 'source', lista: 'source',
+};
+const TEMPLATE_HEADERS = ['nombre', 'nacimiento', 'fecha_presentacion', 'sede', 'padres', 'presentado_por', 'nota'];
 
 const clip = (v, n) => String(v ?? '').trim().replace(/\s+/g, ' ').slice(0, n);
 
@@ -97,4 +113,57 @@ async function remove(db, id) {
   return rowCount > 0;
 }
 
-module.exports = { SEDES, parseDate, validateRow, add, list, stats, remove };
+/**
+ * Lee una lista ya existente. Sirve de dos formas:
+ *  - Archivo CSV con encabezados (debe traer la columna "nombre").
+ *  - Lista simple: un nombre por línea, sin encabezados.
+ * defaults (fecha de presentación, sede, presentado por, fuente) se aplican a las filas que no traen ese dato.
+ * Clasifica cada fila: nueva / ya_estaba (mismo nombre y misma fecha de presentación) / repetida (dos veces en la lista).
+ */
+async function prepareImport(db, text, { today, defaults = {} } = {}) {
+  const rows = parseCsv(text);
+  const fileErrors = [];
+  if (!rows.length) return { records: [], fileErrors: ['No hay nada que cargar.'], unknown: [], mode: 'lista' };
+  const headers = rows[0].map(normalizeHeader);
+  const fields = headers.map((h) => HEADERS[h] || null);
+  const mode = fields.includes('name') ? 'csv' : 'lista';
+  const unknown = mode === 'csv' ? rows[0].filter((_, i) => !fields[i] && headers[i]) : [];
+  const body = mode === 'csv' ? rows.slice(1) : rows;
+  if (body.length > MAX_ROWS) fileErrors.push(`Hay más de ${MAX_ROWS} filas. Divídelo en partes.`);
+
+  const existing = (await db.query('SELECT child_name, presentation_date::text AS d FROM presentaciones_ninos')).rows;
+  const byNameDate = new Set(existing.map((r) => `${normName(r.child_name)}|${r.d || ''}`));
+  const seenNameDate = new Set();
+  const records = [];
+  body.slice(0, MAX_ROWS).forEach((cells, idx) => {
+    const raw = {};
+    if (mode === 'csv') fields.forEach((f, i) => f && (raw[f] = cells[i] || ''));
+    else raw.name = cells.map((c) => c.trim()).filter(Boolean).join(' ');
+    for (const k of ['presentation_date', 'sede', 'presented_by', 'source']) if (!String(raw[k] || '').trim() && defaults[k]) raw[k] = defaults[k];
+    const { value, errors } = validateRow(raw, today);
+    let status = 'nueva';
+    const nd = `${normName(value.child_name)}|${value.presentation_date || ''}`;
+    if (byNameDate.has(nd)) status = 'ya_estaba';
+    else if (seenNameDate.has(nd)) status = 'repetida';
+    seenNameDate.add(nd);
+    records.push({ line: idx + (mode === 'csv' ? 2 : 1), value, errors, status });
+  });
+  return { records, fileErrors, unknown, mode };
+}
+
+/** Guarda las filas nuevas. Las que ya estaban o están repetidas se omiten. Todo o nada. */
+async function applyImport(pool, prepared) {
+  if (prepared.fileErrors.length || prepared.records.some((r) => r.errors.length)) throw new Error('La carga tiene errores.');
+  const toSave = prepared.records.filter((r) => r.status === 'nueva');
+  await tx(pool, async (db) => {
+    for (const { value: v } of toSave) {
+      await db.query(
+        'INSERT INTO presentaciones_ninos (child_name, birth_date, presentation_date, sede, parents, presented_by, note, source) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+        [v.child_name, v.birth_date, v.presentation_date, v.sede, v.parents, v.presented_by, v.note, v.source]
+      );
+    }
+  });
+  return { saved: toSave.length, skipped: prepared.records.length - toSave.length };
+}
+
+module.exports = { SEDES, HEADERS, TEMPLATE_HEADERS, parseDate, validateRow, add, list, stats, remove, prepareImport, applyImport };

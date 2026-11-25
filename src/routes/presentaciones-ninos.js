@@ -54,7 +54,8 @@ function presentacionesNinosRouter(ctx) {
         res,
         'Presentación de Niños',
         `<h1>Presentación de Niños</h1>
-        <p class="sub">Registro de los niños presentados al Señor. Registrar aquí no crea personas en Personas ni suscribe a nadie a mensajes.</p>
+        <p class="sub">Registro de los niños presentados al Señor. Puedes agregarlos uno por uno aquí abajo o cargar una lista que ya tengas. Registrar aquí no crea personas en Personas ni suscribe a nadie a mensajes.</p>
+        <div class="actions"><a class="btn" href="/presentacion-ninos/importar">Cargar una lista</a></div>
         <div class="grid">
           <div class="card"><div class="stat">${st.total}</div><div class="stat-label">niños presentados</div></div>
           <div class="card"><div class="stat" style="color:var(--ok)">${st.this_year}</div><div class="stat-label">presentados en ${year}</div></div>
@@ -91,6 +92,67 @@ function presentacionesNinosRouter(ctx) {
         );
       }
       res.redirect(303, '/presentacion-ninos?ok=' + encodeURIComponent('Presentación registrada.'));
+    })
+  );
+
+  /* ------------------------------ Cargar una lista ------------------------------ */
+  function importPage(b, extra = '') {
+    const t = (name, label, type = 'text', more = '') => `<div><label>${label}</label><input type="${type}" name="${name}" value="${esc(b[name] || '')}" ${more}></div>`;
+    const sedeOpts = `<option value="">—</option>${pn.SEDES.map((s) => `<option value="${esc(s)}" ${b.sede === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}`;
+    return `<p><a href="/presentacion-ninos">← Presentación de Niños</a></p><h1>Cargar una lista de niños presentados</h1>
+      <p class="sub">Primero se revisa, y nada se guarda hasta que pulses "Guardar". Puedes:</p>
+      <ul class="sub">
+        <li><strong>Pegar una lista simple:</strong> un nombre por línea.</li>
+        <li><strong>Subir un archivo CSV</strong> (Excel o Google Sheets → Descargar como CSV) con estas columnas: <span class="mono">${esc(pn.TEMPLATE_HEADERS.join(', '))}</span>. Solo hace falta <span class="mono">nombre</span>.</li>
+      </ul>
+      <form method="post" class="card">
+        <label>Archivo CSV</label><input type="file" accept=".csv,.txt,text/csv,text/plain" id="file">
+        <label>O pega la lista aquí</label>
+        <textarea name="csv" id="csv" style="min-height:160px" class="mono">${esc(b.csv || '')}</textarea>
+        <p class="muted" style="font-size:13px;margin:10px 0 0">Para toda la lista (se usa cuando una fila no trae ese dato):</p>
+        <div class="row">${t('presentation_date', 'Fecha de presentación', 'date', `max="${esc(today())}"`)}<div><label>Sede</label><select name="sede">${sedeOpts}</select></div>${t('presented_by', 'Presentado por')}${t('source', 'Nombre de la lista', 'text', 'placeholder="Ej.: Presentaciones 2025"')}</div>
+        <div class="actions"><button name="accion" value="revisar">Revisar</button><a class="btn sec" href="/presentacion-ninos">Cancelar</a></div>
+      </form>${extra}
+      <script>
+        document.getElementById('file').addEventListener('change', function(e){
+          var f = e.target.files[0]; if(!f) return;
+          var rd = new FileReader();
+          rd.onload = function(){ document.getElementById('csv').value = rd.result; };
+          rd.readAsText(f, 'UTF-8');
+        });
+      </script>`;
+  }
+
+  r.get('/presentacion-ninos/importar', (req, res) => page(req, res, 'Cargar una lista', importPage({})));
+
+  r.post(
+    '/presentacion-ninos/importar',
+    ah(async (req, res) => {
+      const b = {};
+      for (const k of ['csv', 'presentation_date', 'sede', 'presented_by', 'source']) b[k] = String(req.body[k] || '');
+      const defaults = { presentation_date: b.presentation_date, sede: b.sede, presented_by: b.presented_by, source: b.source.trim() || 'Lista cargada' };
+      const prep = await pn.prepareImport(db, b.csv, { today: today(), defaults });
+      const errs = prep.fileErrors.concat(prep.records.flatMap((x) => x.errors.map((e) => `Línea ${x.line}: ${e}`)));
+      if (req.body.accion === 'guardar' && !errs.length) {
+        const s = await pn.applyImport(db, prep);
+        return res.redirect(303, '/presentacion-ninos?ok=' + encodeURIComponent(`Lista cargada: ${s.saved} niños nuevos${s.skipped ? `, ${s.skipped} omitidos porque ya estaban o venían repetidos` : ''}.`));
+      }
+      const by = (st) => prep.records.filter((x) => x.status === st);
+      const nuevos = by('nueva');
+      const preview = nuevos
+        .slice(0, 300)
+        .map((x) => `<tr><td>${esc(x.value.child_name || '—')}</td><td>${esc(dmy(x.value.birth_date))}</td><td>${esc(dmy(x.value.presentation_date))}</td><td>${esc(x.value.sede || '—')}</td><td>${esc(x.value.parents || '—')}</td></tr>`)
+        .join('');
+      const summary = `<div class="grid">
+        <div class="card"><div class="stat">${nuevos.length}</div><div class="stat-label">niños nuevos</div></div>
+        <div class="card"><div class="stat">${by('ya_estaba').length + by('repetida').length}</div><div class="stat-label">se omiten (ya estaban o repetidos)</div></div></div>
+        <p class="muted">${prep.mode === 'csv' ? 'Se leyó como archivo con columnas.' : 'Se leyó como lista simple: un nombre por línea.'}${prep.unknown.length ? ` Columnas ignoradas: ${esc(prep.unknown.join(', '))}.` : ''}</p>`;
+      const hidden = Object.entries(b).map(([k, v]) => (k === 'csv' ? `<textarea name="csv" hidden>${esc(v)}</textarea>` : `<input type="hidden" name="${k}" value="${esc(v)}">`)).join('');
+      const body = errs.length
+        ? `${summary}<div class="flash err"><strong>No se puede guardar todavía.</strong> Corrige esto y vuelve a revisar:<br>${errs.slice(0, 40).map(esc).join('<br>')}${errs.length > 40 ? `<br>… y ${errs.length - 40} más.` : ''}</div>`
+        : `${summary}${nuevos.length ? `<div class="table-scroll"><table><tr><th>Niño</th><th>Nacimiento</th><th>Presentación</th><th>Sede</th><th>Padres</th></tr>${preview}</table></div>${nuevos.length > 300 ? `<p class="muted">… y ${nuevos.length - 300} más.</p>` : ''}
+           <form method="post">${hidden}<div class="actions"><button name="accion" value="guardar">Guardar ${nuevos.length} niños</button></div></form>` : '<div class="flash ok">No hay ningún niño nuevo para guardar.</div>'}`;
+      page(req, res, 'Cargar una lista', importPage(b, body));
     })
   );
 
