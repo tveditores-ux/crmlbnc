@@ -23,6 +23,11 @@ test('menú agrupado: el grupo de la página actual entra abierto y los demás c
   assert.equal((nav.match(/<details class="nav-group" open>/g) || []).length, 1);
 });
 
+test('menú agrupado: las sub-pestañas van una debajo de la otra (bloque, no en línea)', () => {
+  const html = layout({ title: 'Inicio', active: '/', body: '', config });
+  assert.match(html, /nav details\.nav-group a\{display:block\}/);
+});
+
 test('menú agrupado: Grace va suelta, fuera de los grupos y con su color', () => {
   const nav = navOf(layout({ title: 'Inicio', active: '/', body: '', config }));
   assert.match(nav, /<a href="\/grace" class="grace-tab">Grace \(control remoto\)<\/a>/);
