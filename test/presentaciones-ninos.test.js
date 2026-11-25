@@ -55,6 +55,43 @@ test('registro: se agrega, se lista escapado, no crea personas y se puede borrar
   });
 });
 
+test('cargar una lista: CSV con columnas, simples por línea, sin duplicar los que ya están', async (t) => {
+  const h = await openTestDb();
+  if (!h) return t.skip('sin base de datos de prueba');
+  try {
+    await pn.add(h.db, { name: 'Samuel Pérez', presentation_date: '2026-11-22', sede: 'Las Mercedes' }, HOY);
+    const csv = ['nombre,nacimiento,fecha_presentacion,sede,padres', 'Samuel Pérez,,22/11/2026,Las Mercedes,José y María', 'Ana Lucía Ruiz,05/01/2026,22/11/2026,Nuarito,Pedro Ruiz', 'Ana Lucía Ruiz,05/01/2026,22/11/2026,Nuarito,Pedro Ruiz'].join('\n');
+    const prep = await pn.prepareImport(h.db, csv, { today: HOY, defaults: { source: 'Lista cargada' } });
+    assert.equal(prep.mode, 'csv');
+    assert.deepEqual(prep.records.map((x) => x.status), ['ya_estaba', 'nueva', 'repetida']);
+    const s = await pn.applyImport(h.db, prep);
+    assert.equal(s.saved, 1);
+    assert.equal(s.skipped, 2);
+    const simple = await pn.prepareImport(h.db, 'Lucas Gómez\nMaría Fernanda León', { today: HOY, defaults: { presentation_date: '2026-11-22', sede: 'Las Mercedes', source: 'Presentaciones 2026' } });
+    assert.equal(simple.mode, 'lista');
+    assert.equal(simple.records.length, 2);
+    assert.equal(simple.records[0].value.presentation_date, '2026-11-22');
+    await pn.applyImport(h.db, simple);
+    assert.equal((await h.db.query('SELECT 1 FROM presentaciones_ninos')).rows.length, 4);
+  } finally {
+    await h.close();
+  }
+});
+
+test('cargar una lista por la página: revisar muestra la vista previa y guardar la aplica', async (t) => {
+  await withApp(t, async ({ db, base }) => {
+    const post = (body) => fetch(base + '/presentacion-ninos/importar', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(body), redirect: 'manual' });
+    const csv = 'nombre,fecha_presentacion\nSamuel Pérez,22/11/2026\nAna Lucía Ruiz,22/11/2026';
+    const rev = await post({ csv, accion: 'revisar' });
+    const htmlRev = await rev.text();
+    assert.ok(htmlRev.includes('niños nuevos') && htmlRev.includes('Samuel Pérez'));
+    assert.equal((await db.query('SELECT 1 FROM presentaciones_ninos')).rows.length, 0); // revisar no guarda
+    const save = await post({ csv, accion: 'guardar' });
+    assert.equal(save.status, 303);
+    assert.equal((await db.query('SELECT 1 FROM presentaciones_ninos')).rows.length, 2);
+  });
+});
+
 test('Grace pastoral: la herramienta de presentaciones existe y devuelve los niños', async (t) => {
   const h = await openTestDb();
   if (!h) return t.skip('sin base de datos de prueba');
