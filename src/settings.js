@@ -30,6 +30,7 @@ const FIELDS = {
   reportReminderHour: { env: 'REPORT_REMINDER_HOUR', label: 'Hora del recordatorio', secret: false },
   reportReminderTemplate: { env: 'REPORT_REMINDER_TEMPLATE', label: 'Plantilla del recordatorio', secret: false },
   prayerTemplate: { env: 'PRAYER_TEMPLATE', label: 'Plantilla del buzón de oración', secret: false },
+  whatsappPaused: { env: 'WHATSAPP_PAUSED', label: 'Envíos de WhatsApp pausados', secret: false },
 };
 const PROVIDERS = ['meta', 'wecall'];
 const MAX_SECRET = 300;
@@ -139,7 +140,7 @@ const removeValue = (db, key) => db.query('DELETE FROM app_settings WHERE key = 
 async function apply(ctx) {
   const { db, config } = ctx;
   if (!config._env) {
-    config._env = { whatsappProvider: config.whatsappProvider, wecall: { ...config.wecall }, agent: { ...config.agent } };
+    config._env = { whatsappProvider: config.whatsappProvider, whatsappPaused: config.whatsappPaused, wecall: { ...config.wecall }, agent: { ...config.agent } };
   }
   const stored = await loadStored(db, config.sessionSecret);
   const pick = (key, envValue) => (stored[key] && !stored[key].unreadable && stored[key].value ? stored[key].value : envValue);
@@ -172,6 +173,8 @@ async function apply(ctx) {
   config.agent.reportReminderHour = Number.isInteger(rh) && rh >= 0 && rh <= 23 && pick('reportReminderHour', null) !== null ? rh : a.reportReminderHour ?? 9;
   config.agent.reportReminderTemplate = pick('reportReminderTemplate', a.reportReminderTemplate || '');
   config.agent.prayerTemplate = pick('prayerTemplate', a.prayerTemplate || '');
+  const wp = pick('whatsappPaused', null);
+  config.whatsappPaused = wp === 'si' ? true : wp === 'no' ? false : Boolean(config._env.whatsappPaused);
   // el canal se reconstruye con la configuración nueva; quien lo usa lo lee de ctx.channels en cada envío
   const fresh = createChannels(config, { fetchImpl: ctx.fetchImpl });
   ctx.channels.whatsapp = fresh.whatsapp;
@@ -204,6 +207,7 @@ function sourceOf(key, stored, config) {
     reportReminderHour: env.agent.reportReminderHour !== undefined && env.agent.reportReminderHour !== 9 ? String(env.agent.reportReminderHour) : '',
     reportReminderTemplate: env.agent.reportReminderTemplate,
     prayerTemplate: env.agent.prayerTemplate,
+    whatsappPaused: env.whatsappPaused ? 'si' : '',
   }[key];
   return v ? 'railway' : 'falta';
 }

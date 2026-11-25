@@ -52,6 +52,7 @@ function loadConfig(env = process.env) {
       webhookSecret: String(env.WECALL_WEBHOOK_SECRET || '').trim(),
     },
     whatsappProvider: String(env.WHATSAPP_PROVIDER || 'meta').toLowerCase() === 'wecall' ? 'wecall' : 'meta',
+    whatsappPaused: bool(env.WHATSAPP_PAUSED, false), // pausa de TODOS los envíos de WhatsApp (también desde el panel, en Configuración)
 
     // Acceso al panel con Google (opcional; sin esto solo funciona la contraseña)
     google: {

@@ -32,6 +32,19 @@ function createChannels(config, { fetchImpl, logger = console } = {}) {
     };
   }
 
+  // Pausa de envíos (Configuración del panel o WHATSAPP_PAUSED): el canal existe pero todo envío
+  // se rechaza con el motivo, para que quede registrado como no enviado y nada salga en silencio.
+  if (config.whatsappPaused && waReal) {
+    const paused = async () => {
+      throw new Error('Los envíos de WhatsApp están pausados desde el panel (Configuración).');
+    };
+    return {
+      dryRun: false,
+      whatsapp: { available: true, paused: true, sendTemplate: paused, sendText: paused },
+      email: mailReal ? { available: true, send: mailReal.send } : { available: false },
+    };
+  }
+
   return {
     dryRun: false,
     whatsapp: waReal
