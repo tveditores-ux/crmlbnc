@@ -71,6 +71,16 @@ body.con-menu nav a{margin:0;padding:8px 12px;border-radius:7px;border-bottom:0;
 body.con-menu nav a.on{background:rgba(217,181,106,.22);border-bottom:0;opacity:1}
 body.con-menu nav a:hover{background:rgba(255,255,255,.1);border-bottom:0}
 body.con-menu nav form.inline{display:block;margin-top:10px}
+nav details.nav-group{display:block;margin:4px 0 0}
+nav details.nav-group summary{color:#f5f2eb;opacity:.6;font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;padding:9px 12px 3px;cursor:pointer;list-style:none}
+nav details.nav-group summary::-webkit-details-marker{display:none}
+nav details.nav-group summary::after{content:'\\25B8';float:right;opacity:.8}
+nav details.nav-group[open ] summary::after{content:'\\25BE'}
+nav details.nav-group summary:hover{opacity:.9}
+body.con-menu nav details.nav-group a{padding-left:22px}
+nav a.grace-tab{background:#d9b56a;color:#1f2a2e;opacity:1;font-weight:600;border-radius:7px;margin-top:12px}
+nav a.grace-tab:hover{background:#e6c87e;border-bottom:0}
+body.con-menu nav a.grace-tab.on{background:#e6c87e;box-shadow:inset 0 0 0 2px #1f2a2e33}
 body.con-menu nav form.inline button{width:100%;margin:0!important}
 @media screen and (min-width:1025px){
   body.con-menu{padding-left:216px}
@@ -89,32 +99,77 @@ body.con-menu nav form.inline button{width:100%;margin:0!important}
 ${CHARTS_CSS}
 `;
 
+/* Menú agrupado (a pedido de Eliezer, 2026-11-25): 6 grupos con sub-pestañas que se abren;
+ * el grupo de la página actual entra abierto. Inicio va suelto arriba y Grace (control remoto)
+ * queda fuera de los grupos, como pestaña propia de otro color. */
+const NAV_GROUPS = [
+  {
+    title: 'Personas y grupos',
+    items: [
+      ['/personas', 'Personas'],
+      ['/grupos', 'Grupos de cuidado'],
+      ['/ministerios', 'Ministerios'],
+      ['/registros', 'Registros'],
+    ],
+  },
+  {
+    title: 'Seguimiento',
+    items: [
+      ['/nueva-vida', 'Nueva Vida'],
+      ['/consolidacion', 'Consolidación'],
+      ['/bautizados', 'Bautizados'],
+      ['/oracion', 'Buzón de oración'],
+    ],
+  },
+  {
+    title: 'Equipo y reuniones',
+    items: [
+      ['/reunion-equipo', 'Reunión de equipo'],
+      ['/libreta-lideres', 'Libreta de líderes'],
+      ['/redil/libreta', 'Libretica REDIL'],
+      ['/redil/preguntas', 'Preguntas REDIL'],
+      ['/guia', 'Guía del líder'],
+    ],
+  },
+  {
+    title: 'Agenda y servicios',
+    items: [
+      ['/eventos', 'Eventos'],
+      ['/calendario', 'Calendario'],
+      ['/asistencia', 'Asistencia'],
+      ['/reporte', 'Reporte'],
+    ],
+  },
+  {
+    title: 'Comunicación',
+    items: [
+      ['/mensajes', 'Mensajes'],
+      ['/conversaciones', 'Conversaciones'],
+      ['/asistente', 'Asistente'],
+    ],
+  },
+  {
+    title: 'Configuración',
+    items: [
+      ['/configuracion', 'Configuración'],
+      ['/pruebas', 'Pruebas'],
+    ],
+  },
+];
 const NAV = [
   ['/', 'Inicio'],
-  ['/eventos', 'Eventos'],
-  ['/calendario', 'Calendario'],
-  ['/personas', 'Personas'],
-  ['/registros', 'Registros'],
-  ['/ministerios', 'Ministerios'],
-  ['/mensajes', 'Mensajes'],
-  ['/asistencia', 'Asistencia'],
-  ['/reporte', 'Reporte'],
-  ['/nueva-vida', 'Nueva Vida'],
-  ['/consolidacion', 'Consolidación'],
-  ['/bautizados', 'Bautizados'],
-  ['/grupos', 'Grupos de cuidado'],
-  ['/oracion', 'Buzón de oración'],
-  ['/guia', 'Guía del líder'],
-  ['/reunion-equipo', 'Reunión de equipo'],
-  ['/libreta-lideres', 'Libreta de líderes'],
-  ['/redil/libreta', 'Libretica REDIL'],
-  ['/redil/preguntas', 'Preguntas REDIL'],
-  ['/conversaciones', 'Conversaciones'],
-  ['/asistente', 'Asistente'],
+  ...NAV_GROUPS.flatMap((g) => g.items),
   ['/grace', 'Grace (control remoto)'],
-  ['/configuracion', 'Configuración'],
-  ['/pruebas', 'Pruebas'],
 ];
+
+function navHtml(active) {
+  const link = ([href, label]) => `<a href="${href}" class="${active === href ? 'on' : ''}">${label}</a>`;
+  const groups = NAV_GROUPS.map((g) => {
+    const open = g.items.some(([h]) => h === active) ? ' open' : '';
+    return `<details class="nav-group"${open}><summary>${g.title}</summary>${g.items.map(link).join('')}</details>`;
+  }).join('');
+  return `<a href="/" class="${active === '/' ? 'on' : ''}">Inicio</a>${groups}<a href="/grace" class="grace-tab${active === '/grace' ? ' on' : ''}">Grace (control remoto)</a>`;
+}
 
 function flash(query) {
   if (!query) return '';
@@ -159,7 +214,7 @@ function layout({ title, active, body, config, query, bare = false }) {
   const nav = bare
     ? ''
     : `<input type="checkbox" id="menu-abierto" aria-label="Abrir o cerrar el menú"><label for="menu-abierto" class="menu-btn" aria-hidden="true">☰</label>
-       <nav>${NAV.map(([href, label]) => `<a href="${href}" class="${active === href ? 'on' : ''}">${label}</a>`).join('')}
+       <nav>${navHtml(active)}
        <form class="inline" method="post" action="/salir"><button class="small sec" style="margin-left:6px">Salir</button></form></nav>`;
   const dryBanner =
     !bare && config && config.dryRun
