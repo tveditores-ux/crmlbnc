@@ -77,6 +77,7 @@ nav details.nav-group summary::-webkit-details-marker{display:none}
 nav details.nav-group summary::after{content:'\\25B8';float:right;opacity:.8}
 nav details.nav-group[open ] summary::after{content:'\\25BE'}
 nav details.nav-group summary:hover{opacity:.9}
+nav details.nav-group a{display:block}
 body.con-menu nav details.nav-group a{padding-left:22px}
 nav a.grace-tab{background:#d9b56a;color:#1f2a2e;opacity:1;font-weight:600;border-radius:7px;margin-top:12px}
 nav a.grace-tab:hover{background:#e6c87e;border-bottom:0}
