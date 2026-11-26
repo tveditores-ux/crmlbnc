@@ -27,6 +27,7 @@ const { memberIntakeRouter } = require('./routes/member-intake');
 const { memberRequestsRouter } = require('./routes/member-requests');
 const { careGroupsRouter } = require('./routes/care-groups');
 const { redilPreguntasRouter } = require('./routes/redil-preguntas');
+const { redilConfirmarRouter } = require('./routes/redil-confirmar');
 const { libretaRemotaRouter } = require('./routes/libreta-remota');
 const { reporteComunRouter } = require('./routes/reporte-comun');
 const { nuevosCreyentesRouter } = require('./routes/nuevos-creyentes');
@@ -177,6 +178,7 @@ function createApp(ctx) {
   app.use(libretaLideresRouter(ctx));
   app.use(careGroupsRouter(ctx));
   app.use(redilPreguntasRouter(ctx));
+  app.use(redilConfirmarRouter(ctx));
   app.use(calendarRouter(ctx));
   app.use(graceRemotoRouter(ctx));
   app.use(oracionRouter(ctx));
