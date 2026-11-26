@@ -130,6 +130,7 @@ const NAV_GROUPS = [
       ['/libreta-lideres', 'Libreta de líderes'],
       ['/redil/libreta', 'Libretica REDIL'],
       ['/redil/preguntas', 'Preguntas REDIL'],
+      ['/redil/confirmar', 'Confirmación REDIL'],
       ['/guia', 'Guía del líder'],
     ],
   },
